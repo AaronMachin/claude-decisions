@@ -171,9 +171,9 @@ test('the header says keys on or keys off, on every screen', async ($, on) => {
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
   for (const isFocused of [true, false]) {
     const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, isFocused }, surface: 'terminal' })
-    expect(await ui.find({ type: 'Text', text: isFocused ? 'keys on' : 'keys off' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: isFocused ? 'keys on' : 'keys off: /decisions' })).toBeDefined()
     await ui.press({ key: 'row:d1' })
-    expect(await ui.find({ type: 'Text', text: isFocused ? 'keys on' : 'keys off' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: isFocused ? 'keys on' : 'keys off: /decisions' })).toBeDefined()
     await ui.press({ key: 'b' })
     await ui.unmount()
   }

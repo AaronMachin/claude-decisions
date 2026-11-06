@@ -91,7 +91,7 @@ async function confirm($: any, ids: string[]): Promise<void> {
 
 function header(ui: any, width: number, isFocused: boolean, crumb?: string): any {
   const { Box, Text } = ui
-  const state = isFocused ? 'keys on' : 'keys off'
+  const state = isFocused ? 'keys on' : 'keys off: /decisions'
   const pad = Math.max(1, width - 'Decisions'.length - state.length)
 
   return (
