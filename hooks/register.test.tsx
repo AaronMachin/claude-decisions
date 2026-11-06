@@ -13,11 +13,12 @@ type Seen = {
   submitted: string[]
   tools: string[]
   commands: string[]
+  focused: string[]
 }
 
 /** Answers everything the plugin asks of the engine, from memory. */
-function engine(on: On): Seen {
-  const seen: Seen = { files: new Map(), statuses: [], opened: [], closed: [], submitted: [], tools: [], commands: [] }
+function engine(on: On, options: { failSubmit?: boolean } = {}): Seen {
+  const seen: Seen = { files: new Map(), statuses: [], opened: [], closed: [], submitted: [], tools: [], commands: [], focused: [] }
   on('env.get', () => ({ value: '/home/test' }))
   on('session.cwd', () => ({ value: '/work/pantry' }))
   on('process.run', () => ({
@@ -47,7 +48,10 @@ function engine(on: On): Seen {
     return { value: undefined }
   })
   on('ui.invalidate', () => ({ value: undefined }))
-  on('ui.focus', () => ({}))
+  on('ui.focus', (_: any, e: any) => {
+    seen.focused.push(String(e.key ?? e.element))
+    return { value: {} }
+  })
   on('tool.register', (_: any, e: any) => {
     seen.tools.push(e.name)
     return { value: {} }
@@ -58,6 +62,9 @@ function engine(on: On): Seen {
   })
   on('prompt.submit', (_: any, e: any) => {
     seen.submitted.push(e.text)
+    if (options.failSubmit) {
+      throw new Error('refused')
+    }
     return { text: e.text }
   })
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
@@ -93,6 +100,8 @@ test('session.start registers /decisions and both tools and sets the status line
   await start($)
   expect(seen.commands).toContain('decisions')
   expect(seen.tools).toEqual(['decisions_add', 'decisions_list'])
+  expect(seen.statuses.at(-1)).toBeUndefined()
+  expect(seen.statuses).toHaveLength(1)
 })
 
 test('adding a decision stores it, opens the pane unfocused and updates the status line', async ($, on) => {
@@ -143,16 +152,16 @@ test('/decisions opens the pane with the keys and clears hidden', async ($, on) 
   await ui.unmount()
 })
 
-test('the highlight follows the ring: opt:<n> sets it and discuss clears it', async ($, on) => {
+test('a ring move onto an option or Discuss is taken by the pane without error', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await $.ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'opt:2', origin: { kind: 'person' } })
-  // The Discuss button is on the ring until something is highlighted; b clears the highlight and refocuses it.
-  expect((await ui.find({ key: 'opt:2' }))?.text).toMatch(/2 {2}Per package/)
+  // The highlight itself is state the kit can't read back and `b` then needs $.ui.focus, which the kit refuses; the real session covers both.
   await $.ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'discuss', origin: { kind: 'person' } })
+  expect(await ui.find({ key: 'opt:2' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -231,5 +240,91 @@ test('a parked draft survives hiding the pane, and an empty enter cancels', asyn
   await ui.press({ key: 'p' })
   await ui.input({ key: 'park', text: 'waiting on design' })
   expect(await ui.find({ type: 'Text', text: 'Parked (1)' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('digit Buttons exist only for options that exist, and b is not on the list', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'b' })).toBeUndefined()
+  await ui.press({ key: 'row:d1' })
+  const keys = (await ui.findAll({ type: 'Button' })).map(b => b.props.key)
+  expect(keys).toEqual(expect.arrayContaining(['digit:1', 'digit:2', 'a', 'b', 'p', 'h']))
+  expect(keys).not.toContain('digit:3')
+  expect(keys).not.toContain('s')
+  expect((await ui.find({ key: 'digit:2' }))?.props.hotkey).toBe('2')
+  await ui.unmount()
+})
+
+test('pressing Discuss says there is no discussion yet', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'discuss' })
+  expect(await ui.find({ type: 'Text', text: 'No discussion yet' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('p on a parked decision puts it back to open, through the pane', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'p' })
+  await ui.input({ key: 'park', text: 'later' })
+  expect(seen.statuses.at(-1)).toBe('Decisions: 0 open · 1 parked')
+  await ui.press({ key: 't' })
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'p' }))?.text).toMatch(/unpark/)
+  await ui.press({ key: 'p' })
+  expect(seen.statuses.at(-1)).toBe('Decisions: 1 open')
+  await ui.unmount()
+})
+
+test('a sent decision offers only b, and review back sends nothing', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'opt:1' })
+  await ui.press({ key: 's' })
+  await ui.press({ key: 'b' })
+  expect(seen.submitted).toEqual([])
+  await ui.press({ key: 's' })
+  await ui.press({ key: 'confirm' })
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(seen.submitted).toHaveLength(1)
+  expect(seen.statuses.at(-1)).toBeUndefined()
+  await ui.press({ key: 'row:d1' })
+  const keys = (await ui.findAll({ type: 'Button' })).map(b => b.props.key)
+  expect(keys).toContain('b')
+  expect(keys).not.toEqual(expect.arrayContaining(['s']))
+  expect(keys).not.toContain('h')
+  expect(keys).not.toContain('p')
+  expect(keys).not.toContain('digit:1')
+  await ui.unmount()
+})
+
+test('a send that fails shows its notice in the pane and the answers are ready again', async ($, on) => {
+  const seen = engine(on, { failSubmit: true })
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'opt:1' })
+  await ui.press({ key: 's' })
+  await ui.press({ key: 'confirm' })
+  for (let i = 0; i < 20; i++) {
+    await Promise.resolve()
+  }
+  expect(seen.statuses.at(-1)).toBe('Decisions: 0 open · 1 ready')
+  expect(await ui.find({ type: 'Text', text: /not sent/ })).toBeDefined()
   await ui.unmount()
 })

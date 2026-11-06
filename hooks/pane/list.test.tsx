@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Decision } from '../store'
 import { INITIAL_VIEW } from './decision'
-import { ListView, ReviewView, counts, nextTab, openReview, rowText, sectionsFor, statusText, tabsFor, toggleTick, truncate } from './list'
+import { ListView, ReviewView, counts, visibleTabs, nextTab, openReview, rowText, sectionsFor, statusText, tabsFor, toggleTick, truncate } from './list'
 
 let counter = 0
 
@@ -167,4 +167,16 @@ test('review: ready rows start ticked, Confirm is last with hotkey c, and confir
   await ui.press({ key: 'confirm', plugin: 'test' })
   expect(confirmed).toHaveLength(1)
   await ui.unmount()
+})
+
+test('tabs that do not fit scroll so the open one is in view, with markers at the cut ends', () => {
+  const tab = (n: number) => ({ key: `t${n}`, label: `Group number ${n}`, decisions: [] })
+  const tabs = [1, 2, 3, 4, 5, 6].map(tab)
+  expect(visibleTabs(tabs.slice(0, 2), 't1', 49)).toEqual({ shown: tabs.slice(0, 2), hasLeft: false, hasRight: false })
+  const middle = visibleTabs(tabs, 't3', 49)
+  expect(middle.shown.map(t => t.key)).toContain('t3')
+  expect(middle.hasLeft).toBe(true)
+  expect(middle.hasRight).toBe(true)
+  expect(visibleTabs(tabs, 't1', 49).hasLeft).toBe(false)
+  expect(visibleTabs(tabs, 't6', 49).hasRight).toBe(false)
 })

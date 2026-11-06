@@ -307,14 +307,16 @@ export function DecisionView($: any, props: Props): any {
             {d.state === 'parked' ? 'unpark  ' : 'park  '}
           </Button>
         )}
-        {readyCount > 0 ? (
+        {readyCount > 0 && !isSent ? (
           <Button key="s" hotkey="s" plain onPress={onSend}>
             {`send ${readyCount}  `}
           </Button>
         ) : null}
-        <Button key="h" hotkey="h" plain onPress={onHide}>
-          {'hide  '}
-        </Button>
+        {isSent ? null : (
+          <Button key="h" hotkey="h" plain onPress={onHide}>
+            {'hide  '}
+          </Button>
+        )}
       </Box>
     </Box>
   )

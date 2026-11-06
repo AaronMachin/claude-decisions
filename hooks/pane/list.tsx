@@ -79,6 +79,35 @@ export function nextTab(tabs: Tab[], current: string | undefined): string | unde
   return tabs[(index + 1) % tabs.length]?.key
 }
 
+/**
+ * The tabs that fit in one row, always including the open one, and whether any are
+ * cut off at either end (drawn as `‹` and `›`).
+ */
+export function visibleTabs(tabs: Tab[], activeKey: string | undefined, width: number): { shown: Tab[]; hasLeft: boolean; hasRight: boolean } {
+  const cost = (t: Tab) => truncate(t.label, 14).length + 1
+  if (tabs.reduce((sum, t) => sum + cost(t), 0) <= width) {
+    return { shown: tabs, hasLeft: false, hasRight: false }
+  }
+  let from = Math.max(0, tabs.findIndex(t => t.key === activeKey))
+  let to = from
+  let used = cost(tabs[from]!) + 2
+  for (;;) {
+    const right = tabs[to + 1]
+    const left = tabs[from - 1]
+    if (right && used + cost(right) <= width) {
+      to += 1
+      used += cost(right)
+    } else if (left && used + cost(left) <= width) {
+      from -= 1
+      used += cost(left)
+    } else {
+      break
+    }
+  }
+
+  return { shown: tabs.slice(from, to + 1), hasLeft: from > 0, hasRight: to < tabs.length - 1 }
+}
+
 export function activeTab(tabs: Tab[], view: PaneView): Tab | undefined {
   return tabs.find(t => t.key === view.tab) ?? tabs[0]
 }
@@ -150,6 +179,7 @@ export function ListView($: any, props: ListProps): any {
   const tab = activeTab(tabs, view)
   const sections = tab ? sectionsFor(tab) : { needsYou: [], answered: [], parked: [] }
   const first = sections.needsYou[0] ?? sections.parked[0] ?? sections.answered[0]
+  const tabRow = visibleTabs(tabs, tab?.key, width)
 
   const row = (d: Decision) => (
     <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d.id)}>
@@ -171,7 +201,8 @@ export function ListView($: any, props: ListProps): any {
   return (
     <Box flexDirection="column">
       <Box>
-        {tabs.map(t => (
+        {tabRow.hasLeft ? <Text dimColor>‹ </Text> : null}
+        {tabRow.shown.map(t => (
           <Button
             key={`tab:${t.key}`}
             plain
@@ -180,6 +211,7 @@ export function ListView($: any, props: ListProps): any {
             {t.key === tab?.key ? <Text bold>{`${truncate(t.label, 14)} `}</Text> : <Text dimColor>{`${truncate(t.label, 14)} `}</Text>}
           </Button>
         ))}
+        {tabRow.hasRight ? <Text dimColor>›</Text> : null}
       </Box>
       <Text dimColor>{'-'.repeat(Math.max(1, width))}</Text>
       {sections.needsYou.length > 0 ? <Text bold>{`Needs you (${sections.needsYou.length})`}</Text> : null}
