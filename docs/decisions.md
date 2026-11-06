@@ -224,3 +224,11 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 137 | The description names review findings and says they go in the pane one each, and the setup script leaves `last-commit.diff` beside the code **(Claude's call, from eval run 2)** | Without it, a "find problems" review gave the findings in chat and added none; and git was blocked in the eval sandbox, so "review the last commit" had nothing to read. |
 | 138 | The first prompt after a session start that appended the note does not append it again **(Claude's call, found in a real session)** | The transcript doesn't show an appended message until a turn has run, so Claude saw the note twice. |
 | 139 | Corrects rows 128 and 135: the description is 3,968 characters after row 137, and the eval cases allow plain `Bash` in `allowed_tools` (the run grants `Bash(git:*)` on the command line) **(Claude's call, from the review)** | Rows are not edited. |
+
+## 7 November 2026: workstream 5, ux-testing (build)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 140 | The replay harness drives Claude with `claude -p` (headless, `--plugin-dir`, `--resume` between prompts), not tmux **(Claude's call, approved route)** | A probe on a Pantry project showed the add tool, the store and the session note all work headless (the note reached Claude on every turn). The nudge text from `turn.complete` did not appear in the transcript after a turn that ended with a chat question, so the harness cannot observe "nudged" and reports what `isQuestionsInChat` says about the reply instead. |
+| 141 | The testers' seed store has 78 decisions: 3 choices (decision 2 with 12 options, decision 3 recommended), 6 assumptions, the 47-finding review plus 20 more needing the person (32 in all), one parked, one answered with a discussion **(Claude's call)** | Covers the unseen list (two-digit keys, more than 9 options, paging, the Image uploads tab) without a model turn. The review's `dependsOn` ids are shifted by the choices added before it. |
+| 142 | `hooks/pane/seed-review.ts` runs its `main` only when it is the script being run, so the seed script can import its store **(Claude's call)** | Avoids copying 25 lines. |

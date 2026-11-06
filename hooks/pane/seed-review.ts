@@ -48,4 +48,6 @@ async function main() {
   console.log(`Added ${REVIEW_47.length} findings.`)
 }
 
-main()
+if (process.argv[1]?.endsWith('seed-review.ts')) {
+  main()
+}
