@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Decision } from '../store'
 import { INITIAL_VIEW } from './decision'
-import { ListView, ReviewView, counts, visibleTabs, nextTab, openReview, rowText, sectionsFor, statusText, tabsFor, toggleTick, truncate } from './list'
+import { ListView, ReviewView, counts, visibleTabs, nextTab, openReview, rowMeta, rowText, secondLine, sectionsFor, statusText, tabsFor, toggleTick, truncate } from './list'
 
 let counter = 0
 
@@ -179,4 +179,108 @@ test('tabs that do not fit scroll so the open one is in view, with markers at th
   expect(middle.hasRight).toBe(true)
   expect(visibleTabs(tabs, 't1', 49).hasLeft).toBe(false)
   expect(visibleTabs(tabs, 't6', 49).hasRight).toBe(false)
+})
+
+/** The keys of the Buttons that aren't tabs. */
+async function keysOf(ui: any): Promise<string[]> {
+  return (await ui.findAll({ type: 'Button' })).map((b: any) => b.props.key).filter((k: string) => !k.startsWith('tab:'))
+}
+
+async function drawList($: any, on: any, all: Decision[], view = INITIAL_VIEW, rows = 40, width = 49) {
+  const tabs = tabsFor(all)
+  on('ui.render', ($$: any, e: any) => ListView($$, { ui: $$.ui.resolve(e), tabs, view, width, rows, readyCount: 0, unreadable: 0, onSend: () => {}, onHide: () => {} }))
+
+  return $.ui.mount({ ...PANE, surface: 'terminal' })
+}
+
+function bigReview(): Decision[] {
+  counter = 0
+
+  return [
+    ...Array.from({ length: 2 }, () => make({ kind: 'finding' })),
+    ...Array.from({ length: 9 }, () => make({ kind: 'finding', section: 'claudes-call' })),
+    ...Array.from({ length: 3 }, () => make({ kind: 'finding', section: 'already-decided' })),
+  ]
+}
+
+test('folded sections show a heading with a count and no rows; Needs you stays open', async ($, on) => {
+  const ui = await drawList($, on, bigReview())
+  const keys = await keysOf(ui)
+  expect(keys).toEqual(['row:d1', 'row:d2', 'section:claudes-call', 'section:already-decided', 't', 'h'])
+  expect(await ui.find({ type: 'Text', text: 'Needs you (2)' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: "▸ Claude's call (9)" })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ Already decided (3)' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('Needs you shows with a count of 0, and the first heading takes the ring when nothing waits', async ($, on) => {
+  counter = 0
+  const ui = await drawList($, on, [make({ section: 'claudes-call' })])
+  expect(await ui.find({ type: 'Text', text: 'Needs you (0)' })).toBeDefined()
+  expect((await ui.find({ key: 'section:claudes-call' }))?.props.autoFocus).toBe(true)
+  await ui.unmount()
+})
+
+test('an open section shows one page of rows with n, and o appears on the next page', async ($, on) => {
+  const all = bigReview()
+  let ui = await drawList($, on, all, { ...INITIAL_VIEW, openSection: 'claudes-call' }, 16)
+  let keys = await keysOf(ui)
+  expect(keys.filter((k: string) => k.startsWith('row:'))).toEqual(['row:d1', 'row:d2', 'row:d3', 'row:d4', 'row:d5', 'row:d6', 'row:d7'])
+  expect(keys).toContain('n')
+  expect(keys).not.toContain('o')
+  expect(await ui.find({ type: 'Text', text: "▾ Claude's call (9)" })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the next page has o and, at the end, no n', async ($, on) => {
+  const all = bigReview()
+  const ui = await drawList($, on, all, { ...INITIAL_VIEW, openSection: 'claudes-call', sectionPage: 1 }, 16)
+  const keys = await keysOf(ui)
+  expect(keys.filter((k: string) => k.startsWith('row:'))).toEqual(['row:d1', 'row:d2', 'row:d8', 'row:d9', 'row:d10', 'row:d11'])
+  expect(keys).toContain('o')
+  expect(keys).not.toContain('n')
+  await ui.unmount()
+})
+
+test('parked and reopened rows carry a dim second line, with the group in the Parked tab', () => {
+  counter = 0
+  const parked = make({ state: 'parked', parkedReason: 'waiting on the product owner', group: 'Search review' })
+  expect(secondLine(parked, true)).toBe('Search review · waiting on the product owner')
+  expect(secondLine(parked, false)).toBe('parked: waiting on the product owner')
+  const reopened = make({ reopenedBy: { id: 'd3', at: 't' } })
+  expect(secondLine(reopened, false)).toBe('reopened because d3 changed')
+  expect(secondLine({ ...reopened, state: 'ready' }, false)).toBeUndefined()
+  expect(secondLine(make(), false)).toBeUndefined()
+})
+
+test('the Parked tab has no Needs you heading and the second line is drawn', async ($, on) => {
+  counter = 0
+  const ui = await drawList($, on, [make({ state: 'parked', parkedReason: 'later' })], { ...INITIAL_VIEW, tab: 'parked' })
+  expect(await ui.find({ type: 'Text', text: /Needs you/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'Parked (1)' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Config file plan · later/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('two or more open assumptions add a batch row at the top of Needs you', async ($, on) => {
+  counter = 0
+  const ui = await drawList($, on, [make({ kind: 'assumption' }), make({ kind: 'assumption' }), make({ kind: 'finding' })])
+  const keys = await keysOf(ui)
+  expect(keys.slice(0, 2)).toEqual(['batch', 'row:d1'])
+  expect((await ui.find({ key: 'batch' }))?.text).toBe('Check 2 assumptions together')
+  await ui.unmount()
+})
+
+test('one open assumption has no batch row', async ($, on) => {
+  counter = 0
+  const one = await drawList($, on, [make({ kind: 'assumption' })])
+  expect(await one.find({ key: 'batch' })).toBeUndefined()
+  await one.unmount()
+})
+
+test('a wide row says question, and blocking when the decision blocks work', () => {
+  counter = 0
+  expect(rowMeta(make({ kind: 'question', options: [] }), 96)).toBe('question · open')
+  expect(rowMeta(make({ blocks: 'the plan' }), 96)).toBe('2 options · open · blocking')
+  expect(rowMeta(make({ state: 'parked' }), 49)).toBe('')
 })

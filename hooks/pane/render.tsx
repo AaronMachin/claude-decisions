@@ -3,7 +3,8 @@ import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
 import { DecisionView, INITIAL_VIEW, PANE_ID, readView, setView } from './decision'
 import { ThreadView } from './thread'
-import { ListView, ReviewView, activeTab, openReview, sectionsFor, statusText, tabsFor, truncate } from './list'
+import { ListView, ReviewView, activeTab, openReview, statusText, tabsFor, truncate } from './list'
+import { firstKey } from './sections'
 
 /** Sets the status line from what's in the store. */
 export async function refreshStatus($: any): Promise<void> {
@@ -65,11 +66,9 @@ export function leaveToList($: any): void {
 
 async function focusFirstRow($: any): Promise<void> {
   const { decisions } = await readAll($)
-  const tab = activeTab(tabsFor(decisions), await readView($))
-  const sections = tab ? sectionsFor(tab) : undefined
-  const first = sections?.needsYou[0] ?? sections?.parked[0] ?? sections?.answered[0]
-  if (first) {
-    await $.ui.focus({ requestId: PANE_ID, key: `row:${first.id}` })
+  const key = firstKey(activeTab(tabsFor(decisions), await readView($)))
+  if (key) {
+    await $.ui.focus({ requestId: PANE_ID, key })
   }
 }
 
@@ -162,7 +161,7 @@ export async function renderPane($: any, e: any): Promise<any> {
   return (
     <Box flexDirection="column">
       {top}
-      {ListView($, { ...common, tabs, view: { ...INITIAL_VIEW, ...view, tab: tab?.key }, readyCount: ready.length, unreadable })}
+      {ListView($, { ...common, tabs, view: { ...INITIAL_VIEW, ...view, tab: tab?.key }, readyCount: ready.length, unreadable, rows: e.props.scroll?.bodyRows })}
       {view.notice ? <Text dimColor>{view.notice}</Text> : null}
     </Box>
   )

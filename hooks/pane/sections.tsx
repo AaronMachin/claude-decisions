@@ -1,7 +1,30 @@
 import type { PaneView } from '../../types'
 import type { Decision } from '../store'
-import { sectionsFor } from './list'
 import type { Tab } from './list'
+
+export const isWaiting = (d: Decision) => d.state === 'open' || d.state === 'live'
+
+/**
+ * The groups inside a tab. "Needs you" is open and live decisions whose section is
+ * needs-you; "Claude's call" and "Already decided" are the open ones Claude put
+ * there; "Answered" is ready and sent in any section. Parked decisions are the
+ * Parked tab's rows.
+ */
+export function sectionsFor(tab: Tab): {
+  needsYou: Decision[]
+  claudesCall: Decision[]
+  alreadyDecided: Decision[]
+  answered: Decision[]
+  parked: Decision[]
+} {
+  return {
+    needsYou: tab.decisions.filter(d => isWaiting(d) && d.section === 'needs-you'),
+    claudesCall: tab.decisions.filter(d => isWaiting(d) && d.section === 'claudes-call'),
+    alreadyDecided: tab.decisions.filter(d => isWaiting(d) && d.section === 'already-decided'),
+    answered: tab.decisions.filter(d => d.state === 'ready' || d.state === 'sent'),
+    parked: tab.decisions.filter(d => d.state === 'parked'),
+  }
+}
 
 export type FoldedSection = 'claudes-call' | 'already-decided'
 
