@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { RUN } from '../discuss'
 import { INITIAL_VIEW, PANE_ID } from './decision'
 import { UPDATE_TOOL, ADD_TOOL } from '../tool'
-import { backFromThread, isResendable, noteFor, visibleEntries, when } from './thread'
+import { backFromThread, clipToBudget, isResendable, leaveThread, noteFor, rowsOf, visibleEntries, when } from './thread'
 import type { ThreadEntry } from '../store'
 
 type On = (event: string, hook: (...args: any[]) => any) => unknown
@@ -319,4 +319,18 @@ test('with the setting on fork, a question is not sent to the main session', { o
   expect(seen.submitted).toEqual([])
   expect(await ui.find({ type: 'Text', text: /^no reply: / })).toBeDefined()
   await ui.unmount()
+})
+
+test('the thread keeps its key row: rows are counted generously and one long entry is clipped to the room', () => {
+  expect(rowsOf(entry('word '.repeat(20)), 22)).toBeGreaterThanOrEqual(7)
+  const long = [entry('x'.repeat(2000), 'claude')]
+  expect(clipToBudget(long[0]!, 6, 40).text.length).toBeLessThan(6 * 38)
+  expect(rowsOf(clipToBudget(long[0]!, 6, 40), 40)).toBeLessThanOrEqual(6)
+  expect(clipToBudget(entry('short'), 6, 40).text).toBe('short')
+})
+
+test('leaving the thread changes only the screen fields of the view it is given', () => {
+  const live = { ...INITIAL_VIEW, screen: 'thread' as const, pending: [{ asked: 'a', decisionId: 'd1', mode: 'main' as const, status: 'answering' as const, run: RUN }] }
+  expect(leaveThread(live).pending).toEqual(live.pending)
+  expect(leaveThread(live).screen).toBe('decision')
 })

@@ -177,7 +177,7 @@ test('a subagent turn is ignored, and a question that contains quotes, newlines 
 test('a waiter marked late still returns its reply, flagged late', () => {
   const sent = sentText({ number: 4, title: 'T' }, 'q?')
   addWaiter({ decisionId: 'd4', asked: 'e1', sent })
-  markLate('e1')
+  markLate('e1', 'd4')
   routeStart({ text: framed(sent), turnId: 'w1' })
   expect(routeComplete({ turnId: 'w1', answer: 'late one' })?.waiter.late).toBe(true)
 })
@@ -200,7 +200,7 @@ function world(model: Partial<{ fork: any; complete: any }> = {}, submit?: (text
     },
   }
 
-  return { $, submitted, view: () => state }
+  return { $, submitted, view: () => state, setView: async (change: (v: PaneView) => PaneView) => void (state = change(state)) }
 }
 
 const next = async (e: any) => ({ turnId: e.turnId })
@@ -322,4 +322,41 @@ test('a second reply to the same question goes after the first, and before the n
     'claude:late main reply',
     'person:second',
   ])
+})
+
+test('a failed submit takes its waiter out, so a later m is answered and cleared', async () => {
+  let failFirst = true
+  const w = world({}, async () => {
+    if (failFirst) {
+      failFirst = false
+      throw new Error('no session')
+    }
+  })
+  const d = await make(w.$)
+  await askQuestion(w.$, 'main', d.id, 'same words?')
+  for (let i = 0; i < 6; i++) {
+    await Promise.resolve()
+  }
+  expect(w.view().pending[0]).toMatchObject({ status: 'failed' })
+  await w.setView(v => ({ ...v, decisionId: d.id }))
+  await resendToFork(w.$)
+  await askMain(w.$)
+  expect(w.submitted).toHaveLength(2)
+  await onTurnStart(w.$, { text: `The decisions plugin sent a message:\n${w.submitted[1]}`, turnId: 'again' }, next)
+  await onTurnComplete(w.$, { turnId: 'again', answer: 'answered' }, next)
+  expect(w.view().pending.filter(p => p.mode === 'main')).toEqual([])
+})
+
+test('f resends the open decision\'s own question, not an older one from another decision', async () => {
+  const w = world()
+  const d1 = await make(w.$)
+  const d2 = await make(w.$)
+  await onTurnStart(w.$, { text: 'busy', turnId: 'busy' }, next)
+  await askQuestion(w.$, 'main', d1.id, 'one?')
+  await askQuestion(w.$, 'main', d2.id, 'two?')
+  await w.setView(v => ({ ...v, decisionId: d2.id }))
+  await resendToFork(w.$)
+  expect((await readOne(w.$, d2.id))!.thread.map(e => e.who)).toEqual(['person', 'fork'])
+  expect((await readOne(w.$, d1.id))!.thread.map(e => e.who)).toEqual(['person'])
+  expect(w.view().pending.map(p => p.decisionId)).toEqual(['d1'])
 })

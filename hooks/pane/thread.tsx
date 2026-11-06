@@ -14,7 +14,7 @@ const STATE_TEXT: Record<string, string> = {
   parked: 'parked',
 }
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const FIXED_ROWS = 14
+const FIXED_ROWS = 18
 
 /** The dim line under a question that has no reply yet. */
 export function noteFor(p: PendingQuestion, run: string): string {
@@ -58,7 +58,18 @@ export function rowsOf(e: ThreadEntry, width: number): number {
   }
   const wrap = Math.max(1, width - 2)
 
-  return 1 + e.text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / wrap)), 0)
+  // Words wrap early, so count about 15% more than the characters alone say.
+  return 1 + e.text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil((line.length * 1.15) / wrap)), 0)
+}
+
+/** An entry cut with `…` so it fits in `budget` rows; the same entry when it already does. */
+export function clipToBudget(e: ThreadEntry, budget: number, width: number): ThreadEntry {
+  if (rowsOf(e, width) <= budget) {
+    return e
+  }
+  const room = Math.max(1, Math.floor(((budget - 1) * Math.max(1, width - 2)) / 1.15) - 1)
+
+  return { ...e, text: `${e.text.slice(0, room)}…` }
 }
 
 /**
@@ -92,6 +103,11 @@ export async function focusMark($: { ui: { focus: (a: { requestId: string; key: 
   await $.ui.focus({ requestId: PANE_ID, key: 'mark' })
 }
 
+/** The view after `b` on the thread, taken from the view as it is now so a reply that landed meanwhile isn't undone. */
+export function leaveThread(view: PaneView): PaneView {
+  return backFromThread(view).view
+}
+
 /** `b` on the thread: off Mark answered the ring returns to Ask; otherwise back to the decision. */
 export function backFromThread(view: PaneView): { view: PaneView; focusAsk: boolean } {
   if (view.isMarking) {
@@ -123,7 +139,7 @@ type Props = {
 
 async function goBack($: any, view: PaneView): Promise<void> {
   const next = backFromThread(view)
-  await setView($, () => next.view)
+  await setView($, leaveThread)
   if (next.focusAsk) {
     await $.ui.focus({ requestId: PANE_ID, key: 'ask' }).catch(() => undefined)
   } else if (next.view.screen === 'decision') {
@@ -182,13 +198,10 @@ export function ThreadView($: any, props: Props): any {
   const mine = view.pending.filter(p => p.decisionId === d.id)
   const pendingFor = (e: ThreadEntry) => mine.filter(p => p.asked === e.at)
   const resendable = mine.find(p => isResendable(p, RUN))
-  const { shown, olderHidden, newerHidden } = visibleEntries(
-    d.thread,
-    view.threadSkip,
-    Math.max(4, rows - FIXED_ROWS),
-    width,
-    e => pendingFor(e).length * 2,
-  )
+  const budget = Math.max(4, rows - FIXED_ROWS)
+  const visible = visibleEntries(d.thread, view.threadSkip, budget, width, e => pendingFor(e).length * 2)
+  const { olderHidden, newerHidden } = visible
+  const shown = visible.shown.length === 1 ? [clipToBudget(visible.shown[0]!, budget, width)] : visible.shown
   const lastReply = d.thread.findLast(e => e.who !== 'person' && e.revision === undefined)
   const canAskMain = lastReply?.who === 'fork' || lastReply?.who === 'quick'
   const canMark = ['open', 'live', 'parked'].includes(d.state)

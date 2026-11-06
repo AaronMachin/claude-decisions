@@ -128,10 +128,19 @@ export function addWaiter(w: Waiter): void {
 }
 
 /** The person sent that question to the fork; its main reply, when it comes, is still stored. */
-export function markLate(asked: string): void {
-  const w = waiters.find(x => x.asked === asked)
+export function markLate(asked: string, decisionId: string): void {
+  const w = waiters.find(x => x.asked === asked && x.decisionId === decisionId)
   if (w) {
     w.late = true
+  }
+}
+
+/** Takes a question's unclaimed waiter out, so it can't claim a later turn that happens to carry the same text. */
+export function dropWaiter(asked: string, decisionId: string): void {
+  for (let i = waiters.length - 1; i >= 0; i--) {
+    if (waiters[i]!.asked === asked && waiters[i]!.decisionId === decisionId && waiters[i]!.turnId === undefined) {
+      waiters.splice(i, 1)
+    }
   }
 }
 
@@ -214,8 +223,8 @@ async function redraw($: any): Promise<void> {
   $.ui.invalidate('ui.render')
 }
 
-function without(list: PendingQuestion[], asked: string, mode?: Mode): PendingQuestion[] {
-  return list.filter(p => !(p.asked === asked && (mode === undefined || p.mode === mode)))
+function without(list: PendingQuestion[], decisionId: string, asked: string, mode?: Mode): PendingQuestion[] {
+  return list.filter(p => !(p.decisionId === decisionId && p.asked === asked && (mode === undefined || p.mode === mode)))
 }
 
 async function setPending($: any, change: (list: PendingQuestion[]) => PendingQuestion[]): Promise<void> {
@@ -226,19 +235,20 @@ async function setPending($: any, change: (list: PendingQuestion[]) => PendingQu
 async function dispatch($: any, mode: Mode, d: Decision, asked: string, question: string): Promise<void> {
   const isBusyNow = isBusy()
   const status: PendingQuestion['status'] = mode === 'main' ? (isBusyNow ? 'queued' : 'waiting') : 'answering'
-  await setPending($, list => [...without(list, asked, mode), { asked, decisionId: d.id, mode, status, run: RUN }])
+  await setPending($, list => [...without(list, d.id, asked, mode), { asked, decisionId: d.id, mode, status, run: RUN }])
   await setState($, v => ({ ...v, isAsking: false }))
   await redraw($)
 
   const fail = async (reason: string) => {
-    await setPending($, list => list.map(p => (p.asked === asked && p.mode === mode ? { ...p, status: 'failed', reason } : p)))
+    await setPending($, list => list.map(p => (p.decisionId === d.id && p.asked === asked && p.mode === mode ? { ...p, status: 'failed', reason } : p)))
     await redraw($)
   }
 
   if (mode === 'main') {
+    dropWaiter(asked, d.id)
     addWaiter({ decisionId: d.id, asked, sent: sentText(d, question) })
     $.prompt.submit({ text: sentText(d, question) }).catch(async (error: unknown) => {
-      markLate(asked)
+      dropWaiter(asked, d.id)
       await fail(error instanceof Error ? error.message : String(error))
     })
 
@@ -251,7 +261,7 @@ async function dispatch($: any, mode: Mode, d: Decision, asked: string, question
     return
   }
   await recordReply($, d.id, asked, mode, reply.text)
-  await setPending($, list => without(list, asked, mode))
+  await setPending($, list => without(list, d.id, asked, mode))
   await redraw($)
 }
 
@@ -281,16 +291,18 @@ export const RESENT_NOTICE = 'Sent to the fork. The main-session copy is still q
 
 /** `f`: the oldest queued, failed or orphaned question goes to the fork instead. */
 export async function resendToFork($: any): Promise<void> {
-  const { pending } = await readState($)
-  const target = pending.find(p => p.status === 'queued' || p.status === 'failed' || p.run !== RUN)
+  const { pending, decisionId } = await readState($)
+  const target = pending.find(
+    p => (decisionId === undefined || p.decisionId === decisionId) && (p.status === 'queued' || p.status === 'failed' || p.run !== RUN),
+  )
   const found = target ? await questionOf($, target) : undefined
   if (!target || !found) {
     return
   }
   if (target.mode === 'main') {
-    markLate(target.asked)
+    markLate(target.asked, target.decisionId)
   }
-  await setPending($, list => without(list, target.asked, target.mode))
+  await setPending($, list => without(list, target.decisionId, target.asked, target.mode))
   await setState($, v => ({ ...v, notice: target.mode === 'main' && target.status === 'queued' ? RESENT_NOTICE : undefined }))
   await dispatch($, 'fork', found.d, target.asked, found.text)
 }
@@ -314,7 +326,7 @@ export async function askMain($: any): Promise<void> {
 export async function onTurnStart($: any, e: any, next: (e: any) => Promise<any>): Promise<any> {
   const waiter = routeStart(e)
   if (waiter && !waiter.late) {
-    await setPending($, list => list.map(p => (p.asked === waiter.asked && p.mode === 'main' ? { ...p, status: 'answering' } : p)))
+    await setPending($, list => list.map(p => (p.decisionId === waiter.decisionId && p.asked === waiter.asked && p.mode === 'main' ? { ...p, status: 'answering' } : p)))
     await redraw($)
   }
 
@@ -328,7 +340,7 @@ export async function onTurnComplete($: any, e: any, next: (e: any) => Promise<a
   if (routed) {
     await recordReply($, routed.waiter.decisionId, routed.waiter.asked, 'claude', routed.text)
     if (!routed.waiter.late) {
-      await setPending($, list => without(list, routed.waiter.asked, 'main'))
+      await setPending($, list => without(list, routed.waiter.decisionId, routed.waiter.asked, 'main'))
     }
     await redraw($)
   }
