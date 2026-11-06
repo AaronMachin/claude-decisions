@@ -92,3 +92,22 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 45 | The fork stays in v1 even though it can't read project files; its replies say so, and questions about code go to the main session **(Claude's call)** | The side agent, the one mode that reads files, leaked into the main chat (27). |
 | 46 | The rules note is appended to the conversation at session start and on the first prompt after `/clear`, as well as living in the tool description | The spike saw an appended note reach Claude where the system-prompt hooks didn't. |
 | 47 | Decisions are keyed by `git rev-parse --git-common-dir`, falling back to the folder path outside a git repository **(Claude's call for the fallback)** | Worktrees of one repository share the key; the spike confirmed it. |
+
+## 6 November 2026: workstream 1, core loop (spec)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 48 | Options are numbered by position (`id` 1 to 12), not lettered, and `recommendation.option` is that number **(Claude's call)** | Letter ids would sit next to the `a` key (highlight the recommendation) and read as the same thing. |
+| 49 | A choice has 1 to 12 options; more is refused with "split it into two decisions" **(Claude's call)** | Digits reach 12 with the second-digit rule, and a longer list is more than a pane can show well. |
+| 50 | Only the `choice` kind is accepted by `decisions_add` for now, though the type carries all five **(Claude's call)** | Claude must not add something the pane can't answer yet; workstream 3 widens the tool. |
+| 51 | `dependsOn` is decision ids, `blocks` is plain words about the work it holds up **(Claude's call)** | Re-opening dependents needs ids; what a decision blocks is usually work, not another decision. |
+| 52 | Decision ids are `d<n>`, one more than the highest file in the folder, retried if two sessions race **(Claude's call)** | The person says "decision 3", and a short number is what the pane and the answer prompt show. |
+| 53 | Every render re-reads the decision files; no polling **(Claude's call)** | A second session's writes show on the next render with no extra machinery. Revisit if it feels slow. |
+| 54 | Tabs are Buttons in the ring and `t` moves to the next one **(Claude's call)** | `[` and `]` aren't allowed as hotkeys; `t` is a letter and free. |
+| 55 | Decisions answered by the person show under an "Answered" heading in their tab, with `ready` or `sent` **(Claude's call)** | An answered decision has to be findable to change before sending (D6), and the folded sections are workstream 3's. |
+| 56 | Parked decisions show in a "Parked" tab, and `p` on one puts it back to `open` **(Claude's call)** | The design lists Parked as a tab; D4 doesn't say how a decision leaves it. |
+| 57 | Parking asks for a reason in an Input; an empty `enter` cancels **(Claude's call)** | Every kind is parked "with a reason", and an Input swallows letter keys so `b` can't cancel. |
+| 58 | `c` confirms the review screen, and `b` goes back **(Claude's call)** | `s` opens it, and a second `s` could send what was never read. |
+| 59 | The mod marks decisions `sent` when the person confirms, before the prompt is delivered, and puts them back to `ready` if the submit fails **(Claude's call)** | There's no tool for Claude to mark them, and a second `c` must not send them twice. |
+| 60 | The pane opens unfocused when Claude adds a decision, unless the person hid it (`h`) **(Claude's call)** | The design says so; the `/config` setting that turns it off belongs to a later workstream. |
+| 61 | The pane header says `keys on` or `keys off` and doesn't name the focus chord **(Claude's call)** | The chord is the person's binding to move. |
