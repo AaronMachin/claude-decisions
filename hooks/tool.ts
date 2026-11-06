@@ -9,26 +9,26 @@ export const UPDATE_TOOL = 'mcp__decisions__decisions_update'
 export const ADD_DESCRIPTION = `Adds one decision to the decisions pane, where the person answers it. Use it for every question, decision, assumption, go-ahead or review finding you would otherwise put to the person in chat, and never use AskUserQuestion: call this tool instead. Write one line in chat saying what you added (such as "Added 2 decisions to the pane, 1 blocks the plan") and carry on with anything that does not depend on the answer. Never list the decisions in chat.
 
 WHEN TO USE IT
-Whenever you are about to ask the person something. If you catch yourself writing "should I", "do you want", "which would you prefer" or a numbered list of questions, call this tool instead. One call per decision. Only the main session calls it: a subagent's call is refused, so a subagent reports to the main session, which adds the decisions.
+Whenever you are about to ask the person something. If you catch yourself writing "should I", "do you want", "which would you prefer" or a numbered list of questions, call this tool instead. One call per decision. Only the main session calls it: a subagent's call is refused, so a subagent reports back and the main session adds the decisions.
 
 Call decisions_list at the start of a conversation and after /compact or /clear, and check what is already open, answered or parked. Never add a decision that is already there, and never ask again what has been answered or parked. If an earlier answer settles the point, act on it.
 
-A review's findings go in the pane too, one finding each with a recommendation, not as a list in chat. Do not use it for things you can find out by reading the code, status updates, or cheap choices that are plainly yours: say those in chat.
+REVIEWS: when asked to review, audit, check or find problems (even "tell me what to do about them"), every problem is one finding decision with a recommendation, whether or not you have a question. Your chat reply is only the one line saying how many you added. Do not use it for things you can read in the code, status updates, or cheap choices that are plainly yours: say those in chat.
 
 THE FIELDS
 group (always give one): the piece of work, such as "Sharing links" or "Search review". Reuse the exact text for the same work.
 kind (required): choice, go-ahead, assumption, finding or question. Only choice takes options. section (optional): needs-you (default), claudes-call or already-decided. The schema explains each.
 title (required): a short plain sentence for someone who has not read the conversation, such as "Where the config file lives". No ticket shorthand, no abbreviations you invented, no function or class names as the headline. A finding's title starts with the area it is about, such as "Image uploads: one user can use another's quota".
-scenario (required): a concrete example of what happens today, for someone who was not in the conversation. Not "the lookup could be slow" but "run from a subfolder, it takes eight seconds because it walks up to the root".
+scenario (required): a concrete example of what happens today, for someone who was not in the conversation. Not "the lookup could be slow" but "run from a subfolder, it takes eight seconds walking up to the root".
 options (choice only, 1 to 12): each is { label, changes }. label is a few words. changes says what it would take and what changes for the person or the work if chosen. They are numbered by position, 1 first.
 recommendation (required for a choice): { option, reason }. option is the NUMBER of the option you would pick (1 for the first), and reason is why, in a sentence. Always give one, even when it is close.
 sources, dependsOn (ids such as "d2" that must be answered first) and blocks (in words, what cannot go on until this is answered) are optional.
 
 WHAT COMES BACK
-The tool answers with the decision's id and how many are open. Answers do not come back through this tool: they arrive later as a prompt that carries each decision's id, the chosen option, any condition and the outcome of any discussion. Treat a condition as part of the answer, and never assume an answer you have not been given.
+Answers do not come back through this tool: they arrive later as a prompt that carries each decision's id, the chosen option, any condition and the outcome of any discussion. Treat a condition as part of the answer; never assume an answer you were not given.
 
 REFUSALS
-A decision is refused, with the reason in the result, when a field is missing or blank, an option or recommendation is wrong for the kind, or dependsOn names an unknown id. Fix the named field and call again. Do not get round a refusal by asking in chat.
+A decision is refused, with the reason, when a field is missing or blank, an option or recommendation is wrong for the kind, or dependsOn names an unknown id. Fix the field and call again; do not ask in chat instead.
 
 EXAMPLE
 group "Config file plan", kind "choice", title "Where the config file lives", scenario "You run the tool from packages/api and it needs its settings. Either it finds one file at the project root by walking up, or each package has its own copy that you must keep in step.", options [{ label "Project root", changes "one file, found by walking up, shared by every package" }, { label "Per package", changes "a file in each package, so settings can differ" }], recommendation { option 1, reason "every other tool in this repository already reads from the root" }.`

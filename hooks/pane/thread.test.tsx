@@ -130,6 +130,7 @@ test('the Discuss Button opens the thread, with Ask, Mark answered and the keys'
   expect((await ui.find({ key: 'ask' }))?.props.autoFocus).toBe(true)
   expect(await ui.find({ key: 'mark' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Replies from: main session' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'No discussion yet. Ask a question below.' })).toBeDefined()
   const keys = (await ui.findAll({ type: 'Button' })).map(b => b.props.key)
   expect(keys).toEqual(expect.arrayContaining(['d', 'b', 'h']))
   expect(keys).not.toContain('f')

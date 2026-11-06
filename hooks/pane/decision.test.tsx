@@ -367,8 +367,10 @@ test('any kind parks with a reason and shows it back', async () => {
   expect(await parkDecision(store, d, 'waiting on the product owner')).toBe(true)
   const parked = (await readOne(store, d.id))!
   expect([parked.state, parked.parkedReason]).toEqual(['parked', 'waiting on the product owner'])
+  expect(parked.parkedAt).toBeDefined()
   await unparkDecision(store, parked)
   expect((await readOne(store, d.id))!.state).toBe('open')
+  expect((await readOne(store, d.id))!.parkedAt).toBeUndefined()
 })
 
 test('unparking leaves the decision in the section it had', async () => {
@@ -378,4 +380,13 @@ test('unparking leaves the decision in the section it had', async () => {
   await parkDecision(store, d, 'later')
   await unparkDecision(store, (await readOne(store, d.id))!)
   expect((await readOne(store, d.id))!.section).toBe('claudes-call')
+})
+
+test('the option screen says a number then enter confirms, and mentions a only when there is a recommendation', async ($, on) => {
+  const store = fakeStore()
+  await addDecision(store, KIND_CASES[2]!.input)
+  const d = (await readAll(store)).decisions[0]!
+  const ui = await drawDecision($, on, d)
+  expect(await ui.find({ type: 'Text', text: d.recommendation ? 'Type a number or a, then enter to confirm.' : 'Type a number, then enter to confirm.' })).toBeDefined()
+  await ui.unmount()
 })

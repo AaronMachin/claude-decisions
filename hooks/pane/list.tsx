@@ -150,12 +150,23 @@ export function rowMeta(d: Decision, width: number): string {
   return isWide ? [what, d.state, d.blocks ? 'blocking' : ''].filter(Boolean).join(' · ') : ''
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** "6 Nov" (the person's local day) from a stored time, or undefined when it is not a date. */
+export function parkedOn(at: string): string | undefined {
+  const date = new Date(at)
+
+  return Number.isNaN(date.getTime()) ? undefined : `${date.getDate()} ${MONTHS[date.getMonth()]}`
+}
+
 /** The dim line under a parked or reopened row, or undefined. The Parked tab adds the group, since it holds every group's parked decisions. */
 export function secondLine(d: Decision, isParkedTab: boolean): string | undefined {
   if (d.state === 'parked') {
     const reason = d.parkedReason ?? 'parked'
+    const on = d.parkedAt === undefined ? undefined : parkedOn(d.parkedAt)
+    const when = on === undefined ? '' : ` · parked ${on}`
 
-    return isParkedTab ? `${d.group ?? 'Other'} · ${reason}` : `parked: ${reason}`
+    return isParkedTab ? `${d.group ?? 'Other'} · ${reason}${when}` : `parked: ${reason}${when}`
   }
   if (d.reopenedBy !== undefined && isWaiting(d)) {
     return `reopened because ${d.reopenedBy.id} changed`
@@ -381,7 +392,7 @@ export function ReviewView($: any, props: ReviewProps): any {
         </Box>
       ))}
       <Text> </Text>
-      <Text dimColor>{`${ready.length} ready, ${ticked.length} ticked. Nothing is sent until you confirm.`}</Text>
+      <Text dimColor>{`${ready.length} ready, ${ticked.length} ticked. Nothing is sent until you confirm. Enter ticks or unticks a row, c sends.`}</Text>
       <Box>
         <Button key="b" hotkey="b" plain onPress={() => {
             void setView($, v => ({ ...v, screen: 'list' }))

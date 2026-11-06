@@ -148,3 +148,51 @@ test('a thread entry keeps its revision index through a write and read', async (
   await write(store, { ...made, thread: [{ who: 'claude', text: '↻ x', at: 'now', revision: 0 }] })
   expect((await readOne(store, made.id))?.thread[0]?.revision).toBe(0)
 })
+
+test('the store folder is worked out with git once per working folder, so a redraw does not run git again', async () => {
+  let gitRuns = 0
+  const files = new Map<string, string>()
+  const $: StoreCtx = {
+    env: { get: async () => '/home/cache' },
+    session: { cwd: async () => '/work/cache-once' },
+    process: {
+      run: async () => {
+        gitRuns += 1
+        return { exitCode: 0, stdout: '/work/cache-once/.git\n' }
+      },
+    },
+    fs: {
+      read: async (p: string) => files.get(p) ?? '',
+      write: async (p: string, text: string) => void files.set(p, text),
+      exists: async (p: string) => files.has(p),
+      list: async () => [],
+    },
+  }
+  await readAll($)
+  await readAll($)
+  await readAll($)
+  expect(gitRuns).toBe(1)
+})
+
+test('a git call that fails first is not remembered, so the next call finds the repository folder', async () => {
+  let calls = 0
+  const $: StoreCtx = {
+    env: { get: async () => '/home/cache' },
+    session: { cwd: async () => '/work/cache-retry' },
+    process: {
+      run: async () => {
+        calls += 1
+        if (calls === 1) {
+          throw new Error('aborted')
+        }
+        return { exitCode: 0, stdout: '/work/cache-retry/.git\n' }
+      },
+    },
+    fs: { read: async () => '', write: async () => undefined, exists: async () => false, list: async () => [] },
+  }
+  await expect(storeDir($)).rejects.toThrow('aborted')
+  const dir = await storeDir($)
+  expect(dir).toBe(`/home/cache/.claude/decisions/${await repoKey('/work/cache-retry/.git')}`)
+  expect(await storeDir($)).toBe(dir)
+  expect(calls).toBe(2)
+})

@@ -60,6 +60,8 @@ export type Decision = {
   reopenedBy?: { id: string; at: string; was?: Answer }
   state: State
   parkedReason?: string
+  /** When it was parked; unparking removes it. */
+  parkedAt?: string
   answer?: Answer
   thread: ThreadEntry[]
   revisions: Revision[]
@@ -98,13 +100,29 @@ export async function repoKey(commonDir: string): Promise<string> {
   return `${name}-${hex}`
 }
 
-/** The folder this repository's decisions live in, shared by all its worktrees. */
+const knownDirs = new Map<string, string>()
+
+/**
+ * The folder this repository's decisions live in, shared by all its worktrees. The answer for a
+ * working folder is remembered once git has given it: the pane reads on every redraw, and a
+ * redraw that a newer one replaces aborts the git call, which showed in the conversation as a
+ * "ui.render hook skipped" line.
+ */
 export async function storeDir($: StoreCtx): Promise<string> {
   const home = (await $.env.get('HOME')) ?? ''
+  const cwd = await $.session.cwd()
+  const remembered = knownDirs.get(`${home}|${cwd}`)
+  if (remembered !== undefined) {
+    return remembered
+  }
   const run = await $.process.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'])
-  const common = run.exitCode === 0 && run.stdout.trim() !== '' ? run.stdout.trim() : await $.session.cwd()
+  const isKnown = run.exitCode === 0 && run.stdout.trim() !== ''
+  const dir = `${home}/.claude/decisions/${await repoKey(isKnown ? run.stdout.trim() : cwd)}`
+  if (isKnown) {
+    knownDirs.set(`${home}|${cwd}`, dir)
+  }
 
-  return `${home}/.claude/decisions/${await repoKey(common)}`
+  return dir
 }
 
 function fileOf(dir: string, id: string): string {

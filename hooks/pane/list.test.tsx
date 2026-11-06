@@ -158,6 +158,7 @@ test('review: ready rows start ticked, Confirm is last with hotkey c, and confir
   const buttons = await ui.findAll({ type: 'Button' })
   expect(buttons.map(b => b.props.key)).toEqual(['tick:d1', 'tick:d2', 'b', 'confirm'])
   expect(buttons[3]!.props.hotkey).toBe('c')
+  expect(await ui.find({ type: 'Text', text: /Enter ticks or unticks a row, c sends/ })).toBeDefined()
   expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/^\[x\] d1/)
   await ui.press({ key: 'confirm', plugin: 'test' })
   expect(confirmed).toEqual([['d1', 'd2']])
@@ -249,6 +250,9 @@ test('parked and reopened rows carry a dim second line, with the group in the Pa
   const parked = make({ state: 'parked', parkedReason: 'waiting on the product owner', group: 'Search review' })
   expect(secondLine(parked, true)).toBe('Search review · waiting on the product owner')
   expect(secondLine(parked, false)).toBe('parked: waiting on the product owner')
+  const dated = { ...parked, parkedAt: '2026-11-06T09:30:00', updatedAt: '2026-11-09T09:30:00' }
+  expect(secondLine(dated, true)).toBe('Search review · waiting on the product owner · parked 6 Nov')
+  expect(secondLine(dated, false)).toBe('parked: waiting on the product owner · parked 6 Nov')
   const reopened = make({ reopenedBy: { id: 'd3', at: 't' } })
   expect(secondLine(reopened, false)).toBe('reopened because d3 changed')
   expect(secondLine({ ...reopened, state: 'ready' }, false)).toBeUndefined()
