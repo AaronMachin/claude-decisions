@@ -60,6 +60,14 @@ Ranked by how many testers hit it and whether it made someone fail.
 
 Before this test the wording on option screens, the Send screen and the pane header said nothing about Enter or the focus key. The fixes are wording and a dim line, each its own commit with a test.
 
+## Baseline on merged main
+
+188 tests passed, `claude plugin validate .` passed with warnings, `tsc -p .` was clean. The first eval run (five cases plus the spike cases) cost $0.44 in all, about $0.30 for the five. After the fixes: 204 tests, validate and tsc as before.
+
+## Where the questions are
+
+The "question logged" entries are in the shared planning log (`.superpowers/phase-2/log.md`, git-ignored, so not in this repository), under 5 ux-testing, with the one about the skipped system-prompt layer.
+
 ## Does it serve the one line
 
 Partly. Every task was finished by someone, so the pane is usable, but nobody found their way without help on tasks 1, 2 and 8, and tasks 1 and 3 can only be done today by throwing away the draft or knowing the focus key. The pane isn't yet intuitive for someone who sits down to it cold, most at the narrow and main-screen layouts, where the keys can't be seen or pressed at all on tall decisions. That is why finding 1 stays partly open and findings 2, 3 and 6 are logged for Aaron.
@@ -70,14 +78,16 @@ The harness (`tests/replay/`) runs headless (`claude -p`, Sonnet, one run per se
 
 | Session | Turns | Questions in chat | Decisions added | Detector agrees |
 | --- | --- | --- | --- | --- |
-| plan-sharing | 2 | 0 | 3 | 2/2 |
-| refactor-forks | 2 | 1 | 1 | 2/2 |
-| review-commit | 2 | 0 | 0 | 2/2 |
-| vague-feature | 2 | 0 | 8 | 2/2 |
-| what-next | 2 | 0 | 1 | 2/2 |
+| plan-sharing | 2 | 0 | 2 | 2/2 |
+| refactor-forks | 2 | 0 | 1 | 2/2 |
+| review-commit | 2 | 0 | 5 | 2/2 |
+| vague-feature | 2 | 0 | 4 | 2/2 |
+| what-next | 2 | 1 | 1 | 2/2 |
 | total | 10 | 1 | 13 | 10/10 |
 
-The one question in chat ended a refactor turn ("Do you want it fixed in the same change?", after adding one decision), so the detector flagged it by the last-sentence rule. The two guesses from workstream 4 (the offer exemption and the mid-text "should I" rule) were not exercised: no Pantry reply contained an offer to carry on or a mid-text question, so I can neither confirm nor fix them here. The private run on real sessions is the test. review-commit added no decisions in either turn (it found the one defect and reported it as a statement with no question, which is a miss against "findings go in the pane" but not a question in chat).
+This is the second full run (questions counted over all assistant text in a turn). The first full run had the same totals (1 question in chat, 13 decisions added, 10/10 agreement) spread differently: there the question was in refactor-forks and review-commit added none. One run per session means this moves from run to run.
+
+The one question in chat ended a what-next turn ("Want me to make the fix now?", after adding one decision), so the detector flagged it by the last-sentence rule. It is an offer, but not one of the "carry on" offers the exemption covers, so flagging it is as designed. The two guesses from workstream 4 were not exercised in either run: no Pantry reply contained a "carry on" offer or a mid-text "should I", so I can neither confirm nor fix them here. The private run on real sessions is the test.
 
 ## Evals
 
@@ -91,7 +101,7 @@ Five cases, `--eval-dir evals`, Sonnet, one run each (the engine still picks up 
 | review-last-commit | 0.67 (0 decisions added) | 1.00 |
 | what-next | 1.00 | 1.00 |
 
-Three suite runs in all (merged main; the two review cases after the change; all five after). One run per case is a small sample: workstream 4 saw what-next miss once in three, and the replay's review-commit session added no decision for its commit review (a different prompt from the eval's).
+Three suite runs in all (merged main; the two review cases after the change; all five after). One run per case is a small sample: workstream 4 saw what-next miss once in three, and the replay's review-commit session added no decisions in one full run and five in the other.
 
 ## Not seen
 

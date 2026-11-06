@@ -23,9 +23,13 @@ const here = dirname(fileURLToPath(import.meta.url))
 const repo = resolve(here, '../..')
 const args = process.argv.slice(2)
 const option = name => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined)
-const sessionsDir = resolve(option('--sessions') ?? join(here, 'sessions'))
 const textDir = option('--text')
+const sessionsDir = resolve(option('--sessions') ?? join(here, 'sessions'))
 const only = option('--only')
+if (option('--sessions') !== undefined && (textDir !== undefined || args.includes('--flagged'))) {
+  console.error('--text and --flagged print or write reply text, so they only run on the made-up sessions in this folder. Drop --sessions or drop those flags.')
+  process.exit(1)
+}
 const showFlagged = args.includes('--flagged')
 const storeRoot = join(homedir(), '.claude', 'decisions')
 
@@ -38,13 +42,20 @@ function storeFolders() {
 }
 
 function claude(prompt, cwd, resume) {
-  const argv = ['-p', prompt, '--plugin-dir', repo, '--model', 'sonnet', '--output-format', 'json', '--max-turns', '12', '--permission-mode', 'dontAsk', '--allowedTools', 'mcp__decisions__*', 'Read', 'Glob', 'Grep', 'Bash(git:*)']
+  const argv = ['-p', prompt, '--plugin-dir', repo, '--model', 'sonnet', '--output-format', 'stream-json', '--verbose', '--max-turns', '12', '--permission-mode', 'dontAsk', '--allowedTools', 'mcp__decisions__*', 'Read', 'Glob', 'Grep', 'Bash(git:*)']
   if (resume) {
     argv.push('--resume', resume)
   }
   const out = execFileSync('claude', argv, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 150000, maxBuffer: 64 * 1024 * 1024 })
 
-  return JSON.parse(out)
+  const lines = out.split('\n').filter(l => l.trim() !== '').map(l => JSON.parse(l))
+  const assistantText = lines
+    .filter(l => l.type === 'assistant')
+    .flatMap(l => (l.message?.content ?? []).filter(c => c.type === 'text').map(c => c.text))
+    .join('\n')
+  const result = lines.find(l => l.type === 'result')
+
+  return { session_id: result?.session_id, result: assistantText || result?.result }
 }
 
 async function main() {
