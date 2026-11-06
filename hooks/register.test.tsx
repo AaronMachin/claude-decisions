@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { PANE_ID, INITIAL_VIEW } from './pane/decision'
-import { ADD_TOOL, LIST_TOOL } from './tool'
+import { ADD_TOOL, LIST_TOOL, UPDATE_TOOL } from './tool'
 
 type On = (event: string, hook: (...args: any[]) => any) => unknown
 
@@ -99,7 +99,7 @@ test('session.start registers /decisions and both tools and sets the status line
   const seen = engine(on)
   await start($)
   expect(seen.commands).toContain('decisions')
-  expect(seen.tools).toEqual(['decisions_add', 'decisions_list'])
+  expect(seen.tools).toEqual(['decisions_add', 'decisions_list', 'decisions_update'])
   expect(seen.statuses.at(-1)).toBeUndefined()
   expect(seen.statuses).toHaveLength(1)
 })
@@ -327,4 +327,20 @@ test('a send that fails shows its notice in the pane and the answers are ready a
   expect(seen.statuses.at(-1)).toBe('Decisions: 0 open · 1 ready')
   expect(await ui.find({ type: 'Text', text: /not sent/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('decisions_update through the hooks revises the decision and refreshes the pane', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const answer = await $.tool.call({
+    tool: UPDATE_TOOL,
+    id: 'd1',
+    summary: 'Added option 3, Third',
+    addOptions: [{ label: 'Third' }],
+  })
+  expect(JSON.stringify(answer)).toContain('Updated d1: Added option 3, Third')
+  const file = [...seen.files.entries()].find(([k]) => k.endsWith('d1.json'))![1]
+  expect(JSON.parse(file).revisions).toHaveLength(1)
+  expect(JSON.stringify(await $.tool.call({ tool: UPDATE_TOOL, id: 'd9', summary: 'x', addOptions: [{ label: 'a' }] }))).toContain('no such decision')
 })

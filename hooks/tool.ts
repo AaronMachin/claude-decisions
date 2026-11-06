@@ -1,8 +1,9 @@
-import { create, readAll } from './store'
+import { create, readAll, readOne, write } from './store'
 import type { Decision, StoreCtx } from './store'
 
 export const ADD_TOOL = 'mcp__decisions__decisions_add'
 export const LIST_TOOL = 'mcp__decisions__decisions_list'
+export const UPDATE_TOOL = 'mcp__decisions__decisions_update'
 
 export const ADD_DESCRIPTION = `Adds one decision to the decisions pane, where the person answers it. Use it for every question, decision, assumption or go-ahead you would otherwise put to the person in chat. Do not write the question in chat as well: write one line in chat saying what you added (for example "Added 2 decisions to the pane for Sharing links, 1 blocks the plan") and carry on with anything that does not depend on the answer. Never list the decisions in chat.
 
@@ -80,6 +81,43 @@ export const ADD_INPUT_SCHEMA = {
   required: ['kind', 'title', 'scenario', 'options', 'recommendation'],
 }
 
+export const UPDATE_DESCRIPTION = `Revises a decision that is already in the decisions pane: adds an option, or moves the recommendation. The earlier version is kept, and the thread shows a line for the change.
+
+WHEN TO USE IT
+The person sometimes asks about a decision from the pane. Their message then starts "On decision <n> · <title>:", where <n> is the decision's number (decision 3 is d3). Answer the question in chat, as you would any question. That message is a question, not the answer: never treat it as the person choosing an option. Call this tool only when your answer means the decision itself should change, for example the question showed a third option nobody had listed, or a different option is now the better pick.
+
+THE FIELDS
+id (required): the decision, such as "d3".
+summary (required): one plain line for the thread, such as "Added option 3, Per workspace" or "Recommendation moved to 2".
+addOptions (optional): [{ label, changes }] appended after the existing options, so they take the next numbers. A decision has 12 options at most.
+recommendation (optional): { option, reason }. option is the option's NUMBER, counting any you add in this call.
+Give addOptions, recommendation or both.
+
+REFUSALS
+Refused, with the reason in the result, when the id is unknown, the decision is already sent, the summary is blank, nothing is given to change, an added option has no label or there would be more than 12, or the recommendation names an option that does not exist. Fix the named field and call again.`
+
+export const UPDATE_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: 'The decision, such as "d3".' },
+    summary: { type: 'string', description: 'One plain line for the thread, such as "Added option 3, Per workspace".' },
+    addOptions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { label: { type: 'string' }, changes: { type: 'string' } },
+        required: ['label'],
+      },
+    },
+    recommendation: {
+      type: 'object',
+      properties: { option: { type: 'number' }, reason: { type: 'string' } },
+      required: ['option', 'reason'],
+    },
+  },
+  required: ['id', 'summary'],
+}
+
 const LIST_INPUT_SCHEMA = { type: 'object', properties: {} }
 
 function isBlank(value: unknown): boolean {
@@ -121,6 +159,72 @@ export function validateAdd(input: Record<string, any>, existingIds: string[]): 
   }
 
   return undefined
+}
+
+/** The refusal text for a malformed update, or undefined when it's fine. */
+export function validateUpdate(input: Record<string, any>, d: Decision | undefined): string | undefined {
+  if (!d) {
+    return `decisions_update refused: ${String(input.id)}: no such decision.`
+  }
+  if (['sent', 'superseded', 'withdrawn'].includes(d.state)) {
+    return `decisions_update refused: ${d.id} is already ${d.state}; add a new decision instead.`
+  }
+  if (isBlank(input.summary)) {
+    return 'decisions_update refused: summary is required. Say what changed in one line.'
+  }
+  const added: any[] = input.addOptions ?? []
+  if (added.length === 0 && input.recommendation === undefined) {
+    return 'decisions_update refused: nothing to change. Give addOptions or recommendation.'
+  }
+  for (const [index, option] of added.entries()) {
+    if (isBlank(option?.label)) {
+      return `decisions_update refused: option ${d.options.length + index + 1} has no label.`
+    }
+  }
+  const total = d.options.length + added.length
+  if (total > 12) {
+    return 'decisions_update refused: a decision has at most 12 options.'
+  }
+  if (input.recommendation !== undefined) {
+    const number = input.recommendation?.option
+    if (!Number.isInteger(number) || number < 1 || number > total) {
+      return 'decisions_update refused: recommendation.option must be the number of one of the options.'
+    }
+    if (isBlank(input.recommendation.reason)) {
+      return 'decisions_update refused: recommendation.reason is required. Say why in a sentence and call again.'
+    }
+  }
+
+  return undefined
+}
+
+/** Applies an update: keeps the version it replaces, adds a ↻ line to the thread, writes the file. */
+export async function updateDecision($: StoreCtx, input: Record<string, any>): Promise<{ result: string } | { deny: string }> {
+  const d = typeof input.id === 'string' ? await readOne($, input.id) : undefined
+  const reason = validateUpdate(input, d)
+  if (reason !== undefined || !d) {
+    return { deny: reason ?? 'decisions_update refused: no such decision.' }
+  }
+  const { revisions: _r, thread: _t, ...before } = d
+  const at = new Date().toISOString()
+  const summary = String(input.summary).trim()
+  const added = ((input.addOptions ?? []) as any[]).map((o, index) => ({
+    id: d.options.length + index + 1,
+    label: String(o.label).trim(),
+    ...(isBlank(o.changes) ? {} : { changes: String(o.changes).trim() }),
+    fromDiscussion: true,
+  }))
+  await write($, {
+    ...d,
+    options: [...d.options, ...added],
+    recommendation: input.recommendation
+      ? { option: input.recommendation.option, reason: String(input.recommendation.reason).trim() }
+      : d.recommendation,
+    revisions: [...d.revisions, { at, summary, before }],
+    thread: [...d.thread, { who: 'claude', text: `↻ ${summary}`, at, revision: d.revisions.length }],
+  })
+
+  return { result: `Updated ${d.id}: ${summary}. The earlier version is kept in the thread.` }
 }
 
 const WAITING = ['open', 'live']
@@ -196,6 +300,12 @@ export async function registerTools($: { tool: { register: (spec: any) => Promis
     name: 'decisions_list',
     description: LIST_DESCRIPTION,
     inputSchema: LIST_INPUT_SCHEMA,
+    isDeferred: false,
+  })
+  await $.tool.register({
+    name: 'decisions_update',
+    description: UPDATE_DESCRIPTION,
+    inputSchema: UPDATE_INPUT_SCHEMA,
     isDeferred: false,
   })
 }
