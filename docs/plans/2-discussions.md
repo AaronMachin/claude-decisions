@@ -17,7 +17,7 @@
 - The kit's `$` has no `$.model.fork` or `$.model.complete` (checked: `on('model.fork')` doesn't stand in), so anything calling them takes a plain fake `$` in a test.
 - Keys in use: a, b, c, d, f, h, m, o, n, p, s, t, r (workstream 3), digits. Hotkey Buttons arm only when wholly in view.
 - A tool result is a string; a refusal is `{ deny: reason }`. Tool descriptions: 4,096 characters at most.
-- Repository is public: no local paths, company names or tickets in anything committed. Before every commit: `git add` then `git diff --cached -U0 | grep '^+' | grep -niE "totara|cc-plugin|sd-[0-9]+|keycloak|control.?plane|/Users/|/private/tmp|claude\.ai/artifact"` prints nothing. Push after each task: `git push -u origin ws/discussions`. Commit messages end `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Repository is public: no local paths, company names or tickets in anything committed. Before every commit: stage, then run the local leak check from the planning folder; it must print nothing. Push after each task: `git push -u origin ws/discussions`. Commit messages end `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Calls someone could make differently go in `docs/decisions.md` as new numbered rows (next is 84) marked **(Claude's call)**, in the commit of the code they shape.
 - UK English, no em dashes.
 
