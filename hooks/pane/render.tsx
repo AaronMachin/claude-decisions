@@ -144,7 +144,7 @@ export async function renderPane($: any, e: any): Promise<any> {
     return (
       <Box flexDirection="column">
         {header(ui, width, e.props.isFocused === true, crumb)}
-        {DecisionView($, { ...common, d: decision, view, readyCount: ready.length, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
+        {DecisionView($, { ...common, d: decision, all: decisions, view, readyCount: ready.length, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
       </Box>
     )
   }

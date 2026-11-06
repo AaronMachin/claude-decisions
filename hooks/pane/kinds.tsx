@@ -35,8 +35,3 @@ export function fixedOptionsFor(kind: Kind, isTask: boolean): FixedOption[] | un
 
   return FIXED_OPTIONS[kind]
 }
-
-/** The words the decision screen uses for a kind. */
-export function kindLabel(kind: Kind, isTask: boolean | undefined): string {
-  return isTask ? 'to do' : kind
-}
