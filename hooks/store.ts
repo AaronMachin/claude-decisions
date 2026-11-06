@@ -54,6 +54,10 @@ export type Decision = {
   dependsOn: string[]
   /** What cannot go on until this is answered, in words. */
   blocks?: string
+  /** "For you to do": something the person does themselves. Kind is go-ahead; the options are Done and Can't do it. */
+  isTask?: boolean
+  /** Set when a decision this one depends on changed its answer. Shown only while this decision is open or live. */
+  reopenedBy?: { id: string; at: string; was?: Answer }
   state: State
   parkedReason?: string
   answer?: Answer
