@@ -3,7 +3,9 @@ import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
 import { DecisionView, INITIAL_VIEW, PANE_ID, readView, setView } from './decision'
 import { ThreadView } from './thread'
-import { ListView, ReviewView, activeTab, openReview, sectionsFor, statusText, tabsFor, truncate } from './list'
+import { ListView, ReviewView, activeTab, openReview, statusText, tabsFor, truncate } from './list'
+import { BatchView, batchRows } from './kinds'
+import { firstKey } from './sections'
 
 /** Sets the status line from what's in the store. */
 export async function refreshStatus($: any): Promise<void> {
@@ -41,8 +43,11 @@ export async function hidePane($: any): Promise<void> {
 
 /** The `ui.focus` hook: the person's up and down arrive here, so the highlight follows the ring. */
 export async function followFocus($: any, element: string | undefined): Promise<void> {
+  const batch = /^batch:(.+)$/.exec(element ?? '')
   const match = /^opt:(\d+)$/.exec(element ?? '')
-  if (match) {
+  if (batch) {
+    await setView($, v => ({ ...v, batchRow: batch[1] }))
+  } else if (match) {
     await setView($, v => ({ ...v, highlight: Number(match[1]) }))
   } else if (element === 'discuss') {
     await setView($, v => ({ ...v, highlight: undefined }))
@@ -65,11 +70,9 @@ export function leaveToList($: any): void {
 
 async function focusFirstRow($: any): Promise<void> {
   const { decisions } = await readAll($)
-  const tab = activeTab(tabsFor(decisions), await readView($))
-  const sections = tab ? sectionsFor(tab) : undefined
-  const first = sections?.needsYou[0] ?? sections?.parked[0] ?? sections?.answered[0]
-  if (first) {
-    await $.ui.focus({ requestId: PANE_ID, key: `row:${first.id}` })
+  const key = firstKey(activeTab(tabsFor(decisions), await readView($)))
+  if (key) {
+    await $.ui.focus({ requestId: PANE_ID, key })
   }
 }
 
@@ -145,7 +148,18 @@ export async function renderPane($: any, e: any): Promise<any> {
     return (
       <Box flexDirection="column">
         {header(ui, width, e.props.isFocused === true, crumb)}
-        {DecisionView($, { ...common, d: decision, view, readyCount: ready.length, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
+        {DecisionView($, { ...common, d: decision, all: decisions, view, readyCount: ready.length, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
+      </Box>
+    )
+  }
+  if (view.screen === 'batch') {
+    const batchTab = activeTab(tabs, view)
+    const rows = batchRows(batchTab?.decisions ?? [])
+
+    return (
+      <Box flexDirection="column">
+        {header(ui, width, e.props.isFocused === true, `${batchTab?.label ?? 'Other'} > assumptions`)}
+        {BatchView($, { ...common, rows, view, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
       </Box>
     )
   }
@@ -162,7 +176,7 @@ export async function renderPane($: any, e: any): Promise<any> {
   return (
     <Box flexDirection="column">
       {top}
-      {ListView($, { ...common, tabs, view: { ...INITIAL_VIEW, ...view, tab: tab?.key }, readyCount: ready.length, unreadable })}
+      {ListView($, { ...common, tabs, view: { ...INITIAL_VIEW, ...view, tab: tab?.key }, readyCount: ready.length, unreadable, rows: e.props.scroll?.bodyRows })}
       {view.notice ? <Text dimColor>{view.notice}</Text> : null}
     </Box>
   )

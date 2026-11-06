@@ -12,7 +12,7 @@ export type PendingQuestion = {
 
 /** What the pane remembers between draws. The decisions themselves live in files, never here. */
 export type PaneView = {
-  screen: 'list' | 'decision' | 'review' | 'thread'
+  screen: 'list' | 'decision' | 'review' | 'thread' | 'batch'
   /** 'g:<group>', 'other' or 'parked' */
   tab?: string
   decisionId?: string
@@ -37,6 +37,14 @@ export type PaneView = {
   revisionIndex?: number
   /** Entries hidden at the newest end, for older/newer paging. */
   threadSkip: number
+  /** The folded section that is open; none when both are folded. */
+  openSection?: 'claudes-call' | 'already-decided'
+  /** 0-based page of the open section's rows. */
+  sectionPage: number
+  /** Batch screen: decision id to the option highlighted and not yet confirmed. */
+  marks: Record<string, number>
+  /** Batch screen: the decision id the ring is on. */
+  batchRow?: string
 }
 
 declare module 'claude-code' {

@@ -157,3 +157,37 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 90 | A reply goes at the end of its question's group (after the question and anything already under it, before the next question), not directly under the question (replaces row 77's placement) **(Claude's call, found in a real session)** | A late main reply after a fork reply landed above it, out of order, and the newest-first window then hid it. |
 | 91 | `f` resends only the open decision's own stuck question; pending entries and waiters are matched by decision as well as by the question's time **(Claude's call, from the review)** | Two decisions can have a question at the same millisecond, and `f` on one thread must not send another's. |
 | 92 | The thread counts 18 fixed rows and 15% more text rows than characters say, and a single entry too long for the room is cut with `…` **(Claude's call, from the review)** | The key row has to stay in view for the hotkeys to work, and words wrap earlier than characters alone suggest. |
+
+## 7 November 2026: workstream 3, kinds and reviews (spec)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 93 | The tool fills the options for go-ahead, assumption, finding and `isTask` decisions, and refuses options on them **(Claude's call)** | Every finding then reads the same, and the keys (D4) can't drift from the labels. |
+| 94 | `isTask` is a flag on a `go-ahead` with options Done and Can't do it, not a sixth kind **(Claude's call)** | The design says "For you to do" isn't a kind. |
+| 95 | The groups inside a tab run Needs you, Claude's call, Already decided, Answered **(Claude's call)** | D8 puts the two folded headings directly under "Needs you"; Answered would otherwise push them down. |
+| 96 | A folded section opens with `enter` on its heading, and opening one folds the other **(Claude's call)** | `enter` acts on the ring everywhere (D3); one open section keeps the list to one page. |
+| 97 | The status line and `decisions_list` count only "Needs you" and tasks **(Claude's call)** | 30 findings in "Claude's call" are not 30 things waiting on the person. |
+| 98 | An open section pages with `n` and `e` when its rows don't fit **(Claude's call)** | A key only works when its Button is wholly in view, so a long list can't push the key row out. |
+| 99 | The assumptions batch is its own screen, reached from one row at the top of "Needs you"; the individual rows stay in the list **(Claude's call)** | The person wants to see the assumptions together to spot the wrong one, and nothing should hide behind a screen. |
+| 100 | On the batch screen `r` marks only unanswered, unmarked rows, then moves the ring to `Confirm` **(Claude's call)** | D3: a key highlights and `enter` confirms; a row already marked Wrong must survive `r`. |
+| 101 | Changing a `ready` decision's answer reopens its `ready` dependents one level deep; `sent`, `parked` and open ones are left **(Claude's call)** | Claude can't un-act on a sent answer, and a cleared answer decided nothing for its own dependents. |
+| 102 | A reopened decision carries `reopenedBy`, shown only while it is open or live, as a dim second line in the list and a line on its screen **(Claude's call)** | Answering again then clears it with no extra write, and the person sees what they had answered. |
+| 103 | Parked rows show the group and reason on a dim second line, not at the right edge **(Claude's call)** | A long reason at the edge cut the title. |
+| 104 | No field or check for a finding title starting with its area **(Claude's call)** | The area can't be told from the text; the rule stays in workstream 4's wording and evals. |
+| 105 | `reopenDependents` is in a new `hooks/dependents.ts`, and the 47-finding fixture is seeded by a script through `addDecision` **(Claude's call, asked in the spec)** | A cycle between `decision.tsx` and `sections.tsx` otherwise; 47 model-made calls add cost, not evidence. |
+| 106 | Section paging uses `n` (toward the end) and `o` (toward the start), the thread's keys, replacing `e` in row 98 **(approved by the coordinator)** | Paging reads the same on every screen. |
+| 107 | `decisions_update` also takes `section`, refused for a `ready` or `sent` decision **(approved by the coordinator)** | Claude can move a finding into "Needs you" once a discussion shows it needs the person. |
+
+## 7 November 2026: workstream 3, kinds and reviews (build)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 108 | `options` and `recommendation` are no longer in the add schema's `required` list; the tool refuses a choice without them, with the reason **(Claude's call)** | Four of the five kinds must not carry options, and a schema that demands them would push Claude to invent some. |
+| 109 | `FIXED_OPTIONS` carries a one-line `changes` for every fixed option, written by the tool **(Claude's call)** | Every finding reads the same and the pane's option lines are never empty. |
+| 110 | The fixed options live in `hooks/kind-options.ts`, re-exported by `hooks/pane/kinds.tsx` **(Claude's call)** | `tool.ts` and the seed script run outside the pane, and `kinds.tsx` imports the pane's state module, which a plain Node run can't load. |
+| 111 | On the batch screen `1` and `2` act on the row the pane last saw the ring on, or the first open row when it has seen none **(Claude's call)** | The digit keys are not tied to a row, so the ring's last known place is the only row there is. |
+| 112 | `enter` on a marked batch row saves that row only and moves the ring to the next open row; `Confirm N` saves all marks and returns to the list **(Claude's call)** | One row at a time is how the person would walk down the list, and `Confirm` is the single step for `r`. |
+| 113 | The fixture is `hooks/pane/review-47.ts` (an exported array), not a JSON file, and holds 12 findings for the person, 24 Claude's call and 11 already decided **(Claude's call; the spec's "6" for the person was an arithmetic slip, 6+24+11 is 41)** | The test kit refuses to load a `.json` import ("not named like code"). Answering six of the twelve gives the 6 / 24 / 11 / 6 split in the spec's mock-up. |
+| 114 | A reopened dependent also moves to "Needs you", whatever section it was in **(Claude's call, found in a real session)** | It stayed under "Claude's call" at first, folded, so a decision that needed the person again was hidden. |
+| 115 | Answered rows give way to a `N more answered` line when the pane is short: 3 while a folded section is open, otherwise what the pane has left **(Claude's call, from the review)** | With 47 findings the answered rows pushed the key row out of view, and the hotkeys only work for Buttons in view. |
+| 116 | "Needs you" pages with `n` and `o` like the folded sections, using the same page number; while a folded section is open it stays on its first page with a line saying how many more need the person and to fold the section to page them **(Claude's call, asked by the coordinator)** | With many findings for the person the key row could leave the pane. The two lists share one page number, so only one is paged at a time. |

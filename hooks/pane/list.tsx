@@ -1,6 +1,7 @@
 import type { PaneView } from '../../types'
 import type { Decision } from '../store'
 import { focusLater, setView } from './decision'
+import { FOLDED, answeredRoom, assumptionsIn, foldAll, foldedRows, isWaiting, movePage, pageOf, pageSize, sectionsFor, toggleSection } from './sections'
 
 export type Tab = { key: string; label: string; decisions: Decision[] }
 
@@ -8,12 +9,14 @@ const HIDDEN: Decision['state'][] = ['superseded', 'withdrawn']
 
 /**
  * One tab per group in the order each first appeared, then "Other" (no group),
- * then "Parked". A parked decision shows only in "Parked".
+ * then "For you to do" (tasks, wherever they came from), then "Parked". A parked
+ * decision shows only in "Parked".
  */
 export function tabsFor(all: Decision[]): Tab[] {
   const groups = new Map<string, Tab>()
   const other: Decision[] = []
   const parked: Decision[] = []
+  const tasks: Decision[] = []
 
   for (const d of [...all].sort((a, b) => a.number - b.number)) {
     if (HIDDEN.includes(d.state)) {
@@ -21,6 +24,8 @@ export function tabsFor(all: Decision[]): Tab[] {
     }
     if (d.state === 'parked') {
       parked.push(d)
+    } else if (d.isTask === true) {
+      tasks.push(d)
     } else if (d.group === undefined || d.group.trim() === '') {
       other.push(d)
     } else {
@@ -33,6 +38,9 @@ export function tabsFor(all: Decision[]): Tab[] {
   if (other.length > 0) {
     tabs.push({ key: 'other', label: 'Other', decisions: other })
   }
+  if (tasks.length > 0) {
+    tabs.push({ key: 'todo', label: 'For you to do', decisions: tasks })
+  }
   if (parked.length > 0) {
     tabs.push({ key: 'parked', label: 'Parked', decisions: parked })
   }
@@ -40,18 +48,11 @@ export function tabsFor(all: Decision[]): Tab[] {
   return tabs
 }
 
-/** "Needs you" is open and live decisions, "Answered" is ready and sent. Parked decisions are the Parked tab's rows. */
-export function sectionsFor(tab: Tab): { needsYou: Decision[]; answered: Decision[]; parked: Decision[] } {
-  return {
-    needsYou: tab.decisions.filter(d => d.state === 'open' || d.state === 'live'),
-    answered: tab.decisions.filter(d => d.state === 'ready' || d.state === 'sent'),
-    parked: tab.decisions.filter(d => d.state === 'parked'),
-  }
-}
+export { sectionsFor }
 
 export function counts(all: Decision[]): { open: number; ready: number; parked: number } {
   return {
-    open: all.filter(d => d.state === 'open' || d.state === 'live').length,
+    open: all.filter(d => isWaiting(d) && d.section === 'needs-you').length,
     ready: all.filter(d => d.state === 'ready').length,
     parked: all.filter(d => d.state === 'parked').length,
   }
@@ -142,10 +143,25 @@ export function rowMeta(d: Decision, width: number): string {
     return isWide ? `${chosenText(d)} · sent` : `${chosenText(d)}  sent`
   }
   if (d.state === 'parked') {
-    return d.parkedReason ?? 'parked'
+    return ''
+  }
+  const what = d.kind === 'question' ? 'question' : `${d.options.length} options`
+
+  return isWide ? [what, d.state, d.blocks ? 'blocking' : ''].filter(Boolean).join(' · ') : ''
+}
+
+/** The dim line under a parked or reopened row, or undefined. The Parked tab adds the group, since it holds every group's parked decisions. */
+export function secondLine(d: Decision, isParkedTab: boolean): string | undefined {
+  if (d.state === 'parked') {
+    const reason = d.parkedReason ?? 'parked'
+
+    return isParkedTab ? `${d.group ?? 'Other'} · ${reason}` : `parked: ${reason}`
+  }
+  if (d.reopenedBy !== undefined && isWaiting(d)) {
+    return `reopened because ${d.reopenedBy.id} changed`
   }
 
-  return isWide ? `${d.options.length} options · ${d.state}` : ''
+  return undefined
 }
 
 /** One row, padded so the meta sits at the right edge. */
@@ -164,6 +180,8 @@ type ListProps = {
   width: number
   readyCount: number
   unreadable: number
+  /** The pane's rows (`scroll.bodyRows`), so an open section can be paged to fit. */
+  rows?: number
   onSend: () => void
   onHide: () => void
 }
@@ -177,17 +195,73 @@ async function openDecision($: any, id: string): Promise<void> {
 /** The tab row and the open tab's decisions. Returns an element tree. */
 export function ListView($: any, props: ListProps): any {
   const { ui, tabs, view, width, readyCount, unreadable, onSend, onHide } = props
+  const rows = props.rows ?? 30
   const { Box, Text, Button } = ui
   const tab = activeTab(tabs, view)
-  const sections = tab ? sectionsFor(tab) : { needsYou: [], answered: [], parked: [] }
-  const first = sections.needsYou[0] ?? sections.parked[0] ?? sections.answered[0]
+  const sections = tab ? sectionsFor(tab) : { needsYou: [], claudesCall: [], alreadyDecided: [], answered: [], parked: [] }
+  const first = sections.needsYou[0] ?? sections.parked[0] ?? (sections.claudesCall.length + sections.alreadyDecided.length > 0 ? undefined : sections.answered[0])
+  const isParkedTab = tab?.key === 'parked'
+  const batch = tab && !isParkedTab ? assumptionsIn(tab) : []
   const tabRow = visibleTabs(tabs, tab?.key, width)
 
-  const row = (d: Decision) => (
-    <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d.id)}>
-      {d.state === 'sent' ? <Text dimColor>{rowText(d, width)}</Text> : rowText(d, width)}
-    </Button>
-  )
+  const row = (d: Decision) => {
+    const second = secondLine(d, isParkedTab)
+
+    return (
+      <Box key={`box:${d.id}`} flexDirection="column">
+        <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d.id)}>
+          {d.state === 'sent' ? <Text dimColor>{rowText(d, width)}</Text> : rowText(d, width)}
+        </Button>
+        {second !== undefined ? <Text dimColor>{truncate(`     ${second}`, width - 2)}</Text> : null}
+      </Box>
+    )
+  }
+  const needsReserve = 13 + (view.openSection !== undefined ? 5 : 0)
+  const needsSize = pageSize(rows, needsReserve)
+  const needsPaged = sections.needsYou.length > needsSize
+  const needsPage = pageOf(sections.needsYou, view.openSection === undefined ? view.sectionPage : 0, needsSize)
+  const needsShown = needsPaged ? needsPage.rows : sections.needsYou
+  const needsYouLines = needsShown.reduce((n, d) => n + (secondLine(d, isParkedTab) === undefined ? 1 : 2), 0)
+  const answeredShown = sections.answered.slice(0, answeredRoom(rows, needsYouLines, view.openSection !== undefined))
+  const answeredHidden = sections.answered.length - answeredShown.length
+  const fixedRows = 9 + needsYouLines + (answeredShown.length === 0 ? 0 : answeredShown.length + 1 + (answeredHidden > 0 ? 1 : 0)) + (batch.length >= 2 ? 1 : 0)
+  const size = pageSize(rows, fixedRows)
+  const foldedHeading = (f: (typeof FOLDED)[number]) => {
+    const all = tab ? foldedRows(tab, f.section) : []
+    if (all.length === 0) {
+      return null
+    }
+    const isOpen = view.openSection === f.section
+    const page = pageOf(all, view.sectionPage, size)
+
+    return (
+      <Box key={`fold:${f.section}`} flexDirection="column">
+        <Button
+          key={`section:${f.section}`}
+          plain
+          autoFocus={first === undefined && f === FOLDED.find(x => tab && foldedRows(tab, x.section).length > 0) ? true : undefined}
+          onPress={() => setView($, v => toggleSection(v, f.section))}
+        >
+          <Text bold>{`${isOpen ? '▾' : '▸'} ${f.name} (${all.length})`}</Text>
+        </Button>
+        {isOpen ? page.rows.map(row) : null}
+        {isOpen && (page.hasEarlier || page.hasNext) ? (
+          <Box>
+            {page.hasEarlier ? (
+              <Button key="o" hotkey="o" plain onPress={() => setView($, v => movePage(v, -1, all.length, size))}>
+                {'o earlier  '}
+              </Button>
+            ) : null}
+            {page.hasNext ? (
+              <Button key="n" hotkey="n" plain onPress={() => setView($, v => movePage(v, 1, all.length, size))}>
+                {`n next ${Math.min(size, page.remaining)} more`}
+              </Button>
+            ) : null}
+          </Box>
+        ) : null}
+      </Box>
+    )
+  }
 
   if (tabs.length === 0) {
     return (
@@ -208,7 +282,7 @@ export function ListView($: any, props: ListProps): any {
           <Button
             key={`tab:${t.key}`}
             plain
-            onPress={() => setView($, v => ({ ...v, tab: t.key }))}
+            onPress={() => setView($, v => ({ ...foldAll(v), tab: t.key }))}
           >
             {t.key === tab?.key ? <Text bold>{`${truncate(t.label, 14)} `}</Text> : <Text dimColor>{`${truncate(t.label, 14)} `}</Text>}
           </Button>
@@ -216,16 +290,47 @@ export function ListView($: any, props: ListProps): any {
         {tabRow.hasRight ? <Text dimColor>›</Text> : null}
       </Box>
       <Text dimColor>{'-'.repeat(Math.max(1, width))}</Text>
-      {sections.needsYou.length > 0 ? <Text bold>{`Needs you (${sections.needsYou.length})`}</Text> : null}
-      {sections.needsYou.map(row)}
+      {isParkedTab ? null : <Text bold>{`Needs you (${sections.needsYou.length})`}</Text>}
+      {batch.length >= 2 ? (
+        <Button
+          key="batch"
+          plain
+          onPress={async () => {
+            await setView($, v => ({ ...v, screen: 'batch', marks: {}, batchRow: undefined, notice: undefined }))
+            focusLater($, `batch:${batch[0]!.id}`)
+          }}
+        >
+          {`Check ${batch.length} assumptions together`}
+        </Button>
+      ) : null}
+      {needsShown.map(row)}
+      {needsPaged && view.openSection === undefined && (needsPage.hasEarlier || needsPage.hasNext) ? (
+        <Box>
+          {needsPage.hasEarlier ? (
+            <Button key="o" hotkey="o" plain onPress={() => setView($, v => movePage(v, -1, sections.needsYou.length, needsSize))}>
+              {'o earlier  '}
+            </Button>
+          ) : null}
+          {needsPage.hasNext ? (
+            <Button key="n" hotkey="n" plain onPress={() => setView($, v => movePage(v, 1, sections.needsYou.length, needsSize))}>
+              {`n next ${Math.min(needsSize, needsPage.remaining)} more`}
+            </Button>
+          ) : null}
+        </Box>
+      ) : null}
+      {needsPaged && view.openSection !== undefined ? (
+        <Text dimColor>{truncate(`     ${sections.needsYou.length - needsShown.length} more need you: fold the open section to page them`, width - 2)}</Text>
+      ) : null}
+      {FOLDED.map(foldedHeading)}
       {sections.parked.length > 0 ? <Text bold>{`Parked (${sections.parked.length})`}</Text> : null}
       {sections.parked.map(row)}
       {sections.answered.length > 0 ? <Text bold>{`Answered (${sections.answered.length})`}</Text> : null}
-      {sections.answered.map(row)}
+      {answeredShown.map(row)}
+      {answeredHidden > 0 ? <Text dimColor>{`     ${answeredHidden} more answered`}</Text> : null}
       {unreadable > 0 ? <Text dimColor>{`${unreadable} decision file${unreadable === 1 ? '' : 's'} couldn't be read`}</Text> : null}
       <Text> </Text>
       <Box>
-        <Button key="t" hotkey="t" plain onPress={() => setView($, v => ({ ...v, tab: nextTab(tabs, tab?.key) }))}>
+        <Button key="t" hotkey="t" plain onPress={() => setView($, v => ({ ...foldAll(v), tab: nextTab(tabs, tab?.key) }))}>
           {'next tab  '}
         </Button>
         {readyCount > 0 ? (
