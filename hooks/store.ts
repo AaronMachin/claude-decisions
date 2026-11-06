@@ -60,6 +60,8 @@ export type Decision = {
   reopenedBy?: { id: string; at: string; was?: Answer }
   state: State
   parkedReason?: string
+  /** When it was parked; unparking removes it. */
+  parkedAt?: string
   answer?: Answer
   thread: ThreadEntry[]
   revisions: Revision[]

@@ -152,18 +152,18 @@ export function rowMeta(d: Decision, width: number): string {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-/** "6 Nov" from a stored time, or undefined when it is not a date. */
+/** "6 Nov" (the person's local day) from a stored time, or undefined when it is not a date. */
 export function parkedOn(at: string): string | undefined {
   const date = new Date(at)
 
-  return Number.isNaN(date.getTime()) ? undefined : `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}`
+  return Number.isNaN(date.getTime()) ? undefined : `${date.getDate()} ${MONTHS[date.getMonth()]}`
 }
 
 /** The dim line under a parked or reopened row, or undefined. The Parked tab adds the group, since it holds every group's parked decisions. */
 export function secondLine(d: Decision, isParkedTab: boolean): string | undefined {
   if (d.state === 'parked') {
     const reason = d.parkedReason ?? 'parked'
-    const on = parkedOn(d.updatedAt)
+    const on = d.parkedAt === undefined ? undefined : parkedOn(d.parkedAt)
     const when = on === undefined ? '' : ` · parked ${on}`
 
     return isParkedTab ? `${d.group ?? 'Other'} · ${reason}${when}` : `parked: ${reason}${when}`

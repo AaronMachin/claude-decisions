@@ -367,8 +367,10 @@ test('any kind parks with a reason and shows it back', async () => {
   expect(await parkDecision(store, d, 'waiting on the product owner')).toBe(true)
   const parked = (await readOne(store, d.id))!
   expect([parked.state, parked.parkedReason]).toEqual(['parked', 'waiting on the product owner'])
+  expect(parked.parkedAt).toBeDefined()
   await unparkDecision(store, parked)
   expect((await readOne(store, d.id))!.state).toBe('open')
+  expect((await readOne(store, d.id))!.parkedAt).toBeUndefined()
 })
 
 test('unparking leaves the decision in the section it had', async () => {

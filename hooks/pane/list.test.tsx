@@ -250,7 +250,7 @@ test('parked and reopened rows carry a dim second line, with the group in the Pa
   const parked = make({ state: 'parked', parkedReason: 'waiting on the product owner', group: 'Search review' })
   expect(secondLine(parked, true)).toBe('Search review · waiting on the product owner')
   expect(secondLine(parked, false)).toBe('parked: waiting on the product owner')
-  const dated = { ...parked, updatedAt: '2026-11-06T09:30:00.000Z' }
+  const dated = { ...parked, parkedAt: '2026-11-06T09:30:00', updatedAt: '2026-11-09T09:30:00' }
   expect(secondLine(dated, true)).toBe('Search review · waiting on the product owner · parked 6 Nov')
   expect(secondLine(dated, false)).toBe('parked: waiting on the product owner · parked 6 Nov')
   const reopened = make({ reopenedBy: { id: 'd3', at: 't' } })

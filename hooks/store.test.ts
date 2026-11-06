@@ -173,3 +173,26 @@ test('the store folder is worked out with git once per working folder, so a redr
   await readAll($)
   expect(gitRuns).toBe(1)
 })
+
+test('a git call that fails first is not remembered, so the next call finds the repository folder', async () => {
+  let calls = 0
+  const $: StoreCtx = {
+    env: { get: async () => '/home/cache' },
+    session: { cwd: async () => '/work/cache-retry' },
+    process: {
+      run: async () => {
+        calls += 1
+        if (calls === 1) {
+          throw new Error('aborted')
+        }
+        return { exitCode: 0, stdout: '/work/cache-retry/.git\n' }
+      },
+    },
+    fs: { read: async () => '', write: async () => undefined, exists: async () => false, list: async () => [] },
+  }
+  await expect(storeDir($)).rejects.toThrow('aborted')
+  const dir = await storeDir($)
+  expect(dir).toBe(`/home/cache/.claude/decisions/${await repoKey('/work/cache-retry/.git')}`)
+  expect(await storeDir($)).toBe(dir)
+  expect(calls).toBe(2)
+})
