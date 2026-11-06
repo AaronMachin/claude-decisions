@@ -100,3 +100,70 @@ export async function askModel(
     return { ok: false, reason: error instanceof Error ? error.message : String(error) }
   }
 }
+
+/** Names this load of the mod; a pending question from another load has no one left to answer it. */
+export const RUN: string = Math.random().toString(36).slice(2)
+
+export type Waiter = { decisionId: string; asked: string; sent: string; turnId?: string; late?: boolean }
+
+const waiters: Waiter[] = []
+let busy = false
+const SENT_MARK = 'plugin sent "On decision'
+export const PLACEHOLDER = '(no text, see the line above)'
+
+/** What the main session is sent: the number and title lead, so the chat row reads as about that decision. */
+export function sentText(d: { number: number; title: string }, question: string): string {
+  return `On decision ${d.number} · ${d.title}: ${question}`
+}
+
+export function addWaiter(w: Waiter): void {
+  waiters.push(w)
+}
+
+/** The person sent that question to the fork; its main reply, when it comes, is still stored. */
+export function markLate(asked: string): void {
+  const w = waiters.find(x => x.asked === asked)
+  if (w) {
+    w.late = true
+  }
+}
+
+export function isBusy(): boolean {
+  return busy
+}
+
+/** A main-loop `turn.start`. The reply turn is the one whose text includes the engine's "plugin sent" framing and our sent text. */
+export function routeStart(e: { text: string; turnId: string; agentId?: string }): Waiter | undefined {
+  if (e.agentId !== undefined) {
+    return undefined
+  }
+  busy = true
+  if (!e.text.includes(SENT_MARK)) {
+    return undefined
+  }
+  const open = waiters.filter(w => w.turnId === undefined)
+  const found =
+    open.find(w => e.text.includes(w.sent)) ??
+    open.find(w => e.text.includes(w.sent.slice(0, w.sent.indexOf(':') + 1))) ??
+    open[0]
+  if (found) {
+    found.turnId = e.turnId
+  }
+
+  return found
+}
+
+/** A `turn.complete`: the reply only for the turn `routeStart` claimed, never for whichever turn ends next. */
+export function routeComplete(e: { turnId: string; agentId?: string; answer: string }): { waiter: Waiter; text: string } | undefined {
+  if (e.agentId !== undefined) {
+    return undefined
+  }
+  busy = false
+  const at = waiters.findIndex(w => w.turnId === e.turnId)
+  if (at === -1) {
+    return undefined
+  }
+  const [waiter] = waiters.splice(at, 1)
+
+  return { waiter: waiter!, text: e.answer.trim() === '' ? PLACEHOLDER : e.answer }
+}

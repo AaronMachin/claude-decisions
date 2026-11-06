@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { askModel, contextFor, markAnswered, recordQuestion, recordReply } from './discuss'
+import { PLACEHOLDER, addWaiter, askModel, isBusy, markLate, routeComplete, routeStart, sentText, contextFor, markAnswered, recordQuestion, recordReply } from './discuss'
 import { buildAnswerPrompt } from './send'
 import { create, readOne, write } from './store'
 import type { Decision, StoreCtx } from './store'
@@ -136,4 +136,45 @@ test('an unanswered or rejected model call is a reason, not a throw', async () =
   expect(await askModel(none, 'quick', d, 'q')).toEqual({ ok: false, reason: 'api-error' })
   const boom = { model: { fork: async () => { throw new Error('aborted') }, complete: async () => ({}) } }
   expect(await askModel(boom, 'fork', d, 'q')).toEqual({ ok: false, reason: 'aborted' })
+})
+
+const framed = (sent: string) => `The decisions plugin sent "${sent}"`
+
+test('the reply is the sent turn, not the turn that happens to end first', () => {
+  const sent = sentText({ number: 1, title: 'Where it lives' }, 'Does CI find it?')
+  addWaiter({ decisionId: 'd1', asked: 'a1', sent })
+  expect(routeStart({ text: 'read the eight files', turnId: 't1' })).toBeUndefined()
+  expect(isBusy()).toBe(true)
+  expect(routeStart({ text: framed(sent), turnId: 't2' })?.asked).toBe('a1')
+  expect(routeComplete({ turnId: 't1', answer: 'the earlier task' })).toBeUndefined()
+  expect(routeComplete({ turnId: 't2', answer: 'Yes.' })).toMatchObject({ text: 'Yes.', waiter: { asked: 'a1' } })
+  expect(isBusy()).toBe(false)
+})
+
+test('two queued questions each get their own reply, whichever turn completes first', () => {
+  const s1 = sentText({ number: 2, title: 'T' }, 'first?')
+  const s2 = sentText({ number: 2, title: 'T' }, 'second?')
+  addWaiter({ decisionId: 'd2', asked: 'b1', sent: s1 })
+  addWaiter({ decisionId: 'd2', asked: 'b2', sent: s2 })
+  expect(routeStart({ text: framed(s1), turnId: 'u1' })?.asked).toBe('b1')
+  expect(routeStart({ text: framed(s2), turnId: 'u2' })?.asked).toBe('b2')
+  expect(routeComplete({ turnId: 'u2', answer: 'two' })?.waiter.asked).toBe('b2')
+  expect(routeComplete({ turnId: 'u1', answer: 'one' })?.waiter.asked).toBe('b1')
+})
+
+test('a subagent turn is ignored, and a question that contains quotes, newlines and On decision still matches', () => {
+  const sent = sentText({ number: 3, title: 'T' }, 'He said "On decision 9"\nwhat now?')
+  addWaiter({ decisionId: 'd3', asked: 'c1', sent })
+  expect(routeStart({ text: framed(sent), turnId: 'v0', agentId: 'agent1' })).toBeUndefined()
+  expect(routeComplete({ turnId: 'v0', agentId: 'agent1', answer: 'x' })).toBeUndefined()
+  expect(routeStart({ text: framed(sent), turnId: 'v1' })?.asked).toBe('c1')
+  expect(routeComplete({ turnId: 'v1', answer: '   ' })?.text).toBe(PLACEHOLDER)
+})
+
+test('a waiter marked late still returns its reply, flagged late', () => {
+  const sent = sentText({ number: 4, title: 'T' }, 'q?')
+  addWaiter({ decisionId: 'd4', asked: 'e1', sent })
+  markLate('e1')
+  routeStart({ text: framed(sent), turnId: 'w1' })
+  expect(routeComplete({ turnId: 'w1', answer: 'late one' })?.waiter.late).toBe(true)
 })
