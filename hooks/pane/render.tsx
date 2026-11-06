@@ -91,7 +91,7 @@ async function confirm($: any, ids: string[]): Promise<void> {
 
 function header(ui: any, width: number, isFocused: boolean, crumb?: string): any {
   const { Box, Text } = ui
-  const state = isFocused ? 'keys on' : 'keys off: /decisions'
+  const state = isFocused ? 'keys on' : 'keys off'
   const pad = Math.max(1, width - 'Decisions'.length - state.length)
 
   return (
@@ -101,6 +101,7 @@ function header(ui: any, width: number, isFocused: boolean, crumb?: string): any
         <Text>{' '.repeat(pad)}</Text>
         {isFocused ? <Text bold>{state}</Text> : <Text dimColor>{state}</Text>}
       </Box>
+      {isFocused ? null : <Text dimColor>Press the pane focus key (ctrl+x tab unless you moved it) to use it with a draft kept, or run /decisions with an empty prompt.</Text>}
       {crumb ? <Text dimColor>{truncate(crumb, width)}</Text> : null}
     </Box>
   )
