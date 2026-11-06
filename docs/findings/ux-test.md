@@ -63,3 +63,36 @@ Before this test the wording on option screens, the Send screen and the pane hea
 ## Does it serve the one line
 
 Partly. Every task was finished by someone, so the pane is usable, but nobody found their way without help on tasks 1, 2 and 8, and tasks 1 and 3 can only be done today by throwing away the draft or knowing the focus key. The pane isn't yet intuitive for someone who sits down to it cold, most at the narrow and main-screen layouts, where the keys can't be seen or pressed at all on tall decisions. That is why finding 1 stays partly open and findings 2, 3 and 6 are logged for Aaron.
+
+## Replay on the made-up Pantry sessions
+
+The harness (`tests/replay/`) runs headless (`claude -p`, Sonnet, one run per session, two prompts each) and prints counts only. The first runs hung on a prompt where Claude reached for Edit (a headless run with no permission mode waits); the harness now runs with `--permission-mode dontAsk` and read-only tools plus git. Headless runs show the add tool, the store and the session note working, but not the nudge, so "would nudge" is what the detector says about the reply.
+
+| Session | Turns | Questions in chat | Decisions added | Detector agrees |
+| --- | --- | --- | --- | --- |
+| plan-sharing | 2 | 0 | 3 | 2/2 |
+| refactor-forks | 2 | 1 | 1 | 2/2 |
+| review-commit | 2 | 0 | 0 | 2/2 |
+| vague-feature | 2 | 0 | 8 | 2/2 |
+| what-next | 2 | 0 | 1 | 2/2 |
+| total | 10 | 1 | 13 | 10/10 |
+
+The one question in chat ended a refactor turn ("Do you want it fixed in the same change?", after adding one decision), so the detector flagged it by the last-sentence rule. The two guesses from workstream 4 (the offer exemption and the mid-text "should I" rule) were not exercised: no Pantry reply contained an offer to carry on or a mid-text question, so I can neither confirm nor fix them here. The private run on real sessions is the test. review-commit added no decisions in either turn (it found the one defect and reported it as a statement with no question, which is a miss against "findings go in the pane" but not a question in chat).
+
+## Evals
+
+Five cases, `--eval-dir evals`, Sonnet, one run each (the engine still picks up the Phase 1 cases under `spikes/`, which score separately and are ignored here). Graders: decision-added, no-final-question, no-question-list.
+
+| Case | Before the description's REVIEWS paragraph (merged main) | After |
+| --- | --- | --- |
+| ask-me-first | 1.00 | 1.00 |
+| find-problems | 0.67 (0 decisions added) | 1.00 |
+| plan-sharing | 1.00 | 1.00 |
+| review-last-commit | 0.67 (0 decisions added) | 1.00 |
+| what-next | 1.00 | 1.00 |
+
+Three suite runs in all (merged main; the two review cases after the change; all five after). One run per case is a small sample: workstream 4 saw what-next miss once in three, and the replay's review-commit session added no decision for its commit review (a different prompt from the eval's).
+
+## Not seen
+
+The post-compaction note and the system-prompt section can't be seen on this machine, because a managed security plugin skips `prompt.compose`, `prompt.context` and `session.compact`; I did not retry. From the unseen list: two-digit option keys (`1` then `0`), the Image uploads tab paging and `n`/`o` paging stayed unreached by the testers; the seeded store held them (a 12-option choice, 32 findings needing the person) but nobody pressed them. `session.compact` can't be tested through `register.tsx` because the test kit hands the hook an argument without a messages list (decision 146).
