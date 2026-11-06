@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 
 import type { PaneView } from '../../types'
-import { write } from '../store'
+import { readOne, write } from '../store'
 import type { Decision, StoreCtx } from '../store'
 
 export const PANE_ID = 'decisions'
@@ -115,7 +115,7 @@ export async function chooseOption(store: StoreCtx, d: Decision, option: number)
     return undefined
   }
   const next: Decision = {
-    ...d,
+    ...((await readOne(store, d.id)) ?? d),
     state: 'ready',
     answer: { option, answeredAt: new Date().toISOString() },
   }
@@ -128,13 +128,13 @@ export async function parkDecision(store: StoreCtx, d: Decision, reason: string)
   if (reason.trim() === '') {
     return false
   }
-  await write(store, { ...d, state: 'parked', parkedReason: reason.trim() })
+  await write(store, { ...((await readOne(store, d.id)) ?? d), state: 'parked', parkedReason: reason.trim() })
 
   return true
 }
 
 export async function unparkDecision(store: StoreCtx, d: Decision): Promise<void> {
-  const { parkedReason: _gone, ...rest } = d
+  const { parkedReason: _gone, ...rest } = (await readOne(store, d.id)) ?? d
   await write(store, { ...rest, state: 'open' })
 }
 
