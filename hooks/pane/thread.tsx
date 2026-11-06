@@ -241,6 +241,7 @@ export function ThreadView($: any, props: Props): any {
           </Box>
         ),
       )}
+      {d.thread.length === 0 ? <Text dimColor>No discussion yet. Ask a question below.</Text> : null}
       {newerHidden > 0 ? <Text dimColor>{`${newerHidden} newer ${newerHidden === 1 ? 'entry' : 'entries'} · n`}</Text> : null}
       {view.notice ? <Text dimColor>{view.notice}</Text> : null}
       <Text dimColor>{'-'.repeat(Math.max(1, width))}</Text>
