@@ -82,3 +82,13 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 40 | The build runs autonomously, with sensible commits at each step, and keeps this document and `CONTRIBUTING.md` up to date | Aaron asked for it to carry on without stopping at each gate. |
 | 41 | The repository root is the mod; `spikes/` stays as reference **(Claude's call)** | One install path, matching the README's `/plugin install` commands. |
 | 42 | Every task's commit is pushed to GitHub straight away; `main` is pushed after each merge. Replaces the "pushed when a phase ends" part of 38 | Aaron wants the work visible as it happens. |
+
+## 6 November 2026: after spike 0 (keys, append, fork, storage)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 43 | Digits move a highlight with `$.ui.focus` and `enter` presses the highlighted option; an `autoFocus` Discuss button stands for "nothing highlighted" | The spike showed this works in a real session; `enter` on nothing reaches no handler. |
+| 44 | A second digit within 1000 ms extends the number (`1` then `0` is 10) **(Claude's call)** | 473 ms worked in the spike; a person needs to try what feels right. |
+| 45 | The fork stays in v1 even though it can't read project files; its replies say so, and questions about code go to the main session **(Claude's call)** | The side agent, the one mode that reads files, leaked into the main chat (27). |
+| 46 | The rules note is appended to the conversation at session start and on the first prompt after `/clear`, as well as living in the tool description | The spike saw an appended note reach Claude where the system-prompt hooks didn't. |
+| 47 | Decisions are keyed by `git rev-parse --git-common-dir`, falling back to the folder path outside a git repository **(Claude's call for the fallback)** | Worktrees of one repository share the key; the spike confirmed it. |
