@@ -1,7 +1,23 @@
 import { expect, test } from 'claude-code/testing'
 
-import { NUDGE, answerAskUserQuestion, isQuestionsInChat, nudgeAfterTurn, refuseSubagent, turnText } from './integrate'
-import { readAll } from './store'
+import {
+  COMPACT_INSTRUCTION,
+  NOTE,
+  NUDGE,
+  RULES_TEXT,
+  RULE_PHRASES,
+  addContextBlock,
+  addRulesSection,
+  answerAskUserQuestion,
+  isQuestionsInChat,
+  noteAtSessionStart,
+  noteOnSubmit,
+  nudgeAfterTurn,
+  onCompact,
+  refuseSubagent,
+  turnText,
+} from './integrate'
+import { create, readAll } from './store'
 import type { StoreCtx } from './store'
 
 type Message = { role: 'user' | 'assistant'; text: string; toolResults?: unknown[] }
@@ -178,4 +194,96 @@ test('a store that cannot be written answers with the one deny that lets Claude 
 test('a call from a subagent is refused with a reason to report to the main session; the main session passes', () => {
   expect((refuseSubagent({ agentId: 'a1' }) as any).deny).toContain('main session')
   expect(refuseSubagent({})).toBeUndefined()
+})
+
+// The system prompt section, the open list, the session note and compaction
+
+
+test('the rules section is added once as a session section, with identical text every time and every rule phrase', () => {
+  const base = { sections: [{ id: 'intro', text: 'x', scope: 'shared' as const }] }
+  const first = addRulesSection(base)
+  const second = addRulesSection(base)
+
+  expect(first.sections.map(s => s.id)).toEqual(['intro', 'decisions:rules'])
+  expect(first.sections[1].scope).toBe('session')
+  expect(first.sections[1].text).toBe(second.sections[1].text)
+  expect(addRulesSection(first).sections).toHaveLength(2)
+  for (const phrase of RULE_PHRASES) {
+    expect(RULES_TEXT).toContain(phrase)
+  }
+})
+
+test('the open list is added as a context block that says to call decisions_list for the current one', async () => {
+  const $ = fakeStore()
+  const empty = await addContextBlock($, { blocks: [{ name: 'claudeMd', text: 'c' }] })
+  expect(empty.blocks.map(b => b.name)).toEqual(['claudeMd', 'decisions'])
+  expect(empty.blocks[1].text).toContain('No open decisions')
+  await create($, { group: 'G', kind: 'choice', title: 'Where it lives', scenario: 's', options: [{ id: 1, label: 'Root' }], sources: [], dependsOn: [] })
+  const full = await addContextBlock($, { blocks: [] })
+  expect(full.blocks[0].text).toContain('Where it lives')
+  expect(full.blocks[0].text).toContain('decisions_list')
+})
+
+test('the note is appended at session start unless the conversation already holds it', async () => {
+  const fresh = fakeSession([])
+  await noteAtSessionStart(fresh.$)
+  expect(fresh.appended).toHaveLength(1)
+  expect(fresh.appended[0].message.content[0].text).toBe(NOTE)
+
+  const held = fakeSession([{ role: 'user', text: NOTE }])
+  await noteAtSessionStart(held.$)
+  expect(held.appended).toHaveLength(0)
+})
+
+test('after /clear the first prompt appends the note; a later prompt does not', async () => {
+  const cleared = fakeSession([])
+  ;(cleared.$.session as any).turns = async () => 0
+  await noteOnSubmit(cleared.$)
+  expect(cleared.appended).toHaveLength(1)
+
+  const later = fakeSession([{ role: 'user', text: 'hi' }])
+  ;(later.$.session as any).turns = async () => 5
+  await noteOnSubmit(later.$)
+  expect(later.appended).toHaveLength(0)
+
+  const held = fakeSession([{ role: 'user', text: NOTE }])
+  ;(held.$.session as any).turns = async () => 1
+  await noteOnSubmit(held.$)
+  expect(held.appended).toHaveLength(0)
+})
+
+test('a compaction asks the summary to keep the open decisions, and the next prompt appends the note once', async () => {
+  const seen: any[] = []
+  const next = async (e: any) => {
+    seen.push(e)
+
+    return { messages: [] }
+  }
+  await onCompact({ trigger: 'manual', instructions: 'the plan', messages: [] } as any, next)
+  expect(seen[0].instructions).toContain('the plan')
+  expect(seen[0].instructions).toContain(COMPACT_INSTRUCTION)
+
+  const after = fakeSession([{ role: 'user', text: 'Summary of the conversation' }])
+  ;(after.$.session as any).turns = async () => 9
+  await noteOnSubmit(after.$)
+  await noteOnSubmit(after.$)
+  expect(after.appended).toHaveLength(1)
+})
+
+test('a skipped, precompute or subagent compaction passes through and sets no flag', async () => {
+  const passes: any[] = []
+  const skip = async (e: any) => {
+    passes.push(e)
+
+    return { skip: 'off' }
+  }
+  await onCompact({ trigger: 'manual', messages: [] } as any, skip)
+  await onCompact({ trigger: 'precompute', messages: [] } as any, async (e: any) => ({ messages: [], e }))
+  await onCompact({ trigger: 'auto', agentId: 'a1', messages: [] } as any, async (e: any) => ({ messages: [], e }))
+  expect(passes[0].instructions).toContain(COMPACT_INSTRUCTION)
+
+  const quiet = fakeSession([{ role: 'user', text: 'hi' }])
+  ;(quiet.$.session as any).turns = async () => 9
+  await noteOnSubmit(quiet.$)
+  expect(quiet.appended).toHaveLength(0)
 })

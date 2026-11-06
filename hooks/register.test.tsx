@@ -370,3 +370,16 @@ test('AskUserQuestion lands in the pane and is answered with the object shape', 
   const refused = await $.tool.call({ tool: 'AskUserQuestion', agentId: 'a1', questions })
   expect(JSON.stringify(refused)).toContain('Only the main session adds decisions')
 })
+
+test('the compose and context hooks add the rules section and the open list', async ($, on) => {
+  engine(on)
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'x', scope: 'shared' }] }))
+  on('prompt.context', () => ({ blocks: [] }))
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const input = { model: 'm', promptModel: 'm', surfaces: [], tools: [], outputStyle: null, traits: [] }
+  const composed = await $.prompt.compose(input)
+  expect(composed.sections.map((s: any) => s.id)).toEqual(['intro', 'decisions:rules'])
+  const again = await $.prompt.compose(input)
+  expect(again.sections[1].text).toBe(composed.sections[1].text)
+})

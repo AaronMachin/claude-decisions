@@ -2,7 +2,7 @@ import type { Register } from 'claude-code'
 
 import { changed, followFocus, openFocused, openForNewDecision, refreshStatus, renderPane } from './pane/render'
 import { configure, onTurnComplete, onTurnStart } from './discuss'
-import { answerAskUserQuestion, nudgeAfterTurn, refuseSubagent } from './integrate'
+import { addContextBlock, addRulesSection, answerAskUserQuestion, noteAtSessionStart, noteOnSubmit, nudgeAfterTurn, onCompact, refuseSubagent } from './integrate'
 import { PANE_ID } from './pane/decision'
 import { ADD_TOOL, LIST_TOOL, UPDATE_TOOL, addDecision, listDecisions, registerTools, updateDecision } from './tool'
 
@@ -13,6 +13,7 @@ export const register: Register = (on, options) => {
     await $.command.register({ name: 'decisions', description: 'Open the decisions pane' })
     await registerTools($)
     await refreshStatus($).catch(() => undefined)
+    await noteAtSessionStart($).catch(() => undefined)
 
     return next(e)
   })
@@ -59,6 +60,22 @@ export const register: Register = (on, options) => {
 
     return answer
   }).catch(() => ({ deny: 'The decisions pane could not be written. Ask in chat this once.' }))
+
+  on('prompt.compose', async ($, e, next) => addRulesSection(await next(e)))
+
+  on('prompt.context', async ($, e, next) => {
+    const context = await next(e)
+
+    return addContextBlock($, context).catch(() => context)
+  })
+
+  on('prompt.submit', async ($, e, next) => {
+    await noteOnSubmit($).catch(() => undefined)
+
+    return next(e)
+  })
+
+  on('session.compact', (_$, e, next) => onCompact(e, next))
 
   on('turn.start', ($, e, next) => onTurnStart($, e, next))
 
