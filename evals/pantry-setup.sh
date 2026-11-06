@@ -70,3 +70,6 @@ open("app.py", "w").write(text)
 EOT
 git add -A
 git commit -q -m "Show times in one place"
+
+# Claude's git can be blocked inside the eval sandbox, so the last commit's diff is left beside the code to read.
+git show HEAD > last-commit.diff

@@ -325,5 +325,6 @@ test('the add description stays at or under 4,000 characters and carries every r
     expect(ADD_DESCRIPTION).toContain(phrase)
   }
   expect(ADD_DESCRIPTION).toMatch(/after \/compact or \/clear/)
+  expect(ADD_DESCRIPTION).toMatch(/review finding/)
   expect(UPDATE_DESCRIPTION).toMatch(/subagent/)
 })

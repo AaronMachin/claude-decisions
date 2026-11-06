@@ -171,7 +171,7 @@ export async function answerAskUserQuestion(
 
 /** The short form of the rules, for the system prompt. Built once, so every call returns the same text. */
 export const RULES_TEXT = [
-  'The decisions mod is on. Put every question, decision, assumption and go-ahead for the person in the decisions pane with decisions_add, never as a list or a question in chat, and never with AskUserQuestion.',
+  'The decisions mod is on. Put every question, decision, assumption, go-ahead and review finding for the person in the decisions pane with decisions_add, never as a list or a question in chat, and never with AskUserQuestion.',
   'Write one line in chat saying what you added, and keep working on anything that does not depend on an open decision.',
   'Give every decision a concrete scenario and a recommendation with its reason, and a plain title; a finding\'s title starts with the area it is about.',
   'Call decisions_list at the start of a conversation and after /compact or /clear, and never ask again what is already open, answered or parked.',
