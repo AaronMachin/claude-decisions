@@ -19,7 +19,7 @@ Decisions are kept per repository, so start Claude Code in a git project.
 
 ## Using it
 
-When Claude has something for you to decide, it adds it to the pane and writes one line in the chat. The pane opens beside the transcript (fullscreen at 110 columns or wider) or above the prompt (narrower, or tmux's main-screen layout), without taking the keys from the prompt. Tabs along the top are where the decisions came from (a plan, a review, Parked). Inside a tab, "Needs you" is open, and "Claude's call" and "Already decided" are folded with counts.
+When Claude has something for you to decide, it adds it to the pane and writes one line in the chat. The pane opens beside the transcript (fullscreen at 110 columns or wider) or above the prompt (narrower, or tmux's main-screen layout), without taking the keys from the prompt. Otherwise `/decisions` opens it. Tabs along the top are where the decisions came from (a plan, a review, Parked). Inside a tab, "Needs you" is open, and "Claude's call" and "Already decided" are folded with counts.
 
 <!-- GIF: findings triage with folded sections (shot 4) -->
 
@@ -29,7 +29,7 @@ The pane's keys work once the pane has focus. Its header says `keys on` when it 
 
 | Key | What it does |
 | --- | --- |
-| `ctrl+x tab` | Moves between the prompt and the pane, keeping whatever is half-typed in the prompt (Claude Code's `abovePrompt:focus`; see below to move it) |
+| `ctrl+x tab` | Moves between the prompt and an open pane, keeping whatever is half-typed in the prompt (Claude Code's `abovePrompt:focus`; see below to move it). It does nothing while the pane is closed |
 | `/decisions` | Opens the pane and gives it the keys (with an empty prompt; see Limitations) |
 | `esc` | Back to the prompt, draft still there |
 | up / down | Move between rows |
@@ -41,7 +41,7 @@ The pane's keys work once the pane has focus. Its header says `keys on` when it 
 | `t` | Next tab |
 | `n` / `o` | Next and earlier page of a long list, or newer and older messages in a long discussion |
 | `s` | Opens the review screen of answers ready to send: `enter` ticks or unticks a row, `c` sends the ticked ones to Claude, `b` goes back |
-| `h` | Hides the pane. `/decisions` or the focus key brings it back |
+| `h` | Hides the pane. `/decisions` (with an empty prompt) brings it back |
 
 What the numbers mean depends on the kind of decision:
 
