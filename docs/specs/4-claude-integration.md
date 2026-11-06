@@ -28,14 +28,14 @@ Each layer says the same thing; the first is the only one seen to reach Claude o
 
 ### The description
 
-The rules and the format stay in the first 4,096 characters. It now has 4,048 and needs to take four additions, so I cut the repeated parts (the second sentence of the refusals paragraph, the example's second option, a few "for example" asides) to make room. Additions:
+The rules and the format stay in the first 4,096 characters, and the description is kept at or under 4,000 so a later edit can't silently push the rules past the cut (coordinator, 7 November). It now has 4,048 and needs to take four additions, so I cut the repeated parts (the second sentence of the refusals paragraph, the example's second option, a few "for example" asides) to make room. Additions:
 
 - Never use `AskUserQuestion`: call this tool instead (if Claude calls it anyway, the mod answers it into the pane, see below). This matters because `AskUserQuestion` has no recommendation field, so the person would get decisions without one.
 - A finding's title starts with the area it is about, such as "Image uploads: one user can use another's quota" (D16).
 - Only the main session adds decisions. A subagent's call is refused: it reports to the main session, which adds them.
 - Call `decisions_list` at the start of a conversation and after `/compact` or `/clear` (already there; reworded shorter).
 
-A test checks the length is at most 4,096 and that each rule's key phrase is in it. `decisions_update`'s description gets one sentence saying the same subagent rule applies, and stays well under its own limit.
+A test checks the length is at most 4,000 and that each rule's key phrase is in it. `decisions_update`'s description gets one sentence saying the same subagent rule applies, and stays well under its own limit.
 
 ### The system prompt section and the open list
 
@@ -52,7 +52,7 @@ Spike 0 found `$.session.append` reaches Claude as a message from the person. Th
 - in `session.start` (re-fired by a reload, so it first reads `$.session.messages()` and skips if a user message already holds the line)
 - on the first prompt after `/clear`: a `prompt.submit` hook, when `$.session.turns()` is 1 or less and no message holds the line. `session.start` doesn't fire on `/clear` and the classic SessionStart hook is skipped on this machine.
 
-After `/compact` nothing is appended: no event was tried there, so Claude is told by the tool description alone. Open Questions has it.
+After `/compact`: the types have a `session.compact` event (it fires with `trigger` `manual`, `auto`, `plugin` or `precompute`, and `next(e)` resolves to the compacted messages or a skip). A hook on it, for the main conversation and not `precompute`, adds to `instructions` "keep the ids and titles of open decisions", and once `next(e)` returns a compaction sets a flag; the next `prompt.submit` appends the note and clears the flag. Appending inside the compact hook itself is not tried, because the conversation is mid-rewrite there. Whether the note survives and reaches Claude is checked in one real session (coordinator, 7 November).
 
 ## AskUserQuestion goes to the pane
 
@@ -138,7 +138,7 @@ Cost and scoring: five cases at one run each, `--ablation none`, at most three s
 
 ## Open questions
 
-1. After `/compact` nothing reminds Claude to call `decisions_list` except the description. Is that enough? A `session.compact` hook might do it; none was tried.
-2. The nudge's offer exemption and the mid-text rule are my guesses from one observed hit. Workstream 5's replay of real sessions is what tells us whether they are right.
+1. Settled: `session.compact` exists and is used (see "The session note"); only the real-session check remains.
+2. Workstream 5's replay of real sessions must confirm two guesses of mine, made from one observed hit: the nudge's offer exemption and its mid-text rule.
 3. `AskUserQuestion` decisions carry no recommendation. Should the hook ask Claude for one by returning a context line, or leave them as plain choices? I left them plain.
 4. Whether a group named `Questions from Claude` is wanted, or the header per tab, is Aaron's taste.
