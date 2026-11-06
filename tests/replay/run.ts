@@ -42,7 +42,7 @@ function claude(prompt, cwd, resume) {
   if (resume) {
     argv.push('--resume', resume)
   }
-  const out = execFileSync('claude', argv, { cwd, encoding: 'utf8', timeout: 240000, maxBuffer: 64 * 1024 * 1024 })
+  const out = execFileSync('claude', argv, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 150000, maxBuffer: 64 * 1024 * 1024 })
 
   return JSON.parse(out)
 }
@@ -58,8 +58,13 @@ for (const file of readdirSync(sessionsDir).filter(f => f.endsWith('.json') && (
   for (const [index, prompt] of session.prompts.entries()) {
     let result
     try {
-      result = claude(prompt, cwd, id)
-    } catch {
+      try {
+        result = claude(prompt, cwd, id)
+      } catch {
+        result = claude(prompt, cwd, id)
+      }
+    } catch (error) {
+      console.error(`[${session.name} turn ${index + 1} failed: status ${error.status}, signal ${error.signal}, stdout ${String(error.stdout ?? '').length} chars]`)
       turns.push({ chat: 0, flaggedBy: undefined, failed: true })
       continue
     }

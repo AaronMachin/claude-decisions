@@ -36,7 +36,7 @@ async function main() {
       { who: 'claude', text: 'Daily doubles the storage and nobody edits recipes that often.', at },
     ],
   })
-  console.log(`Seeded ${total + 2} decisions (d${total + 1} parked, d${total + 2} answered with a discussion).`)
+  console.log(`Seeded ${total + 2} decisions.`)
 }
 
 if (process.argv[1]?.endsWith('seed-ux.ts')) {
