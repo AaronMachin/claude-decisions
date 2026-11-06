@@ -11,7 +11,7 @@ Status: draft for approval. Anything marked **(Claude's call)** is also a number
 | The four other kinds, added through `decisions_add` with their keys (`hooks/pane/kinds.tsx`) | The wording of the tool's description and the rule that a finding's title starts with its area (workstream 4) |
 | The sections inside a tab, folding, counts and paging (`hooks/pane/sections.tsx`) | Which findings Claude puts in which section is Claude's judgement, taught by workstream 4's wording |
 | The assumptions batch screen with `r` | Sending, the review screen and the thread (workstreams 1 and 2, unchanged) |
-| Parking with a reason, shown in the Parked tab | Moving a decision between sections after it is added (see Open Questions 6) |
+| Parking with a reason, shown in the Parked tab | The person moving a decision between sections (see Open Questions 6) |
 | `dependsOn` and `blocks` on `decisions_add` and `decisions_update`, and reopening dependents (`hooks/dependents.ts`) | |
 | The "For you to do" tab and the `isTask` flag | |
 
@@ -42,7 +42,7 @@ Workstreams 1 and 2 own these, so each is listed here and logged as a `question`
 | --- | --- |
 | `hooks/store.ts` | `Decision` gains `isTask?` and `reopenedBy?` (types only) |
 | `types/index.d.ts` | `PaneView` gains the `batch` screen and four fields; the atom's shape tag goes from `view-2` to `view-3` |
-| `hooks/tool.ts` | `decisions_add` takes the five kinds, `section` and `isTask`; `decisions_update` takes `dependsOn` and `blocks`; `decisions_list` counts only what needs the person; one sentence in `ADD_DESCRIPTION` stays under 4,096 characters (the budget has 154 left; the rest of the field guidance goes in the input schema's own descriptions, which have no limit, and workstream 4 rewrites the wording) |
+| `hooks/tool.ts` | `decisions_add` takes the five kinds, `section` and `isTask`; `decisions_update` takes `dependsOn`, `blocks` and `section`; `decisions_list` counts only what needs the person; one sentence in `ADD_DESCRIPTION` stays under 4,096 characters (the budget has 154 left; the rest of the field guidance goes in the input schema's own descriptions, which have no limit, and workstream 4 rewrites the wording) |
 | `hooks/pane/list.tsx` | `tabsFor` adds the "For you to do" tab; `counts` and `statusText` count only "Needs you"; `ListView` draws its sections through `sections.tsx`; parked and reopened rows get a dim second line |
 | `hooks/pane/decision.tsx` | `choose` calls `reopenDependents` after a changed answer; the state line names the kind; `INITIAL_VIEW` carries the new fields; the shape tag |
 | `hooks/pane/render.tsx` | draws the `batch` screen; `followFocus` follows the ring onto batch rows; `focusFirstRow` uses `sections.tsx`'s first row |
@@ -97,11 +97,12 @@ Logged as `contract` entries with these blocks.
   id, summary, addOptions?, recommendation?
 + dependsOn?: string[]   // replaces the list; refused for an unknown id, the decision itself, or a loop (d2 depends on d5 which depends on d2)
 + blocks?: string        // replaces the sentence
-  // "nothing to change" now means none of addOptions, recommendation, dependsOn, blocks
++ section?: 'needs-you' | 'claudes-call' | 'already-decided'   // moves the decision, e.g. a finding a discussion showed needs the person
+  // "nothing to change" now means none of addOptions, recommendation, dependsOn, blocks, section
   // addOptions is refused for a fixed-option kind; recommendation is refused for a question or isTask
 ```
 
-A change to `dependsOn` or `blocks` is recorded as a `↻` line like any other revision ("Now depends on d2", "Now blocks the plan"). The earlier version is kept.
+A change to `dependsOn` or `blocks` is recorded as a `↻` line like any other revision ("Now depends on d2", "Now blocks the plan", "Moved to Needs you"). The earlier version is kept.
 
 ## Sections
 
@@ -118,7 +119,7 @@ The parked decisions are the Parked tab's, as now. A decision in a folded group 
 
 Who decides the section: Claude, when it adds the decision (`section` on `decisions_add`). "Claude's call" means Claude has chosen and acted unless you overrule it; "Already decided" means an earlier answer or the code already settles it, and the reason (the `recommendation.reason`, which is always required) names what settles it.
 
-**How a folded section opens.** The heading is a Button, so up and down reach it and `enter` on it opens it, as `enter` acts on whatever the ring is on everywhere else (D3). `enter` on it again folds it. **(Claude's call)** Opening one folds the other (an accordion), so the list never grows past one page of rows plus the other headings. The open section's rows come as a page sized to what the pane has left once the other rows are counted, never fewer than 4 (`bodyRows` less the fixed rows, the same arithmetic as the thread). When there are more rows than a page, `n` shows the next page and `e` the one before, both Buttons shown only when they apply. Changing tab folds both. The ring stays on the heading when it opens, so `down` goes to the first row.
+**How a folded section opens.** The heading is a Button, so up and down reach it and `enter` on it opens it, as `enter` acts on whatever the ring is on everywhere else (D3). `enter` on it again folds it. **(Claude's call)** Opening one folds the other (an accordion), so the list never grows past one page of rows plus the other headings. The open section's rows come as a page sized to what the pane has left once the other rows are counted, never fewer than 4 (`bodyRows` less the fixed rows, the same arithmetic as the thread). When there are more rows than a page, `n` shows the next page and `o` the one before, both Buttons shown only when they apply. They are the keys the thread uses (`o` toward the start, `n` toward the end), so paging reads the same everywhere. **(Approved with this change.)** Changing tab folds both. The ring stays on the heading when it opens, so `down` goes to the first row.
 
 The status line and `decisions_list` count only "Needs you" (and tasks), because 47 findings with 30 in "Claude's call" are not 47 things waiting on you. **(Claude's call)**
 
@@ -251,7 +252,7 @@ All beside their modules, run with `claude plugin test .`.
 | Behaviour | Where |
 | --- | --- |
 | `decisions_add` accepts each kind, fills the fixed options, refuses options on them, refuses a bad recommendation, `isTask` rules, section rules | `tool.test.ts` |
-| `decisions_update` takes `dependsOn` and `blocks`, refuses unknown ids and loops, refuses options on fixed kinds | `tool.test.ts` |
+| `decisions_update` takes `dependsOn`, `blocks` and `section`, refuses unknown ids and loops, refuses options on fixed kinds | `tool.test.ts` |
 | Each kind's keys answer it: go-ahead `1` and `2`, assumption `1` and `2`, finding `1` to `4` (digit, highlight, `enter`), a question answered through `d` then `enter` | `kinds.test.tsx`, `decision.test.tsx` |
 | `r` marks only unanswered, unmarked assumptions; a `wrong?` mark survives it; `Confirm` saves all; answered rows are skipped | `kinds.test.tsx` |
 | Sections: counts are right, "Needs you" is never folded and shows with count 0, `enter` opens a folded section and folds the other, paging at the page boundary, answered rows leave the count | `sections.test.tsx` |
@@ -275,7 +276,7 @@ At most 3, Sonnet, tmux 150x40, scratch Pantry project. Each is closed once its 
 2. **`isTask` reuses `go-ahead`.** The alternative is a sixth kind, which the design says it isn't. The cost of reuse is that `kind: go-ahead` does two jobs, told apart by the flag.
 3. **A `sent` dependent is not reopened.** Claude has already acted on it, so reopening would show a decision as open that can't be undone. The list notice names it so you can choose to raise a new decision. If you'd rather reopen it anyway, `decisions_update` would need to accept `sent`, which it refuses today.
 4. **The accordion.** One folded section open at a time. Both open at once would show more but could push "Answered" and the keys out of view.
-5. **No `section` on `decisions_update`.** A finding Claude put in "Claude's call" can't be promoted to "Needs you" by Claude later, only added again. It is one field and one `↻` line if you want it; I left it out because the prompt names only `dependsOn` and `blocks`.
+5. **`section` on `decisions_update`** (added at approval). Claude can move a finding into "Needs you" after a discussion shows it needs the person. A decision that is already answered (`ready`) is refused, because it has left its section.
 6. **The person can't move a decision between sections.** They can answer it where it is, which moves it to Answered.
 7. **A new file, `hooks/dependents.ts`,** is outside the prompt's file list, for the import cycle reason above. If you'd rather it live in `hooks/store.ts`, the same function goes there.
 8. **The changes to earlier workstreams' files** (the table above). Approving the spec approves them.
