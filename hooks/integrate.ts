@@ -45,17 +45,22 @@ const ASKS = /^(should i|do you want|would you prefer|which would you prefer)\b[
  * A question answered later in the same text ("Why did it fail? Because...") is not.
  */
 export function isQuestionsInChat(text: string): boolean {
+  return whyQuestionsInChat(text) !== undefined
+}
+
+/** Which rule flagged the text: a question `list`, a question as the `last` sentence, or a `mid`-text "should I" style question. */
+export function whyQuestionsInChat(text: string): 'list' | 'last' | 'mid' | undefined {
   const itemQuestions = text.split('\n').filter(line => /^\s*(\d+[.)]|[-*])\s+.*\?[*_`)"']*\s*$/.test(line))
   if (itemQuestions.length >= 2) {
-    return true
+    return 'list'
   }
   const last = lastSentence(text)
   if (last.endsWith('?') && !isOffer(last)) {
-    return true
+    return 'last'
   }
   const sentences = text.split(/(?<=[.!?])\s+/)
 
-  return sentences.some(s => ASKS.test(bare(s)) && !isOffer(s))
+  return sentences.some(s => ASKS.test(bare(s)) && !isOffer(s)) ? 'mid' : undefined
 }
 
 /** The assistant text since the last prompt from the person (not a tool result), or `answer` when there is none. */

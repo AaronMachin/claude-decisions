@@ -17,6 +17,7 @@ import {
   refuseSubagent,
   resetNotes,
   turnText,
+  whyQuestionsInChat,
 } from './integrate'
 import { create, readAll } from './store'
 import type { StoreCtx } from './store'
@@ -307,4 +308,11 @@ test('an AskUserQuestion with no questions adds nothing and says so', async () =
   const answer: any = await answerAskUserQuestion(fakeStore(), { questions: [] })
 
   expect(answer.context[0]).toContain('nothing was added')
+})
+
+test('whyQuestionsInChat names the rule that flagged the text', () => {
+  expect(whyQuestionsInChat('Questions:\n1. Redis?\n2. Postgres?')).toBe('list')
+  expect(whyQuestionsInChat('I looked at it. Should I push this?')).toBe('last')
+  expect(whyQuestionsInChat('Which would you prefer? I will wait.')).toBe('mid')
+  expect(whyQuestionsInChat('Done. Want me to carry on?')).toBeUndefined()
 })
