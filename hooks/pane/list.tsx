@@ -1,8 +1,6 @@
-import { update } from 'claude-code'
-
 import type { PaneView } from '../../types'
 import type { Decision } from '../store'
-import { viewAtom } from './decision'
+import { setView } from './decision'
 
 export type Tab = { key: string; label: string; decisions: Decision[] }
 
@@ -131,7 +129,6 @@ export function rowText(d: Decision, width: number): string {
 }
 
 type ListProps = {
-  $: any
   ui: { Box: any; Text: any; Button: any }
   tabs: Tab[]
   view: PaneView
@@ -142,12 +139,13 @@ type ListProps = {
   onHide: () => void
 }
 
-const openDecision = ($: any, id: string) =>
-  update($, viewAtom, v => ({ ...v, screen: 'decision', decisionId: id, highlight: undefined, isParking: false, notice: undefined }))
+function openDecision($: any, id: string): Promise<unknown> {
+  return setView($, v => ({ ...v, screen: 'decision', decisionId: id, highlight: undefined, isParking: false, notice: undefined }))
+}
 
 /** The tab row and the open tab's decisions. Returns an element tree. */
-export function ListView(props: ListProps): any {
-  const { $, ui, tabs, view, width, readyCount, unreadable, onSend, onHide } = props
+export function ListView($: any, props: ListProps): any {
+  const { ui, tabs, view, width, readyCount, unreadable, onSend, onHide } = props
   const { Box, Text, Button } = ui
   const tab = activeTab(tabs, view)
   const sections = tab ? sectionsFor(tab) : { needsYou: [], answered: [], parked: [] }
@@ -177,7 +175,7 @@ export function ListView(props: ListProps): any {
           <Button
             key={`tab:${t.key}`}
             plain
-            onPress={() => update($, viewAtom, v => ({ ...v, tab: t.key }))}
+            onPress={() => setView($, v => ({ ...v, tab: t.key }))}
           >
             {t.key === tab?.key ? <Text bold>{`${truncate(t.label, 14)} `}</Text> : <Text dimColor>{`${truncate(t.label, 14)} `}</Text>}
           </Button>
@@ -193,7 +191,7 @@ export function ListView(props: ListProps): any {
       {unreadable > 0 ? <Text dimColor>{`${unreadable} decision file${unreadable === 1 ? '' : 's'} couldn't be read`}</Text> : null}
       <Text> </Text>
       <Box>
-        <Button key="t" hotkey="t" plain onPress={() => update($, viewAtom, v => ({ ...v, tab: nextTab(tabs, tab?.key) }))}>
+        <Button key="t" hotkey="t" plain onPress={() => setView($, v => ({ ...v, tab: nextTab(tabs, tab?.key) }))}>
           next tab
         </Button>
         {readyCount > 0 ? (
@@ -210,7 +208,6 @@ export function ListView(props: ListProps): any {
 }
 
 type ReviewProps = {
-  $: any
   ui: { Box: any; Text: any; Button: any }
   ready: Decision[]
   view: PaneView
@@ -220,8 +217,8 @@ type ReviewProps = {
 }
 
 /** The answers ready to send, each ticked; Confirm is last in the ring. Returns an element tree. */
-export function ReviewView(props: ReviewProps): any {
-  const { $, ui, ready, view, width, onConfirm } = props
+export function ReviewView($: any, props: ReviewProps): any {
+  const { ui, ready, view, width, onConfirm } = props
   const { Box, Text, Button } = ui
   const ticked = ready.filter(d => view.ticked.includes(d.id)).map(d => d.id)
 
@@ -235,7 +232,7 @@ export function ReviewView(props: ReviewProps): any {
             key={`tick:${d.id}`}
             plain
             autoFocus={index === 0 ? true : undefined}
-            onPress={() => update($, viewAtom, v => ({ ...v, ticked: toggleTick(v.ticked, d.id) }))}
+            onPress={() => setView($, v => ({ ...v, ticked: toggleTick(v.ticked, d.id) }))}
           >
             {truncate(`${ticked.includes(d.id) ? '[x]' : '[ ]'} ${d.id}  ${d.title}`, width - 2)}
           </Button>
@@ -245,7 +242,7 @@ export function ReviewView(props: ReviewProps): any {
       <Text> </Text>
       <Text dimColor>{`${ready.length} ready, ${ticked.length} ticked. Nothing is sent until you confirm.`}</Text>
       <Box>
-        <Button key="b" hotkey="b" plain onPress={() => update($, viewAtom, v => ({ ...v, screen: 'list' }))}>
+        <Button key="b" hotkey="b" plain onPress={() => setView($, v => ({ ...v, screen: 'list' }))}>
           back
         </Button>
         <Button

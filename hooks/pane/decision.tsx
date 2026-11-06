@@ -16,7 +16,7 @@ export const INITIAL_VIEW: PaneView = {
 }
 
 // Change the tag when PaneView's fields change: it declines what an earlier version stored.
-export const viewAtom = atom({ plugin: 'decisions', key: 'view' } as const, INITIAL_VIEW, { shape: 'view-1' })
+const viewAtom = atom({ plugin: 'decisions', key: 'view' } as const, INITIAL_VIEW, { shape: 'view-1' })
 
 export type Typed = { digit: string; at: number } | undefined
 export type Typing = { typed: Typed; option: number | undefined }
@@ -142,8 +142,6 @@ const STATE_TEXT: Record<string, string> = {
 }
 
 type Props = {
-  $: any
-  store: StoreCtx
   ui: { Box: any; Text: any; Button: any; Input: any }
   d: Decision
   view: PaneView
@@ -155,18 +153,25 @@ type Props = {
   onHide: () => void
 }
 
-const setView = ($: any, change: (v: PaneView) => PaneView) => update($, viewAtom, change)
+/** The only places the pane's state is read and written: the scan follows `$` into function declarations, and a state reference only where it's written. */
+export function setView($: any, change: (v: PaneView) => PaneView): Promise<unknown> {
+  return update($, viewAtom, change)
+}
+
+export function readView($: any): Promise<PaneView> {
+  return read($, viewAtom)
+}
 
 /** One decision: its text, numbered options, and the keys under a rule. Returns an element tree. */
-export function DecisionView(props: Props): any {
-  const { $, store, ui, d, view, width, readyCount, onChanged, onSend, onHide } = props
+export function DecisionView($: any, props: Props): any {
+  const { ui, d, view, width, readyCount, onChanged, onSend, onHide } = props
   const { Box, Text, Button, Input } = ui
   const isSent = d.state === 'sent'
   const chosen = d.answer?.option
   const digits = Array.from({ length: Math.min(d.options.length, 10) }, (_, i) => (i + 1 === 10 ? '0' : String(i + 1)))
 
   const choose = async (option: number) => {
-    if (await chooseOption(store, d, option)) {
+    if (await chooseOption($, d, option)) {
       typing.typed = undefined
       typing.option = undefined
       await setView($, v => ({ ...v, screen: 'list', decisionId: undefined, highlight: undefined, notice: undefined }))
@@ -217,7 +222,7 @@ export function DecisionView(props: Props): any {
           value={view.parkDraft}
           onInput={(text: string) => void setView($, v => ({ ...v, parkDraft: text }))}
           onSubmit={async (text: string) => {
-            const isParked = await parkDecision(store, d, text)
+            const isParked = await parkDecision($, d, text)
             await setView($, v => ({
               ...v,
               isParking: false,
@@ -275,7 +280,7 @@ export function DecisionView(props: Props): any {
             plain
             onPress={async () => {
               if (d.state === 'parked') {
-                await unparkDecision(store, d)
+                await unparkDecision($, d)
                 onChanged()
               } else {
                 await setView($, v => ({ ...v, isParking: true }))
@@ -299,6 +304,6 @@ export function DecisionView(props: Props): any {
 }
 
 async function onBack($: any): Promise<void> {
-  const next = await back($, await read($, viewAtom))
-  await update($, viewAtom, () => next)
+  const next = await back($, await readView($))
+  await setView($, () => next)
 }

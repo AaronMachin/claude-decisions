@@ -111,7 +111,7 @@ test('the list draws tabs and rows; the first row is on the ring so enter alone 
   const all = [make(), make(), make({ state: 'ready', answer: { option: 2, answeredAt: 't' } }), make({ group: 'Sharing links' })]
   const tabs = tabsFor(all)
   on('ui.render', ($$, e) =>
-    ListView({ $: $$, ui: $$.ui.resolve(e), tabs, view: INITIAL_VIEW, width: 49, readyCount: 1, unreadable: 0, onSend: () => {}, onHide: () => {} }),
+    ListView($$, { ui: $$.ui.resolve(e), tabs, view: INITIAL_VIEW, width: 49, readyCount: 1, unreadable: 0, onSend: () => {}, onHide: () => {} }),
   )
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
@@ -130,7 +130,7 @@ test('the list has no send key when nothing is ready, and says so when there is 
   const tabs = tabsFor([make()])
   let current: ReturnType<typeof tabsFor> = tabs
   on('ui.render', ($$, e) =>
-    ListView({ $: $$, ui: $$.ui.resolve(e), tabs: current, view: INITIAL_VIEW, width: 49, readyCount: 0, unreadable: 1, onSend: () => {}, onHide: () => {} }),
+    ListView($$, { ui: $$.ui.resolve(e), tabs: current, view: INITIAL_VIEW, width: 49, readyCount: 0, unreadable: 1, onSend: () => {}, onHide: () => {} }),
   )
   let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ key: 's' })).toBeUndefined()
@@ -150,7 +150,7 @@ test('review: ready rows start ticked, Confirm is last with hotkey c, and confir
   ]
   const confirmed: string[][] = []
   let view = openReview(INITIAL_VIEW, ['d1', 'd2'])
-  on('ui.render', ($$, e) => ReviewView({ $: $$, ui: $$.ui.resolve(e), ready, view, width: 49, onConfirm: ids => void confirmed.push(ids) }))
+  on('ui.render', ($$, e) => ReviewView($$, { ui: $$.ui.resolve(e), ready, view, width: 49, onConfirm: ids => void confirmed.push(ids) }))
 
   let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const buttons = await ui.findAll({ type: 'Button' })
