@@ -103,7 +103,11 @@ export async function askModel(
             prompt: `A question about this decision.\n\n${contextFor(d)}\n\nQuestion: ${question}\n\n${SHORT}`,
           })
 
-    return result.isAnswered ? { ok: true, text: result.text } : { ok: false, reason: String(result.reason ?? 'no reply') }
+    if (!result.isAnswered) {
+      return { ok: false, reason: String(result.reason ?? 'no reply') }
+    }
+
+    return { ok: true, text: typeof result.text === 'string' && result.text.trim() !== '' ? result.text : '(no reply text)' }
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : String(error) }
   }

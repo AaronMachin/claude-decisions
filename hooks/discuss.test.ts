@@ -360,3 +360,12 @@ test('f resends the open decision\'s own question, not an older one from another
   expect((await readOne(w.$, d1.id))!.thread.map(e => e.who)).toEqual(['person'])
   expect(w.view().pending.map(p => p.decisionId)).toEqual(['d1'])
 })
+
+test('an empty or text-less fork or quick reply is stored as a visible placeholder', async () => {
+  for (const text of ['', '   ', undefined]) {
+    const w = world({ fork: async () => ({ isAnswered: true, text }) })
+    const d = await make(w.$)
+    await askQuestion(w.$, 'fork', d.id, 'anything?')
+    expect((await readOne(w.$, d.id))!.thread.map(e => e.text)).toEqual(['anything?', '(no reply text)'])
+  }
+})
