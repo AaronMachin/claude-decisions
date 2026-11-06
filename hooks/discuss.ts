@@ -21,8 +21,9 @@ export async function recordQuestion(store: StoreCtx, id: string, text: string):
 }
 
 /**
- * Writes a reply directly under the question it answers (at the end when that
- * question isn't found). The decision's state is never changed, so a reply to a
+ * Writes a reply at the end of its question's group: after the question and any
+ * replies or ↻ lines already under it, before the next question (at the end of the
+ * thread when the question isn't found). The decision's state is never changed, so a reply to a
  * sent decision is kept as it is.
  */
 export async function recordReply(
@@ -38,7 +39,11 @@ export async function recordReply(
   }
   const entry: ThreadEntry = { who, text, at: new Date().toISOString() }
   const at = d.thread.findIndex(e => e.who === 'person' && e.at === asked)
-  const thread = at === -1 ? [...d.thread, entry] : [...d.thread.slice(0, at + 1), entry, ...d.thread.slice(at + 1)]
+  let end = at + 1
+  while (at !== -1 && end < d.thread.length && d.thread[end]!.who !== 'person') {
+    end += 1
+  }
+  const thread = at === -1 ? [...d.thread, entry] : [...d.thread.slice(0, end), entry, ...d.thread.slice(end)]
   await write(store, { ...d, thread })
 
   return true

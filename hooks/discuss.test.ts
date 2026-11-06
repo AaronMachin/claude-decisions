@@ -256,7 +256,7 @@ test('f sends a queued question to the fork, and the late main reply still lands
   await onTurnComplete(w.$, { turnId: 'busy', answer: 'x' }, next)
   await onTurnStart(w.$, { text: `The decisions plugin sent "${w.submitted[0]}"`, turnId: 'late' }, next)
   await onTurnComplete(w.$, { turnId: 'late', answer: 'late main reply' }, next)
-  expect((await readOne(w.$, d.id))!.thread.map(e => `${e.who}:${e.text}`)).toEqual(['person:queued one?', 'claude:late main reply', 'fork:fork says'])
+  expect((await readOne(w.$, d.id))!.thread.map(e => `${e.who}:${e.text}`)).toEqual(['person:queued one?', 'fork:fork says', 'claude:late main reply'])
   expect(w.view().pending).toEqual([])
 })
 
@@ -307,4 +307,19 @@ test('the older framing of the sent text is matched too, and a plugin-framed tur
   expect(routeStart({ text: framedOld(sent), turnId: 'x1' })?.asked).toBe('f1')
   expect(routeStart({ text: framed(sentText({ number: 5, title: 'T' }, 'nobody asked')), turnId: 'x2' })).toBeUndefined()
   expect(routeComplete({ turnId: 'x1', answer: 'ok' })?.text).toBe('ok')
+})
+
+test('a second reply to the same question goes after the first, and before the next question', async () => {
+  const store = fakeStore()
+  const d = await make(store)
+  const q1 = await recordQuestion(store, d.id, 'first')
+  await recordQuestion(store, d.id, 'second')
+  await recordReply(store, d.id, q1!.asked, 'fork', 'fork reply')
+  await recordReply(store, d.id, q1!.asked, 'claude', 'late main reply')
+  expect((await readOne(store, d.id))!.thread.map(e => `${e.who}:${e.text}`)).toEqual([
+    'person:first',
+    'fork:fork reply',
+    'claude:late main reply',
+    'person:second',
+  ])
 })
