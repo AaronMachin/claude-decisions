@@ -1,0 +1,132 @@
+import { expect, test } from 'claude-code/testing'
+
+import { create, readAll, readOne, repoKey, storeDir, write } from './store'
+import type { StoreCtx } from './store'
+
+type Fake = { files: Map<string, string>; ctx: StoreCtx }
+
+function fake(options: { common?: string; cwd?: string; gitFails?: boolean; files?: Map<string, string> } = {}): Fake {
+  const files = options.files ?? new Map<string, string>()
+  const ctx: StoreCtx = {
+    env: { get: async () => '/home/test' },
+    session: { cwd: async () => options.cwd ?? '/work/pantry' },
+    process: {
+      run: async () =>
+        options.gitFails
+          ? { exitCode: 128, stdout: '' }
+          : { exitCode: 0, stdout: (options.common ?? '/work/pantry/.git') + '\n' },
+    },
+    fs: {
+      read: async (path: string) => {
+        const text = files.get(path)
+        if (text === undefined) {
+          throw new Error('ENOENT')
+        }
+        return text
+      },
+      write: async (path: string, text: string) => {
+        await Promise.resolve()
+        files.set(path, text)
+      },
+      exists: async (path: string) => files.has(path),
+      list: async (dir: string) => {
+        const names = [...files.keys()].filter(p => p.startsWith(dir + '/')).map(p => p.slice(dir.length + 1))
+        if (names.length === 0) {
+          throw new Error('ENOENT')
+        }
+        return names.map(name => ({ name }))
+      },
+    },
+  }
+
+  return { files, ctx }
+}
+
+const INPUT = {
+  group: 'Config file plan',
+  kind: 'choice' as const,
+  title: 'Where the config file lives',
+  scenario: 'You run the tool from packages/api and it needs its settings.',
+  options: [
+    { id: 1, label: 'Project root' },
+    { id: 2, label: 'Per package' },
+  ],
+  recommendation: { option: 1, reason: 'Every other tool reads from the root.' },
+  sources: [],
+  dependsOn: [],
+}
+
+test('the repository key is the folder name plus eight hex characters, stable and distinct', async () => {
+  const a = await repoKey('/work/pantry/.git')
+  expect(a).toMatch(/^pantry-[0-9a-f]{8}$/)
+  expect(await repoKey('/work/pantry/.git/')).toBe(a)
+  expect(await repoKey('/work/other/.git')).not.toBe(a)
+})
+
+test('a worktree and its main checkout get the same folder, another repository another', async () => {
+  const main = await storeDir(fake({ cwd: '/work/pantry' }).ctx)
+  const tree = await storeDir(fake({ cwd: '/work/pantry-wt' }).ctx)
+  const other = await storeDir(fake({ cwd: '/work/other', common: '/work/other/.git' }).ctx)
+  expect(tree).toBe(main)
+  expect(main).toMatch(/^\/home\/test\/\.claude\/decisions\/pantry-[0-9a-f]{8}$/)
+  expect(other).not.toBe(main)
+})
+
+test('outside a git repository the key comes from the working folder', async () => {
+  const dir = await storeDir(fake({ gitFails: true, cwd: '/work/loose' }).ctx)
+  expect(dir).toMatch(/\/decisions\/loose-[0-9a-f]{8}$/)
+})
+
+test('a decision is stored, read back, and survives a reload', async () => {
+  const { files, ctx } = fake()
+  const made = await create(ctx, INPUT)
+  expect(made.id).toBe('d1')
+  expect(made.state).toBe('open')
+  expect(made.section).toBe('needs-you')
+
+  const reloaded = fake({ files }).ctx
+  const { decisions, unreadable } = await readAll(reloaded)
+  expect(unreadable).toBe(0)
+  expect(decisions.map(d => d.title)).toEqual(['Where the config file lives'])
+  expect((await readOne(reloaded, 'd1'))?.options).toHaveLength(2)
+  expect(await readOne(reloaded, 'd9')).toBeUndefined()
+})
+
+test('write replaces a decision', async () => {
+  const { ctx } = fake()
+  const made = await create(ctx, INPUT)
+  await write(ctx, { ...made, state: 'ready' })
+  expect((await readOne(ctx, 'd1'))?.state).toBe('ready')
+})
+
+test('a missing folder is empty, and a file that is not JSON is counted and skipped', async () => {
+  const { files, ctx } = fake()
+  expect(await readAll(ctx)).toEqual({ decisions: [], unreadable: 0 })
+  await create(ctx, INPUT)
+  const dir = await storeDir(ctx)
+  files.set(`${dir}/d7.json`, '{not json')
+  const result = await readAll(ctx)
+  expect(result.unreadable).toBe(1)
+  expect(result.decisions).toHaveLength(1)
+})
+
+test('two adds at once get different ids', async () => {
+  const { ctx } = fake()
+  const [a, b] = await Promise.all([create(ctx, INPUT), create(ctx, INPUT)])
+  expect([a.id, b.id].sort()).toEqual(['d1', 'd2'])
+})
+
+test('an id another session took meanwhile is skipped, and five misses give up', async () => {
+  const { files, ctx } = fake()
+  const dir = await storeDir(ctx)
+  const real = ctx.fs.exists
+  // The listing never shows the other session's files, so only exists can tell.
+  ctx.fs.list = async () => {
+    throw new Error('ENOENT')
+  }
+  files.set(`${dir}/d1.json`, '{}')
+  expect((await create(ctx, INPUT)).id).toBe('d2')
+  ctx.fs.exists = async () => true
+  await expect(create(ctx, INPUT)).rejects.toThrow(/could not allocate/i)
+  ctx.fs.exists = real
+})
