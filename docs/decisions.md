@@ -191,3 +191,36 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 114 | A reopened dependent also moves to "Needs you", whatever section it was in **(Claude's call, found in a real session)** | It stayed under "Claude's call" at first, folded, so a decision that needed the person again was hidden. |
 | 115 | Answered rows give way to a `N more answered` line when the pane is short: 3 while a folded section is open, otherwise what the pane has left **(Claude's call, from the review)** | With 47 findings the answered rows pushed the key row out of view, and the hotkeys only work for Buttons in view. |
 | 116 | "Needs you" pages with `n` and `o` like the folded sections, using the same page number; while a folded section is open it stays on its first page with a line saying how many more need the person and to fold the section to page them **(Claude's call, asked by the coordinator)** | With many findings for the person the key row could leave the pane. The two lists share one page number, so only one is paged at a time. |
+
+## 7 November 2026: workstream 4, Claude integration (spec)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 117 | Every `AskUserQuestion` decision goes to one group, `Questions from Claude`, and the question's header starts the scenario **(Claude's call)** | Headers differ on every call and would give each question its own tab. |
+| 118 | A multi-select question becomes kind `question` with its options listed in the scenario **(Claude's call)** | A choice takes one answer. |
+| 119 | `AskUserQuestion` decisions carry no recommendation **(Claude's call)** | The tool has no such field and the store allows a choice without one. |
+| 120 | A `decisions_update` or `AskUserQuestion` call with an `agentId` is refused like `decisions_add` **(Claude's call)** | A subagent editing the pane has the same owner problem. `decisions_list` stays open. |
+| 121 | The nudge skips a turn that replies to a discussion question (last user message holds "On decision <n>") **(Claude's call)** | A reply in a thread may properly end with a question. |
+| 122 | `isQuestionsInChat` gains a mid-text rule ("should I", "do you want", "would you prefer", "which would you prefer") and a narrow exemption for "want me to carry on?" offers **(Claude's call)** | The spike missed mid-text questions and would flag courtesy offers. |
+| 123 | The nudge is two sentences naming the pane and the one-line rule **(Claude's call)** | The prompt left the text to the builder. |
+| 124 | Five eval cases: plan-sharing, review-last-commit, what-next, ask-me-first, find-problems **(Claude's call)** | The prompt asked for plan, review, "what next" and a tempting prompt at least. |
+| 125 | The compose section id is `decisions:rules`, a constant string, `scope: 'session'` **(Claude's call)** | Plugin sections are `<plugin>:<name>`; a constant keeps the prompt cache. |
+
+## 7 November 2026: workstream 4, Claude integration (build)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 126 | One `on` per event without a matcher: the nudge runs inside the existing `turn.complete` hook, after discussions' work **(Claude's call, forced by the engine)** | The engine refuses a second unmatched `on("turn.complete")` ("registered twice without a matcher"). Every hook this workstream adds to an event the mod already uses goes inside the existing one. |
+| 127 | A free-text, number or multi-select AskUserQuestion becomes kind `question`; number questions add "Answer with a number from min to max" to the scenario **(Claude's call)** | A choice takes one answer and a question has no numbered options; the min and max would otherwise be lost. |
+| 128 | The tool description is 3,947 characters, with a test at 4,000; its example loses one `changes` clause and the "keep every field plain" line; refusals are summarised **(Claude's call)** | Room for the four additions and a 96-character margin before the cut. |
+| 129 | `RULE_PHRASES` in `integrate.ts` lists the phrases both the description and the system prompt section must carry, and the tests check both against it **(Claude's call)** | "Both say the same thing" (D10) is then a test rather than a hope. |
+| 130 | The answer prompt says "Do not write decision records or other files about the answers unless the person asks." after the condition sentence **(Claude's call, wording; the line was asked for)** | Log 2026-11-07 00:10. |
+| 131 | The session note is "The decisions mod is on: put questions in the decisions pane with decisions_add, and call decisions_list first."; it is appended at `session.start` (skipped when a reload finds it), on the first prompt when `turns()` is 1 or less, and on the first prompt after a compaction **(Claude's call)** | Spike 0 S2 found append reaches Claude at those points; the prompt after a compaction is a guess checked in a real session. |
+| 132 | A `session.compact` hook (main conversation, not `precompute`) adds "Keep the ids and titles of the open, answered and parked decisions in the decisions pane." to the summary's instructions and flags the note for the next prompt **(Claude's call, approved in the plan)** | Appending inside the compact hook, mid-rewrite, was not tried. |
+| 133 | The system prompt section and the context block are plain functions (`addRulesSection`, `addContextBlock`), wired in `register.tsx`, and nothing tries to avoid a managed security plugin that skips them **(Claude's call)** | D10. |
+| 134 | The eval workspace's last commit is a deliberate bug (times shown multiplied by 60) under a misleading message **(Claude's call)** | "Review the last commit" then has a real finding to raise as a decision. |
+| 135 | Every eval case allows `AskUserQuestion` and Bash limited to git, and shares one scaffold script through a two-line `fixture.sh` **(Claude's call)** | The temptation exists in every case; one script is kept in step. Falls back to a copy per case if the engine refuses the path. |
+| 136 | `evals/results/` is git-ignored **(Claude's call)** | The eval writes its reports there. |
+| 137 | The description names review findings and says they go in the pane one each, and the setup script leaves `last-commit.diff` beside the code **(Claude's call, from eval run 2)** | Without it, a "find problems" review gave the findings in chat and added none; and git was blocked in the eval sandbox, so "review the last commit" had nothing to read. |
+| 138 | The first prompt after a session start that appended the note does not append it again **(Claude's call, found in a real session)** | The transcript doesn't show an appended message until a turn has run, so Claude saw the note twice. |
+| 139 | Corrects rows 128 and 135: the description is 3,968 characters after row 137, and the eval cases allow plain `Bash` in `allowed_tools` (the run grants `Bash(git:*)` on the command line) **(Claude's call, from the review)** | Rows are not edited. |

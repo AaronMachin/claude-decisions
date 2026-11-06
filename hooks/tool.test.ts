@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import { RULE_PHRASES } from './integrate'
 import { create, readAll, write } from './store'
 import type { StoreCtx } from './store'
 import { ADD_DESCRIPTION, ADD_TOOL, LIST_TOOL, UPDATE_DESCRIPTION, addDecision, listDecisions, registerTools, updateDecision, validateAdd, validateUpdate } from './tool'
@@ -316,4 +317,14 @@ test('more refusals name their field: blocks type, dependsOn type, a blank reaso
   expect(validateUpdate({ id: 'd1', summary: 's', dependsOn: 'd2' }, d, [d])).toMatch(/dependsOn must be a list/)
   expect(validateAdd({ ...FINDING, recommendation: { option: 1, reason: ' ' } }, [])).toMatch(/recommendation\.reason is required/)
   expect(validateUpdate({ id: 'd1', summary: 's', section: 'claudes-call' }, { ...d, state: 'withdrawn' }, [d])).toMatch(/already withdrawn/)
+})
+
+test('the add description stays at or under 4,000 characters and carries every rule', () => {
+  expect(ADD_DESCRIPTION.length).toBeLessThanOrEqual(4000)
+  for (const phrase of RULE_PHRASES) {
+    expect(ADD_DESCRIPTION).toContain(phrase)
+  }
+  expect(ADD_DESCRIPTION).toMatch(/after \/compact or \/clear/)
+  expect(ADD_DESCRIPTION).toMatch(/review finding/)
+  expect(UPDATE_DESCRIPTION).toMatch(/subagent/)
 })

@@ -344,3 +344,42 @@ test('the turn hooks pass an unrelated turn through untouched', async ($, on) =>
   const done = await $.turn.complete({ turnId: 't1', answer: 'done' } as any)
   expect(done).toBeDefined()
 })
+
+test('a subagent cannot add or update a decision, and can still list', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  const refused = await $.tool.call({ tool: ADD_TOOL, agentId: 'a1', ...GOOD })
+  expect(JSON.stringify(refused)).toContain('Only the main session adds decisions')
+  expect([...seen.files.keys()].some(k => k.endsWith('d1.json'))).toBe(false)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const update = await $.tool.call({ tool: UPDATE_TOOL, agentId: 'a1', id: 'd1', summary: 'x', addOptions: [{ label: 'a' }] })
+  expect(JSON.stringify(update)).toContain('Only the main session adds decisions')
+  expect(JSON.stringify(await $.tool.call({ tool: LIST_TOOL, agentId: 'a1' }))).toContain('d1')
+})
+
+test('AskUserQuestion lands in the pane and is answered with the object shape', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  const questions = [{ question: 'Where should links live?', header: 'Links', options: [{ label: 'Database', description: 'a table' }, { label: 'Signed URL', description: 'nothing stored' }], multiSelect: false }]
+  const answer: any = await $.tool.call({ tool: 'AskUserQuestion', questions })
+  expect(JSON.stringify(answer)).toContain('Added to the decisions pane as 1.')
+  expect(JSON.stringify(answer)).toContain('"answers":{}')
+  const file = [...seen.files.entries()].find(([k]) => k.endsWith('d1.json'))![1]
+  expect(JSON.parse(file).group).toBe('Questions from Claude')
+  expect(seen.opened).toHaveLength(1)
+  const refused = await $.tool.call({ tool: 'AskUserQuestion', agentId: 'a1', questions })
+  expect(JSON.stringify(refused)).toContain('Only the main session adds decisions')
+})
+
+test('the compose and context hooks add the rules section and the open list', async ($, on) => {
+  engine(on)
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'x', scope: 'shared' }] }))
+  on('prompt.context', () => ({ blocks: [] }))
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const input = { model: 'm', promptModel: 'm', surfaces: [], tools: [], outputStyle: null, traits: [] }
+  const composed = await $.prompt.compose(input)
+  expect(composed.sections.map((s: any) => s.id)).toEqual(['intro', 'decisions:rules'])
+  const again = await $.prompt.compose(input)
+  expect(again.sections[1]!.text).toBe(composed.sections[1]!.text)
+})
