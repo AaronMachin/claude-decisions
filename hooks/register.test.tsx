@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { PANE_ID, INITIAL_VIEW } from './pane/decision'
+import { NUDGE } from './integrate'
 import { ADD_TOOL, LIST_TOOL, UPDATE_TOOL } from './tool'
 
 type On = (event: string, hook: (...args: any[]) => any) => unknown
@@ -382,4 +383,41 @@ test('the compose and context hooks add the rules section and the open list', as
   expect(composed.sections.map((s: any) => s.id)).toEqual(['intro', 'decisions:rules'])
   const again = await $.prompt.compose(input)
   expect(again.sections[1]!.text).toBe(composed.sections[1]!.text)
+})
+
+const nudges = (appended: any[]) => appended.filter(a => JSON.stringify(a).includes(NUDGE)).length
+
+test('a turn that ends with questions in chat gets the nudge appended once through turn.complete', async ($, on) => {
+  engine(on)
+  const appended: any[] = []
+  on('session.messages', () => ({
+    value: [
+      { role: 'user', text: 'plan sharing' },
+      { role: 'assistant', text: 'Two things.\n1. Redis?\n2. Postgres?' },
+    ],
+  }))
+  on('session.append', (_: any, e: any, next: any) => {
+    appended.push(e)
+    return next(e)
+  })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  await start($)
+  await $.turn.complete({ turnId: 't1', reason: 'answer', answer: 'Two things.\n1. Redis?\n2. Postgres?' } as any)
+  expect(nudges(appended)).toBe(1)
+  await $.turn.complete({ turnId: 't1', reason: 'answer', answer: 'Two things.\n1. Redis?\n2. Postgres?' } as any)
+  expect(nudges(appended)).toBe(1)
+})
+
+test('a turn that ends with a statement gets no nudge', async ($, on) => {
+  engine(on)
+  const appended: any[] = []
+  on('session.messages', () => ({ value: [{ role: 'user', text: 'hi' }, { role: 'assistant', text: 'Added 2 decisions.' }] }))
+  on('session.append', (_: any, e: any, next: any) => {
+    appended.push(e)
+    return next(e)
+  })
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  await start($)
+  await $.turn.complete({ turnId: 't2', reason: 'answer', answer: 'Added 2 decisions.' } as any)
+  expect(nudges(appended)).toBe(0)
 })
