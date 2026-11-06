@@ -49,6 +49,7 @@ What the numbers mean depends on the kind of decision:
 | --- | --- |
 | Choice | `1` to `12`, one per option |
 | Go-ahead | `1` yes, `2` no |
+| Task (something Claude needs you to do) | `1` done, `2` can't do it |
 | Assumption | `1` right, `2` wrong. "Check N assumptions together" opens them as a batch, where `r` marks the rest right |
 | Finding (from a review) | `1` agree, `2` already decided, `3` disagree, `4` not sure |
 | Question | type the answer in the discussion |

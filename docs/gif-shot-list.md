@@ -14,7 +14,7 @@ This document lists the five GIFs the README needs and how to record each one ag
 - The highlighted row is reverse video only. After `t` the highlight doesn't always land on the first row, so look before pressing `enter`.
 - On a machine with a managed security plugin, a note that a hook was skipped can show in the chat after a prompt the pane sends (shot 2). Frame the pane, or trim it.
 
-Setups:
+Setups (`<repo>` is where you cloned this repository):
 
 | Name | Command |
 | --- | --- |
