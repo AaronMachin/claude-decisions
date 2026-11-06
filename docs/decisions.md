@@ -191,3 +191,17 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 114 | A reopened dependent also moves to "Needs you", whatever section it was in **(Claude's call, found in a real session)** | It stayed under "Claude's call" at first, folded, so a decision that needed the person again was hidden. |
 | 115 | Answered rows give way to a `N more answered` line when the pane is short: 3 while a folded section is open, otherwise what the pane has left **(Claude's call, from the review)** | With 47 findings the answered rows pushed the key row out of view, and the hotkeys only work for Buttons in view. |
 | 116 | "Needs you" pages with `n` and `o` like the folded sections, using the same page number; while a folded section is open it stays on its first page with a line saying how many more need the person and to fold the section to page them **(Claude's call, asked by the coordinator)** | With many findings for the person the key row could leave the pane. The two lists share one page number, so only one is paged at a time. |
+
+## 7 November 2026: workstream 4, Claude integration (spec)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 117 | Every `AskUserQuestion` decision goes to one group, `Questions from Claude`, and the question's header starts the scenario **(Claude's call)** | Headers differ on every call and would give each question its own tab. |
+| 118 | A multi-select question becomes kind `question` with its options listed in the scenario **(Claude's call)** | A choice takes one answer. |
+| 119 | `AskUserQuestion` decisions carry no recommendation **(Claude's call)** | The tool has no such field and the store allows a choice without one. |
+| 120 | A `decisions_update` or `AskUserQuestion` call with an `agentId` is refused like `decisions_add` **(Claude's call)** | A subagent editing the pane has the same owner problem. `decisions_list` stays open. |
+| 121 | The nudge skips a turn that replies to a discussion question (last user message holds "On decision <n>") **(Claude's call)** | A reply in a thread may properly end with a question. |
+| 122 | `isQuestionsInChat` gains a mid-text rule ("should I", "do you want", "would you prefer", "which would you prefer") and a narrow exemption for "want me to carry on?" offers **(Claude's call)** | The spike missed mid-text questions and would flag courtesy offers. |
+| 123 | The nudge is two sentences naming the pane and the one-line rule **(Claude's call)** | The prompt left the text to the builder. |
+| 124 | Five eval cases: plan-sharing, review-last-commit, what-next, ask-me-first, find-problems **(Claude's call)** | The prompt asked for plan, review, "what next" and a tempting prompt at least. |
+| 125 | The compose section id is `decisions:rules`, a constant string, `scope: 'session'` **(Claude's call)** | Plugin sections are `<plugin>:<name>`; a constant keeps the prompt cache. |
