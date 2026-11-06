@@ -288,7 +288,10 @@ export function ListView($: any, props: ListProps): any {
         <Button
           key="batch"
           plain
-          onPress={() => setView($, v => ({ ...v, screen: 'batch', marks: {}, batchRow: undefined, notice: undefined }))}
+          onPress={async () => {
+            await setView($, v => ({ ...v, screen: 'batch', marks: {}, batchRow: undefined, notice: undefined }))
+            focusLater($, `batch:${batch[0]!.id}`)
+          }}
         >
           {`Check ${batch.length} assumptions together`}
         </Button>

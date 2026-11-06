@@ -60,7 +60,7 @@ test('only ready dependents reopen, with the answer they had; the others are lef
   const changed = make(1, { state: 'ready', answer: { option: 1, answeredAt: 't' } })
   for (const d of [
     changed,
-    make(2, { dependsOn: ['d1'], state: 'ready', answer: ANSWER }),
+    make(2, { dependsOn: ['d1'], state: 'ready', answer: ANSWER, section: 'claudes-call' }),
     make(3, { dependsOn: ['d1'], state: 'open' }),
     make(4, { dependsOn: ['d1'], state: 'live' }),
     make(5, { dependsOn: ['d1'], state: 'parked', parkedReason: 'later' }),
@@ -73,6 +73,7 @@ test('only ready dependents reopen, with the answer they had; the others are lef
   expect(result).toEqual({ reopened: ['d2'], sent: ['d6'] })
   const by = Object.fromEntries((await readAll($)).decisions.map(d => [d.id, d]))
   expect(by.d2!.state).toBe('open')
+  expect(by.d2!.section).toBe('needs-you')
   expect(by.d2!.answer).toBeUndefined()
   expect(by.d2!.reopenedBy).toMatchObject({ id: 'd1', was: ANSWER })
   expect(by.d3!.state).toBe('open')

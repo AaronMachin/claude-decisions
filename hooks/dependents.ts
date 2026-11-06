@@ -5,7 +5,7 @@ export type Reopened = { reopened: string[]; sent: string[] }
 
 /**
  * A decision's answer changed from `previous`. Every `ready` decision that depends
- * on it goes back to `open` with its answer cleared and `reopenedBy` saying why.
+ * on it goes back to `open` in "Needs you" with its answer cleared and `reopenedBy` saying why.
  * Open, live and parked ones are left alone, and so are sent ones (Claude has
  * already acted on them), which are only named. One level deep: a cleared answer
  * decided nothing for its own dependents.
@@ -23,7 +23,7 @@ export async function reopenDependents($: StoreCtx, changed: Decision, previous:
       result.sent.push(d.id)
     } else if (d.state === 'ready') {
       const { answer: was, ...rest } = d
-      await write($, { ...rest, state: 'open', reopenedBy: { id: changed.id, at, ...(was ? { was } : {}) } })
+      await write($, { ...rest, state: 'open', section: 'needs-you', reopenedBy: { id: changed.id, at, ...(was ? { was } : {}) } })
       result.reopened.push(d.id)
     }
   }
