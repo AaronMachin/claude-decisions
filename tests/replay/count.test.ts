@@ -22,8 +22,13 @@ test('a statement and a question inside a code block do not count', () => {
 test('a row has the counts and no text, and totals add up', () => {
   const a = summarise('plan', [{ chat: 2, flaggedBy: 'list' }, { chat: 0, flaggedBy: undefined }], 3)
   const b = summarise('review', [{ chat: 0, flaggedBy: 'mid' }], 0)
-  expect(formatRow(a)).toBe('plan | 2 | 2 | 3 | 1 | 2/2 | 0 | 0')
-  expect(formatRow(b)).toBe('review | 1 | 0 | 0 | 1 | 0/1 | 1 | 0')
-  expect(formatTotals([a, b])).toBe('total | 3 | 2 | 3 | 2 | 2/3 | 1 | 0')
-  expect(HEADER.split('|')).toHaveLength(8)
+  expect(formatRow(a)).toBe('plan | 2 | 2 | 3 | 1 | 2/2 | 0 | 0 | 0')
+  expect(formatRow(b)).toBe('review | 1 | 0 | 0 | 1 | 0/1 | 1 | 0 | 0')
+  expect(formatTotals([a, b])).toBe('total | 3 | 2 | 3 | 2 | 2/3 | 1 | 0 | 0')
+  expect(HEADER.split('|')).toHaveLength(9)
+})
+
+test('a turn that failed is counted and adds no questions', () => {
+  const row = summarise('x', [{ chat: 0, flaggedBy: undefined, failed: true }], 0)
+  expect(formatRow(row)).toBe('x | 1 | 0 | 0 | 0 | 1/1 | 0 | 0 | 1')
 })

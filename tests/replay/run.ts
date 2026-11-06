@@ -10,12 +10,13 @@
  * sentences the detector flagged: use both on made-up sessions only.
  */
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { isQuestionsInChat, whyQuestionsInChat } from '../../hooks/integrate'
+import { repoKey } from '../../hooks/store'
 import { HEADER, countQuestions, formatRow, formatTotals, summarise } from './count'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -24,6 +25,7 @@ const args = process.argv.slice(2)
 const option = name => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined)
 const sessionsDir = resolve(option('--sessions') ?? join(here, 'sessions'))
 const textDir = option('--text')
+const only = option('--only')
 const showFlagged = args.includes('--flagged')
 const storeRoot = join(homedir(), '.claude', 'decisions')
 
@@ -36,25 +38,31 @@ function storeFolders() {
 }
 
 function claude(prompt, cwd, resume) {
-  const argv = ['-p', prompt, '--plugin-dir', repo, '--model', 'sonnet', '--output-format', 'json', '--allowedTools', 'mcp__decisions__*']
+  const argv = ['-p', prompt, '--plugin-dir', repo, '--model', 'sonnet', '--output-format', 'json', '--max-turns', '12', '--allowedTools', 'mcp__decisions__*']
   if (resume) {
     argv.push('--resume', resume)
   }
-  const out = execFileSync('claude', argv, { cwd, encoding: 'utf8', timeout: 300000, maxBuffer: 64 * 1024 * 1024 })
+  const out = execFileSync('claude', argv, { cwd, encoding: 'utf8', timeout: 240000, maxBuffer: 64 * 1024 * 1024 })
 
   return JSON.parse(out)
 }
 
+async function main() {
 const rows = []
-for (const file of readdirSync(sessionsDir).filter(f => f.endsWith('.json')).sort()) {
+for (const file of readdirSync(sessionsDir).filter(f => f.endsWith('.json') && (only === undefined || f === `${only}.json`)).sort()) {
   const session = JSON.parse(readFileSync(join(sessionsDir, file), 'utf8'))
-  const cwd = mkdtempSync(join(tmpdir(), 'replay-'))
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'replay-')))
   execFileSync('sh', [join(repo, 'evals', 'pantry-setup.sh')], { cwd, stdio: 'ignore' })
-  const before = new Set(storeFolders())
   const turns = []
   let id
   for (const [index, prompt] of session.prompts.entries()) {
-    const result = claude(prompt, cwd, id)
+    let result
+    try {
+      result = claude(prompt, cwd, id)
+    } catch {
+      turns.push({ chat: 0, flaggedBy: undefined, failed: true })
+      continue
+    }
     id = result.session_id
     const text = String(result.result ?? '')
     turns.push({ chat: countQuestions(text), flaggedBy: whyQuestionsInChat(text) })
@@ -66,11 +74,14 @@ for (const file of readdirSync(sessionsDir).filter(f => f.endsWith('.json')).sor
       console.error(`[${session.name} turn ${index + 1}, rule ${whyQuestionsInChat(text)}] ${text.split(/(?<=[.!?])\s+/).filter(s => s.includes('?')).join(' / ')}`)
     }
   }
-  const added = storeFolders()
-    .filter(f => !before.has(f))
-    .reduce((n, f) => n + readdirSync(join(storeRoot, f)).filter(name => /^d\d+\.json$/.test(name)).length, 0)
+  const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd, encoding: 'utf8' }).trim()
+  const folder = join(storeRoot, await repoKey(common))
+  const added = storeFolders().includes(await repoKey(common)) ? readdirSync(folder).filter(name => /^d\d+\.json$/.test(name)).length : 0
   rows.push(summarise(session.name, turns, added))
 }
 console.log(HEADER)
 rows.forEach(r => console.log(formatRow(r)))
 console.log(formatTotals(rows))
+}
+
+main()
