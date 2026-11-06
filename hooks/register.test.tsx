@@ -360,7 +360,7 @@ test('a subagent cannot add or update a decision, and can still list', async ($,
 test('AskUserQuestion lands in the pane and is answered with the object shape', async ($, on) => {
   const seen = engine(on)
   await start($)
-  const questions = [{ question: 'Where should links live?', header: 'Links', options: [{ label: 'Database' }, { label: 'Signed URL' }], multiSelect: false }]
+  const questions = [{ question: 'Where should links live?', header: 'Links', options: [{ label: 'Database', description: 'a table' }, { label: 'Signed URL', description: 'nothing stored' }], multiSelect: false }]
   const answer: any = await $.tool.call({ tool: 'AskUserQuestion', questions })
   expect(JSON.stringify(answer)).toContain('Added to the decisions pane as 1.')
   expect(JSON.stringify(answer)).toContain('"answers":{}')
