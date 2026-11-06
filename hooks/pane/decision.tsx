@@ -362,6 +362,9 @@ export function DecisionView($: any, props: Props): any {
               </Button>
             ))}
       </Box>
+      {isSent || digits.length === 0 ? null : (
+        <Text dimColor>{`Type a number${d.recommendation === undefined ? '' : ' or a'}, then enter to confirm.`}</Text>
+      )}
       <Box>
         {isSent || d.recommendation === undefined ? null : (
           <Button
