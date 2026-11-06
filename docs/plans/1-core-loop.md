@@ -194,7 +194,7 @@ Task 1 first. Tasks 2, then 3 and 4 can run in parallel (both need only the stor
 - Modify: `docs/decisions.md` (calls made while building)
 - Append: `.superpowers/phase-2/log.md` (`status` entry)
 
-- [ ] **Step 1: Run the three real sessions** in the spec's "Real session" section (tmux, 150x40, `claude --plugin-dir /Users/aaronmachin/claude-decisions --model sonnet`, scratch project from `mktemp -d` plus one `git worktree`). Fix what they show with a test first for each fix; note what was sent, seen, how long and how many turns.
+- [ ] **Step 1: Run the three real sessions** in the spec's "Real session" section (tmux, 150x40, `claude --plugin-dir <repo root> --model sonnet`, scratch project from `mktemp -d` plus one `git worktree`). Fix what they show with a test first for each fix; note what was sent, seen, how long and how many turns.
 - [ ] **Step 2: Clean up** what the mod left under `~/.claude/decisions/` only through the mod's own files, and list what is left.
 - [ ] **Step 3: Run** `claude plugin test .`, `claude plugin validate .`, `tsc -p .`, `superpowers:verification-before-completion`, and the pre-push grep.
 - [ ] **Step 4: Dispatch one fresh subagent** to review `git diff main...ws/core-loop` against this plan (gaps only); fix gaps.
