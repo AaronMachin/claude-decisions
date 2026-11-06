@@ -81,3 +81,4 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 39 | Real Claude sessions used for testing run on Sonnet, at most three per workstream | Real sessions are the expensive part of testing a mod. |
 | 40 | The build runs autonomously, with sensible commits at each step, and keeps this document and `CONTRIBUTING.md` up to date | Aaron asked for it to carry on without stopping at each gate. |
 | 41 | The repository root is the mod; `spikes/` stays as reference **(Claude's call)** | One install path, matching the README's `/plugin install` commands. |
+| 42 | Every task's commit is pushed to GitHub straight away; `main` is pushed after each merge. Replaces the "pushed when a phase ends" part of 38 | Aaron wants the work visible as it happens. |
