@@ -41,10 +41,8 @@ export const register: Register = (on, options) => {
 
   on('turn.start', ($, e, next) => onTurnStart($, e, next))
 
-  on('turn.complete', ($, e, next) => onTurnComplete($, e, next))
-
   on('turn.complete', async ($, e, next) => {
-    const done = await next(e)
+    const done = await onTurnComplete($, e, next)
     await nudgeAfterTurn($, e).catch(() => undefined)
 
     return done

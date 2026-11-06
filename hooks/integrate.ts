@@ -68,7 +68,7 @@ export async function nudgeAfterTurn($: any, e: { agentId?: string; reason?: str
   }
   const messages: Message[] = await $.session.messages()
   const lastPrompt = [...messages].reverse().find(m => m.role === 'user' && (m.toolResults ?? []).length === 0)
-  if (lastPrompt && /^\s*On decision \d+/.test(lastPrompt.text)) {
+  if (lastPrompt && /On decision \d+ ·/.test(lastPrompt.text)) {
     return
   }
   if (!isQuestionsInChat(turnText(messages, e.answer ?? ''))) {

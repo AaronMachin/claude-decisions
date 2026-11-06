@@ -205,3 +205,9 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 123 | The nudge is two sentences naming the pane and the one-line rule **(Claude's call)** | The prompt left the text to the builder. |
 | 124 | Five eval cases: plan-sharing, review-last-commit, what-next, ask-me-first, find-problems **(Claude's call)** | The prompt asked for plan, review, "what next" and a tempting prompt at least. |
 | 125 | The compose section id is `decisions:rules`, a constant string, `scope: 'session'` **(Claude's call)** | Plugin sections are `<plugin>:<name>`; a constant keeps the prompt cache. |
+
+## 7 November 2026: workstream 4, Claude integration (build)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 126 | One `on` per event without a matcher: the nudge runs inside the existing `turn.complete` hook, after discussions' work **(Claude's call, forced by the engine)** | The engine refuses a second unmatched `on("turn.complete")` ("registered twice without a matcher"). Every hook this workstream adds to an event the mod already uses goes inside the existing one. |
