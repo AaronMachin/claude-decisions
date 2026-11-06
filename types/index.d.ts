@@ -6,7 +6,6 @@ export type PaneView = {
   decisionId?: string
   /** An option id, or none. */
   highlight?: number
-  typed?: { digit: string; at: number }
   /** Decision ids ticked on the review screen. */
   ticked: string[]
   isParking: boolean
