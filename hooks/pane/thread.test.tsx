@@ -299,3 +299,23 @@ test('m appears under a fork reply and asks that question again to the main sess
   expect(seen.submitted).toEqual(['On decision 1 · Where the config file lives: can you see the files?'])
   await ui.unmount()
 })
+
+for (const [value, label] of [['fork', 'fork'], ['quick model', 'quick model'], ['main session', 'main session']] as const) {
+  test(`the setting ${value} shows who replies`, { options: { discussionReplies: value } }, async ($, on) => {
+    engine(on)
+    const ui = await openThread($)
+    expect(await ui.find({ type: 'Text', text: `Replies from: ${label}` })).toBeDefined()
+    await ui.unmount()
+  })
+}
+
+test('with the setting on fork, a question is not sent to the main session', { options: { discussionReplies: 'fork' } }, async ($, on) => {
+  const seen = engine(on)
+  const ui = await openThread($)
+  await ui.press({ key: 'ask' })
+  await ui.input({ key: 'ask-input', text: 'who answers?' })
+  await settle()
+  expect(seen.submitted).toEqual([])
+  expect(await ui.find({ type: 'Text', text: /^no reply: / })).toBeDefined()
+  await ui.unmount()
+})
