@@ -241,3 +241,11 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 149 | The pane's keys-off line reads "Press the pane focus key (ctrl+x tab unless you moved it) to use it with a draft kept, or run /decisions with an empty prompt." and replaces row 144's "keys off: /decisions" in the header **(Claude's call, replaces part of 144)** | `/decisions` hands a draft back and turns keys off; only the focus key keeps it. The mod can't read the person's own binding, so it names the default. |
 | 150 | A parked decision records `parkedAt` and the Parked row shows that day in the person's local time; it replaces row 148's "last change" date **(Claude's call, from the branch review)** | A later thread message re-stamps `updatedAt`, so the earlier date moved. |
 | 151 | The replay's counter counts every sentence ending in a question mark outside code (minus a bare offer to carry on), broader than the spec's list-and-phrases rule, and counts all assistant text in a turn (stream-json), not only the last message **(Claude's call)** | It must differ from the detector so disagreements show, and a question asked before a tool call still lands in chat. |
+
+## 7 November 2026: workstream 6, release
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 152 | The repository is its own marketplace: `.claude-plugin/marketplace.json` is named `claude-decisions` and lists one plugin, `decisions`, with `source: "./"` **(Claude's call)** | That is what makes `decisions@claude-decisions` resolve, and keeps one install path (row 41). |
+| 153 | The README's settings section lists only `Discussion replies` and says it is the only setting in 0.1.0; the `Open the pane` setting M4 names is not built **(Claude's call, approved by the controlling session)** | The README describes what exists. The pane opens when Claude adds a decision unless the person hid it (row 60). |
+| 154 | The README shows the two install commands (`/plugin marketplace add`, then `/plugin install decisions@claude-decisions`), not the one-line `--marketplace` form, and the cold install uses exactly those two **(Claude's call, approved by the controlling session)** | The design settled on two commands; testing the ones the README shows is the point of the cold install. |
