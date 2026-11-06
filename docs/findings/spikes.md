@@ -152,3 +152,62 @@ Each spike answers one question about the mod API. Folder layout: `spikes/<name>
 - Reading the results: `--json` gives per-grader verdicts, cost and turns, and `--report` gives an HTML page. Neither includes the final message text. To see it I had to use `--keep-temp` and open `out/trace.jsonl` in the kept directory.
 
 **So the design should:** treat `claude plugin eval` as usable for "decision added" (a `tool_used` grader works as is) and for a regex version of the question check, but not for the real `isQuestionsInChat`. Keep a separate unit test for that function. Give the cases a fixture project (scaffold script) before trusting any score on the review and next-step prompts. Add an `llm` grader if the one-line chat summary matters. Budget about $0.13 and under a minute for three cases at one run each.
+
+## Phase 2 spike: keys, append, fork, storage
+
+**Question:** Can the mod API do the key scheme in decisions.md D3 and D4, reach Claude with a message at session start and after `/clear`, let `$.model.fork` read project files, and store decisions under `~/.claude/decisions/<key>/` with one key for every worktree?
+
+**What I did:** Built `spikes/keys` (plugin `keys-spike`). `/keys-a` opens a pane with twelve option Buttons (`opt:1` to `opt:12`), a `Discuss` Button with `autoFocus`, and ten digit Buttons (`hotkey` "1" to "0", plain) whose `onPress` calls `$.ui.focus` on the option. `/keys-b` opens a pane holding one `Client` whose `onKey` handles digits, up, down and return itself and posts each key to the hooks. `/keys-append`, `/keys-fork` and `/keys-store` run Questions 2 to 4. `claude plugin test spikes/keys` passes 7 of 7 and `claude plugin validate` passes with the usual warnings. Two real sessions in tmux (Sonnet, 150 columns, `--plugin-dir`, `--debug-file`) in a scratch git project and one worktree of it: (1) about 9 minutes, 6 prompts, answered Questions 1, 2, 3 and half of 4; (2) about 1 minute, 1 command, answered the other half of 4. Sonnet stands in for Opus.
+
+### 1. Keys
+
+Route A works (Buttons and `$.ui.focus`), seen five times in session 1.
+
+| Key | Result |
+| --- | --- |
+| Digit, pane holds the keys | The digit's Button runs its `onPress` (debug: `ui.press keysa element=digit:5`). `$.ui.focus({ requestId, key: "opt:5" })` answered `{}` and the debug log says `ui.focus Pane keysa (plugin) onto keys-spike's opt:5: moved`. The option is drawn inverted |
+| `1` then `0` | 473 ms apart: option 1, then option 10. Typed 1 ms apart (one `tmux send-keys` call): see the race below. No gap is needed to move the highlight; a gap only decides whether a second digit joins the first (11, 12), see "Gap" |
+| Up, down | Move the ring between option Buttons: `ui.focus keysa element=opt:9 origin={"kind":"person"}`, no plugin code needed. The ring also passes over the Discuss and digit Buttons, in draw order |
+| Enter on a ring Button | Raises `ui.press` for that key and its `onPress` runs (`CHOSEN 10`) |
+| Enter with nothing on the ring | Nothing. The pane held the keys (a digit worked right after) but no `ui.press`, `ui.focus`, `ui.input` or prompt came, and the composer stayed empty. Seen once |
+| Enter with the ring on a Button drawn with `autoFocus` | A pane opened with `focus` starts the ring on the `autoFocus` Button; Enter pressed it (`DISCUSS pressed`). Seen once |
+| Esc | Returns the keys to the composer (engine takes it first). `ctrl+x tab` gives the pane the keys back; `ctrl+x x` did not close it here |
+
+- **Race.** Two digits sent together ran their handlers one after the other without waiting for the first `$.ui.focus` to answer. My first version updated the "previous digit" after that await, so `0` was read as 10 (correct) but `1` then ran as a fresh digit and the highlight ended on 1. Debug: `digit 0 (1075ms after previous) -> option 10` then `digit 1 (1081ms after previous) -> option 1`. The fix (state set before the await) has a test. Seen once.
+- **Gap.** I measured only 473 ms for a deliberate "1" then "0", so I have no data on what feels right. The rule I built: a "1" followed by a digit within 1500 ms joins ("10", "11", "12" when the option exists), else the second digit stands alone. This is an inference about feel, not measured: with at most ten options a gap is not needed at all (`1` then `0` is the only way to reach option 10, as `0` alone also means 10 in my version). With more than ten, a gap is the only way to tell "1 then 1" (11) from "1, pause, 1". I propose 1000 ms, to be tried by a person.
+- **Digit Buttons are visible.** Each hotkey needs its own Button, drawn as `1: 1`, `2: 2` and so on in one row. A press carries no hotkey/Enter flag (`ui.press` has `plugin`, `element`, `component`, `requestId`, `surface`), so a hotkey on the option Button itself could not be told apart from Enter. I did not try an empty label or a dim one-line hint row.
+- **Route B (a `Client`).** Handles every key itself: `1` then `0` (531 ms) gave highlight 10, up/down moved it, `return` posted `choose` with the highlight, and `return` with no highlight posted `discuss` (`ui.message {"kind":"discuss","key":"return",...}`), seen once each. But the Client only gets keys after a click on it. `$.ui.focus({ requestId: "keysb", key: "kb" })` answered `{"deny":"no element of its own is drawn under that key"}`, `/keys-b` opened the pane as a tab without the keys (digits went to the composer), Tab did not reach it, and only a mouse click (sent as an SGR mouse sequence) did. Route B is not usable as the default.
+
+**So workstream 1 should:** use route A. Draw option Buttons keyed `opt:<n>`, digit hotkey Buttons that call `$.ui.focus` (state updated before the await), up/down from the engine's ring, Enter from the Button's `onPress`, and a `Discuss` Button with `autoFocus` as the "nothing highlighted" case (Enter on it opens the discussion; moving the ring off it is the highlight). State plainly in the spec that Enter with the ring on nothing does nothing. Decide whether the digit row is shown or dimmed. Not tried: more than twelve options, a pane that scrolls, the desktop surface.
+
+### 2. Conversation message
+
+- **At session start:** `$.session.append({ message: { type: "user", content: [text] } })` in `session.start` was stored (`"role":"user","isMeta":true`) and reached Claude. Asked "is there a codeword anywhere in what you have been told this session?" it quoted "Note from the keys-spike plugin: the startup codeword is PLUM-7421." and said "in your message", so it treats the note as the person's own words. The debug log has no "bypassed" line for it: `managed-security-plugin: session.append nested in keys-spike#0` and `settled in 1.0ms`. Seen three times (the reload also re-ran it).
+- **After `/clear`:** `session.start` does not fire again, so nothing is appended. The mod's `classic.SessionStart` hook (source `clear`) is skipped: `keys-spike: classic.SessionStart bypassed by managed-security-plugin (tier user); beneath runs`. I did not try to get round that. Seen twice.
+- **Route that worked after `/clear`:** a `prompt.submit` hook that, when `$.session.turns()` is 1 or less (the count already includes the prompt being sent, so 0 never appears), appends the note before `next(e)`. After `/clear`, Claude quoted only "the first-prompt codeword is QUINCE-3308", so the earlier startup note was gone and the new one arrived. Seen once. Mod hot-reload also fires `session.start`, which re-appends into the current conversation (a confound I hit once, then removed).
+
+**So workstream 4 should:** append the open decisions on `session.start` and again from a `prompt.submit` hook when `turns() <= 1` (covers `/clear` and a fresh session), not rely on `classic.SessionStart`; word the note knowing Claude reads it as the person's message; keep a read tool for the list as the fallback. Not tried: after `/compact`, a resumed session.
+
+### 3. Fork reading files
+
+`/keys-fork` called `$.model.fork` with "Open the file SECRET.txt in the project directory and reply with the code written in it. If you cannot read files, reply exactly: NO FILE ACCESS." (the file held "The secret code is MANGO-9047."). It answered `NO FILE ACCESS`, seen twice. A second prompt asking which codeword was mentioned earlier in the conversation was answered "PLUM-7421", so the fork sees the conversation, including the appended note. The types agree: `ModelForkRequest` has only `prompt` and `effort`, and the reference calls the fork tool-less. This is a no for files.
+
+**So workstream 2 should:** use the fork only for what the conversation already holds. For a reply that must read project files use a side agent with read-only tools (Phase 1's discuss spike, 7.4 seconds, read two files) or the main session.
+
+### 4. Storage
+
+- **Write and read back:** the mod's `$.fs.write("<home>/.claude/decisions/<key>/<id>.json", text)` created the directories and the file; `$.fs.read` returned it; `$.fs.list` listed it. `$.fs.list` on a missing folder rejects (`ENOENT`). The home folder came from `$.env.get("HOME")` (the name must be a string literal). Seen twice.
+- **New session:** a second session started in the worktree listed the first session's file and read it.
+- **Same key from a worktree and the main checkout:** `$.process.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"])` answered `<main checkout>/.git` from both (the worktree's cwd was `<main checkout>-wt`). `$.session.repo()` gave `root` as the main working tree in both. My key is the folder name plus the first 8 hex of SHA-256 of that common directory (`keys-scratch-2v3n-da0af65a`), identical in both. Seen once each. A repository with no commits, a bare repository and a submodule were not tried.
+
+**So workstream 1 should:** store at `~/.claude/decisions/<repoKey>/<id>.json` through `$.fs`, compute the key from `git rev-parse --path-format=absolute --git-common-dir` (`$.session.repo().root` is a second route, but its `remote` and `name` can be null), handle a missing folder as "empty", and read the folder again on each `session.start`.
+
+### Cleanup
+
+Everything the spike wrote under `~/.claude/decisions/` (one folder, two files) was deleted, and so was the `decisions` folder itself, which was empty and which the spike created. The scratch project and its worktree are in a `mktemp` folder under `/tmp`.
+
+### Other points
+
+- The test kit gives "no implementation for ui.focus" when a Button's `onPress` calls `$.ui.focus` inside `$.ui.mount`, even with `on('ui.focus')` registered (answers `{}` and `{ value: {} }` both tried), so the focus logic is a plain function (`pressDigit` in `hooks/logic.ts`) tested with a fake `$`.
+- A hook for `ui.focus` of the mod's own `$.ui.focus` calls is skipped ("re-entry (the plugin's own code raised it; origin keys-spike)"); a person's moves do reach it.
+- Not answered: the desktop surface, Opus, more than twelve options, scrolling panes.
