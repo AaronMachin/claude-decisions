@@ -221,7 +221,22 @@ export function DecisionView($: any, props: Props): any {
           </Box>
         )
       })}
-      <Button key="discuss" autoFocus onPress={() => setView($, v => ({ ...v, notice: 'No discussion yet' }))}>
+      <Button
+        key="discuss"
+        autoFocus
+        onPress={async () => {
+          await setView($, v => ({
+            ...v,
+            screen: 'thread',
+            isAsking: (v.drafts[d.id] ?? '') !== '',
+            isMarking: false,
+            revisionIndex: undefined,
+            threadSkip: 0,
+            notice: undefined,
+          }))
+          focusLater($, (view.drafts[d.id] ?? '') !== '' ? 'ask-input' : 'ask')
+        }}
+      >
         Discuss
       </Button>
       {view.notice ? <Text dimColor>{view.notice}</Text> : null}

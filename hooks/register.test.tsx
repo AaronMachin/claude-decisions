@@ -258,17 +258,6 @@ test('digit Buttons exist only for options that exist, and b is not on the list'
   await ui.unmount()
 })
 
-test('pressing Discuss says there is no discussion yet', async ($, on) => {
-  engine(on)
-  await start($)
-  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 'row:d1' })
-  await ui.press({ key: 'discuss' })
-  expect(await ui.find({ type: 'Text', text: 'No discussion yet' })).toBeDefined()
-  await ui.unmount()
-})
-
 test('p on a parked decision puts it back to open, through the pane', async ($, on) => {
   const seen = engine(on)
   await start($)

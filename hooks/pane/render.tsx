@@ -2,6 +2,7 @@ import type { PaneView } from '../../types'
 import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
 import { DecisionView, INITIAL_VIEW, PANE_ID, readView, setView } from './decision'
+import { ThreadView } from './thread'
 import { ListView, ReviewView, activeTab, openReview, sectionsFor, statusText, tabsFor, truncate } from './list'
 
 /** Sets the status line from what's in the store. */
@@ -45,6 +46,10 @@ export async function followFocus($: any, element: string | undefined): Promise<
     await setView($, v => ({ ...v, highlight: Number(match[1]) }))
   } else if (element === 'discuss') {
     await setView($, v => ({ ...v, highlight: undefined }))
+  } else if (element === 'mark') {
+    await setView($, v => ({ ...v, isMarking: true }))
+  } else if (element === 'ask' || element === 'ask-input') {
+    await setView($, v => ({ ...v, isMarking: false }))
   }
 }
 
@@ -114,8 +119,26 @@ export async function renderPane($: any, e: any): Promise<any> {
     onHide: () => void hidePane($),
   }
   const top = header(ui, width, e.props.isFocused === true)
-  const decision = view.screen === 'decision' ? decisions.find(d => d.id === view.decisionId) : undefined
+  const decision = view.screen === 'decision' || view.screen === 'thread' ? decisions.find(d => d.id === view.decisionId) : undefined
 
+  if (decision && view.screen === 'thread') {
+    const crumb = `${decision.group ?? 'Other'} > ${decision.id} > ${view.revisionIndex === undefined ? 'discussion' : 'earlier version'}`
+
+    return (
+      <Box flexDirection="column">
+        {header(ui, width, e.props.isFocused === true, crumb)}
+        {ThreadView($, {
+          ...common,
+          d: decision,
+          view,
+          rows: e.props.scroll?.bodyRows ?? 30,
+          readyCount: ready.length,
+          onChanged: () => void changed($),
+          onLeave: () => leaveToList($),
+        })}
+      </Box>
+    )
+  }
   if (decision) {
     const crumb = `${decision.group ?? 'Other'} > ${decision.id}`
 
