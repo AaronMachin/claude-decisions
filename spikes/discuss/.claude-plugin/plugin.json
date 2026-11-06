@@ -1,0 +1,5 @@
+{
+  "name": "discuss-spike",
+  "version": "0.1.0",
+  "description": "Spike: for each way of answering a question about a decision (main session, fork, side agent, quick model), how long does the reply take, where does it show, and does anything leak into the main conversation?"
+}

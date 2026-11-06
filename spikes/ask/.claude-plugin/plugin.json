@@ -1,0 +1,5 @@
+{
+  "name": "ask-spike",
+  "version": "0.1.0",
+  "description": "Spike: what does Claude make of an AskUserQuestion call the mod answers, and can a turn that ends with questions in chat be detected?"
+}
