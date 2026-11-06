@@ -148,3 +148,28 @@ test('a thread entry keeps its revision index through a write and read', async (
   await write(store, { ...made, thread: [{ who: 'claude', text: '↻ x', at: 'now', revision: 0 }] })
   expect((await readOne(store, made.id))?.thread[0]?.revision).toBe(0)
 })
+
+test('the store folder is worked out with git once per working folder, so a redraw does not run git again', async () => {
+  let gitRuns = 0
+  const files = new Map<string, string>()
+  const $: StoreCtx = {
+    env: { get: async () => '/home/cache' },
+    session: { cwd: async () => '/work/cache-once' },
+    process: {
+      run: async () => {
+        gitRuns += 1
+        return { exitCode: 0, stdout: '/work/cache-once/.git\n' }
+      },
+    },
+    fs: {
+      read: async (p: string) => files.get(p) ?? '',
+      write: async (p: string, text: string) => void files.set(p, text),
+      exists: async (p: string) => files.has(p),
+      list: async () => [],
+    },
+  }
+  await readAll($)
+  await readAll($)
+  await readAll($)
+  expect(gitRuns).toBe(1)
+})
