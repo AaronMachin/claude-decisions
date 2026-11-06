@@ -8,12 +8,14 @@ const HIDDEN: Decision['state'][] = ['superseded', 'withdrawn']
 
 /**
  * One tab per group in the order each first appeared, then "Other" (no group),
- * then "Parked". A parked decision shows only in "Parked".
+ * then "For you to do" (tasks, wherever they came from), then "Parked". A parked
+ * decision shows only in "Parked".
  */
 export function tabsFor(all: Decision[]): Tab[] {
   const groups = new Map<string, Tab>()
   const other: Decision[] = []
   const parked: Decision[] = []
+  const tasks: Decision[] = []
 
   for (const d of [...all].sort((a, b) => a.number - b.number)) {
     if (HIDDEN.includes(d.state)) {
@@ -21,6 +23,8 @@ export function tabsFor(all: Decision[]): Tab[] {
     }
     if (d.state === 'parked') {
       parked.push(d)
+    } else if (d.isTask === true) {
+      tasks.push(d)
     } else if (d.group === undefined || d.group.trim() === '') {
       other.push(d)
     } else {
@@ -33,6 +37,9 @@ export function tabsFor(all: Decision[]): Tab[] {
   if (other.length > 0) {
     tabs.push({ key: 'other', label: 'Other', decisions: other })
   }
+  if (tasks.length > 0) {
+    tabs.push({ key: 'todo', label: 'For you to do', decisions: tasks })
+  }
   if (parked.length > 0) {
     tabs.push({ key: 'parked', label: 'Parked', decisions: parked })
   }
@@ -40,10 +47,25 @@ export function tabsFor(all: Decision[]): Tab[] {
   return tabs
 }
 
-/** "Needs you" is open and live decisions, "Answered" is ready and sent. Parked decisions are the Parked tab's rows. */
-export function sectionsFor(tab: Tab): { needsYou: Decision[]; answered: Decision[]; parked: Decision[] } {
+const isWaiting = (d: Decision) => d.state === 'open' || d.state === 'live'
+
+/**
+ * The groups inside a tab. "Needs you" is open and live decisions whose section is
+ * needs-you; "Claude's call" and "Already decided" are the open ones Claude put
+ * there; "Answered" is ready and sent in any section. Parked decisions are the
+ * Parked tab's rows.
+ */
+export function sectionsFor(tab: Tab): {
+  needsYou: Decision[]
+  claudesCall: Decision[]
+  alreadyDecided: Decision[]
+  answered: Decision[]
+  parked: Decision[]
+} {
   return {
-    needsYou: tab.decisions.filter(d => d.state === 'open' || d.state === 'live'),
+    needsYou: tab.decisions.filter(d => isWaiting(d) && d.section === 'needs-you'),
+    claudesCall: tab.decisions.filter(d => isWaiting(d) && d.section === 'claudes-call'),
+    alreadyDecided: tab.decisions.filter(d => isWaiting(d) && d.section === 'already-decided'),
     answered: tab.decisions.filter(d => d.state === 'ready' || d.state === 'sent'),
     parked: tab.decisions.filter(d => d.state === 'parked'),
   }
@@ -51,7 +73,7 @@ export function sectionsFor(tab: Tab): { needsYou: Decision[]; answered: Decisio
 
 export function counts(all: Decision[]): { open: number; ready: number; parked: number } {
   return {
-    open: all.filter(d => d.state === 'open' || d.state === 'live').length,
+    open: all.filter(d => isWaiting(d) && d.section === 'needs-you').length,
     ready: all.filter(d => d.state === 'ready').length,
     parked: all.filter(d => d.state === 'parked').length,
   }
