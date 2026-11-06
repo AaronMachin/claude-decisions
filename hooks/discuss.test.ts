@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { markAnswered, recordQuestion, recordReply } from './discuss'
+import { askModel, contextFor, markAnswered, recordQuestion, recordReply } from './discuss'
 import { buildAnswerPrompt } from './send'
 import { create, readOne, write } from './store'
 import type { Decision, StoreCtx } from './store'
@@ -106,4 +106,34 @@ test('marking answered works on open, live and parked decisions only, and the an
   expect(await markAnswered(store, d.id)).toBe(false)
   await write(store, { ...done, state: 'sent' })
   expect(await markAnswered(store, d.id)).toBe(false)
+})
+
+test('the fork gets the decision, the question and the no-files warning; the quick model gets haiku and the decision only', async () => {
+  const d = await make(fakeStore())
+  const calls: any[] = []
+  const $ = {
+    model: {
+      fork: async (r: any) => (calls.push(['fork', r]), { isAnswered: true, text: 'forked' }),
+      complete: async (r: any) => (calls.push(['complete', r]), { isAnswered: true, text: 'quick' }),
+    },
+  }
+  expect(await askModel($, 'fork', d, 'Why root?')).toEqual({ ok: true, text: 'forked' })
+  expect(await askModel($, 'quick', d, 'Why root?')).toEqual({ ok: true, text: 'quick' })
+  const fork = calls[0][1].prompt as string
+  expect(fork).toContain(contextFor(d))
+  expect(fork).toContain('1. Project root')
+  expect(fork).toContain('Question: Why root?')
+  expect(fork).toContain("can't read project files")
+  expect(calls[1][1].model).toBe('haiku')
+  expect(calls[1][1].prompt).toContain('Where the config file lives')
+  expect(calls[1][1].prompt).not.toContain('files')
+})
+
+test('an unanswered or rejected model call is a reason, not a throw', async () => {
+  const d = await make(fakeStore())
+  const none = { model: { fork: async () => ({ isAnswered: false, reason: 'nothing-to-fork' }), complete: async () => ({ isAnswered: false, reason: 'api-error' }) } }
+  expect(await askModel(none, 'fork', d, 'q')).toEqual({ ok: false, reason: 'nothing-to-fork' })
+  expect(await askModel(none, 'quick', d, 'q')).toEqual({ ok: false, reason: 'api-error' })
+  const boom = { model: { fork: async () => { throw new Error('aborted') }, complete: async () => ({}) } }
+  expect(await askModel(boom, 'fork', d, 'q')).toEqual({ ok: false, reason: 'aborted' })
 })

@@ -55,3 +55,48 @@ export async function markAnswered(store: StoreCtx, id: string): Promise<boolean
 
   return true
 }
+
+export type ModelCtx = {
+  model: {
+    fork: (request: { prompt: string }) => Promise<any>
+    complete: (request: { model: string; prompt: string }) => Promise<any>
+  }
+}
+
+/** The decision as the fork or quick model is given it: title, scenario, numbered options, recommendation. */
+export function contextFor(d: Decision): string {
+  const options = d.options.map(o => `${o.id}. ${o.label}${o.changes ? ` (${o.changes})` : ''}`)
+  const lines = [`Decision ${d.number}: ${d.title}`, `Today: ${d.scenario}`, 'Options:', ...options]
+  if (d.recommendation) {
+    lines.push(`Recommended: ${d.recommendation.option}, because ${d.recommendation.reason}`)
+  }
+
+  return lines.join('\n')
+}
+
+const SHORT = 'Answer in at most four sentences.'
+const NO_FILES = "You can't read project files in this reply, so if the question needs code, say so and stop."
+
+/** One call to the fork or the quick model (haiku, the decision only). Never throws. */
+export async function askModel(
+  $: ModelCtx,
+  mode: 'fork' | 'quick',
+  d: Decision,
+  question: string,
+): Promise<{ ok: true; text: string } | { ok: false; reason: string }> {
+  try {
+    const result =
+      mode === 'fork'
+        ? await $.model.fork({
+            prompt: `A question about this decision in the decisions pane.\n\n${contextFor(d)}\n\nQuestion: ${question}\n\n${SHORT} ${NO_FILES}`,
+          })
+        : await $.model.complete({
+            model: 'haiku',
+            prompt: `A question about this decision.\n\n${contextFor(d)}\n\nQuestion: ${question}\n\n${SHORT}`,
+          })
+
+    return result.isAnswered ? { ok: true, text: result.text } : { ok: false, reason: String(result.reason ?? 'no reply') }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) }
+  }
+}
