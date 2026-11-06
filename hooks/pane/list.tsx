@@ -1,6 +1,6 @@
 import type { PaneView } from '../../types'
 import type { Decision } from '../store'
-import { setView } from './decision'
+import { focusLater, setView } from './decision'
 
 export type Tab = { key: string; label: string; decisions: Decision[] }
 
@@ -168,8 +168,10 @@ type ListProps = {
   onHide: () => void
 }
 
-function openDecision($: any, id: string): Promise<unknown> {
-  return setView($, v => ({ ...v, screen: 'decision', decisionId: id, highlight: undefined, isParking: false, notice: undefined }))
+/** Opens a decision with the ring on Discuss, so `enter` alone opens the discussion (D3) and never picks an option the ring happened to land on. */
+async function openDecision($: any, id: string): Promise<void> {
+  await setView($, v => ({ ...v, screen: 'decision', decisionId: id, highlight: undefined, isParking: false, notice: undefined }))
+  focusLater($, 'discuss')
 }
 
 /** The tab row and the open tab's decisions. Returns an element tree. */

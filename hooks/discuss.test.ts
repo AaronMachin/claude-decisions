@@ -140,7 +140,8 @@ test('an unanswered or rejected model call is a reason, not a throw', async () =
   expect(await askModel(boom, 'fork', d, 'q')).toEqual({ ok: false, reason: 'aborted' })
 })
 
-const framed = (sent: string) => `The decisions plugin sent "${sent}"`
+const framed = (sent: string) => `The decisions plugin sent a message:\n${sent}\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns.`
+const framedOld = (sent: string) => `The decisions plugin sent "${sent}"`
 
 test('the reply is the sent turn, not the turn that happens to end first', () => {
   const sent = sentText({ number: 1, title: 'Where it lives' }, 'Does CI find it?')
@@ -298,4 +299,12 @@ test('the setting picks the mode', () => {
   expect(currentMode()).toBe('quick')
   configure({ discussionReplies: 'main session' })
   expect(currentMode()).toBe('main')
+})
+
+test('the older framing of the sent text is matched too, and a plugin-framed turn with no waiter is ignored', () => {
+  const sent = sentText({ number: 5, title: 'T' }, 'old framing?')
+  addWaiter({ decisionId: 'd5', asked: 'f1', sent })
+  expect(routeStart({ text: framedOld(sent), turnId: 'x1' })?.asked).toBe('f1')
+  expect(routeStart({ text: framed(sentText({ number: 5, title: 'T' }, 'nobody asked')), turnId: 'x2' })).toBeUndefined()
+  expect(routeComplete({ turnId: 'x1', answer: 'ok' })?.text).toBe('ok')
 })

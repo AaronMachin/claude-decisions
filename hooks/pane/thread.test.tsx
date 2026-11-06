@@ -151,7 +151,7 @@ test('asking in the main session shows the question, the waiting note, then the 
   await $.turn.start({ text: 'something else entirely', turnId: 'other' })
   await $.turn.complete({ turnId: 'other', answer: 'not for us' } as any)
   expect(await ui.find({ type: 'Text', text: 'not for us' })).toBeUndefined()
-  await $.turn.start({ text: `The decisions plugin sent "${seen.submitted[0]}"`, turnId: 'mine' })
+  await $.turn.start({ text: `The decisions plugin sent a message:\n${seen.submitted[0]}\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns.`, turnId: 'mine' })
   expect(await ui.find({ type: 'Text', text: 'Claude is answering' })).toBeDefined()
   await $.turn.complete({ turnId: 'mine', answer: 'Yes, from the root.' } as any)
   await settle()

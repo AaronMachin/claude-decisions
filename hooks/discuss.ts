@@ -111,7 +111,6 @@ export type Waiter = { decisionId: string; asked: string; sent: string; turnId?:
 
 const waiters: Waiter[] = []
 let busy = false
-const SENT_MARK = 'plugin sent "On decision'
 export const PLACEHOLDER = '(no text, see the line above)'
 
 /** What the main session is sent: the number and title lead, so the chat row reads as about that decision. */
@@ -135,20 +134,17 @@ export function isBusy(): boolean {
   return busy
 }
 
-/** A main-loop `turn.start`. The reply turn is the one whose text includes the engine's "plugin sent" framing and our sent text. */
+/** A main-loop `turn.start`. The reply turn is the one whose text includes the text we sent. */
 export function routeStart(e: { text: string; turnId: string; agentId?: string }): Waiter | undefined {
   if (e.agentId !== undefined) {
     return undefined
   }
   busy = true
-  if (!e.text.includes(SENT_MARK)) {
-    return undefined
-  }
   const open = waiters.filter(w => w.turnId === undefined)
+  // Claude Code 2.1.319 frames the sent text as `The <plugin> plugin sent a message:\n<text>`; 2.1.318 as `... plugin sent "<text>"`. Match the text itself, then the number-and-title lead, never the framing alone.
   const found =
     open.find(w => e.text.includes(w.sent)) ??
-    open.find(w => e.text.includes(w.sent.slice(0, w.sent.indexOf(':') + 1))) ??
-    open[0]
+    (/plugin sent/.test(e.text) ? open.find(w => e.text.includes(w.sent.slice(0, w.sent.indexOf(':') + 1))) : undefined)
   if (found) {
     found.turnId = e.turnId
   }

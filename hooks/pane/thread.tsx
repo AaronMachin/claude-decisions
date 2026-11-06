@@ -126,6 +126,8 @@ async function goBack($: any, view: PaneView): Promise<void> {
   await setView($, () => next.view)
   if (next.focusAsk) {
     await $.ui.focus({ requestId: PANE_ID, key: 'ask' }).catch(() => undefined)
+  } else if (next.view.screen === 'decision') {
+    focusLater($, 'discuss')
   }
 }
 
