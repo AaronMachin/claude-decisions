@@ -149,6 +149,8 @@ type Props = {
   readyCount: number
   /** Called after anything that changes a decision, so the status line and pane refresh. */
   onChanged: () => void
+  /** Called when the pane has gone back to the list, so the ring can be put on its first row. */
+  onLeave: () => void
   onSend: () => void
   onHide: () => void
 }
@@ -158,13 +160,20 @@ export function setView($: any, change: (v: PaneView) => PaneView): Promise<unkn
   return update($, viewAtom, change)
 }
 
+/** Moves the ring to a key once the next draw has put it on screen. */
+export function focusLater($: any, key: string): void {
+  setTimeout(() => {
+    void $.ui.focus({ requestId: PANE_ID, key }).catch(() => undefined)
+  }, 80)
+}
+
 export function readView($: any): Promise<PaneView> {
   return read($, viewAtom)
 }
 
 /** One decision: its text, numbered options, and the keys under a rule. Returns an element tree. */
 export function DecisionView($: any, props: Props): any {
-  const { ui, d, view, width, readyCount, onChanged, onSend, onHide } = props
+  const { ui, d, view, width, readyCount, onChanged, onLeave, onSend, onHide } = props
   const { Box, Text, Button, Input } = ui
   const isSent = d.state === 'sent'
   const chosen = d.answer?.option
@@ -176,6 +185,7 @@ export function DecisionView($: any, props: Props): any {
       typing.option = undefined
       await setView($, v => ({ ...v, screen: 'list', decisionId: undefined, highlight: undefined, notice: undefined }))
       onChanged()
+      onLeave()
     }
   }
 
@@ -198,7 +208,11 @@ export function DecisionView($: any, props: Props): any {
               {isRecommended ? <Text dimColor> (recommended)</Text> : ''}
               {isChosen ? <Text dimColor> chosen</Text> : ''}
             </Button>
-            {o.changes ? <Text dimColor>{`     ${o.changes}`}</Text> : null}
+            {o.changes ? (
+              <Box paddingLeft={5}>
+                <Text dimColor>{o.changes}</Text>
+              </Box>
+            ) : null}
           </Box>
         )
       })}
@@ -217,7 +231,7 @@ export function DecisionView($: any, props: Props): any {
         <Input
           key="park"
           autoFocus
-          label="Why park it? "
+          label="Why park it "
           placeholder="a few words, empty cancels"
           value={view.parkDraft}
           onInput={(text: string) => void setView($, v => ({ ...v, parkDraft: text }))}
@@ -227,10 +241,12 @@ export function DecisionView($: any, props: Props): any {
               ...v,
               isParking: false,
               parkDraft: '',
+              notice: undefined,
               ...(isParked ? { screen: 'list' as const, decisionId: undefined } : {}),
             }))
             if (isParked) {
               onChanged()
+              onLeave()
             }
           }}
         />
@@ -250,7 +266,7 @@ export function DecisionView($: any, props: Props): any {
                   }
                 }}
               >
-                {k}
+                {`${k}  `}
               </Button>
             ))}
       </Box>
@@ -267,11 +283,11 @@ export function DecisionView($: any, props: Props): any {
               }
             }}
           >
-            recommended
+            {'recommended  '}
           </Button>
         )}
-        <Button key="b" hotkey="b" plain onPress={() => onBack($)}>
-          back
+        <Button key="b" hotkey="b" plain onPress={() => onBack($, onLeave)}>
+          {'back  '}
         </Button>
         {isSent ? null : (
           <Button
@@ -284,26 +300,30 @@ export function DecisionView($: any, props: Props): any {
                 onChanged()
               } else {
                 await setView($, v => ({ ...v, isParking: true }))
+                focusLater($, 'park')
               }
             }}
           >
-            {d.state === 'parked' ? 'unpark' : 'park'}
+            {d.state === 'parked' ? 'unpark  ' : 'park  '}
           </Button>
         )}
         {readyCount > 0 ? (
           <Button key="s" hotkey="s" plain onPress={onSend}>
-            {`send ${readyCount}`}
+            {`send ${readyCount}  `}
           </Button>
         ) : null}
         <Button key="h" hotkey="h" plain onPress={onHide}>
-          hide
+          {'hide  '}
         </Button>
       </Box>
     </Box>
   )
 }
 
-async function onBack($: any): Promise<void> {
+async function onBack($: any, onLeave: () => void): Promise<void> {
   const next = await back($, await readView($))
   await setView($, () => next)
+  if (next.screen === 'list') {
+    onLeave()
+  }
 }

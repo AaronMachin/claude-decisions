@@ -2,7 +2,7 @@ import type { PaneView } from '../../types'
 import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
 import { DecisionView, INITIAL_VIEW, PANE_ID, readView, setView } from './decision'
-import { ListView, ReviewView, activeTab, openReview, statusText, tabsFor, truncate } from './list'
+import { ListView, ReviewView, activeTab, openReview, sectionsFor, statusText, tabsFor, truncate } from './list'
 
 /** Sets the status line from what's in the store. */
 export async function refreshStatus($: any): Promise<void> {
@@ -48,10 +48,31 @@ export async function followFocus($: any, element: string | undefined): Promise<
   }
 }
 
+/**
+ * After the pane returns to the list, the ring would otherwise land on whichever row
+ * the engine picks. Put it on the first row of the open tab once the list is drawn.
+ */
+export function leaveToList($: any): void {
+  setTimeout(() => {
+    void focusFirstRow($)
+  }, 80)
+}
+
+async function focusFirstRow($: any): Promise<void> {
+  const { decisions } = await readAll($)
+  const tab = activeTab(tabsFor(decisions), await readView($))
+  const sections = tab ? sectionsFor(tab) : undefined
+  const first = sections?.needsYou[0] ?? sections?.parked[0] ?? sections?.answered[0]
+  if (first) {
+    await $.ui.focus({ requestId: PANE_ID, key: `row:${first.id}` })
+  }
+}
+
 async function confirm($: any, ids: string[]): Promise<void> {
   const result = await sendTicked($, ids)
   await setView($, v => ({ ...v, screen: 'list', ticked: [] }))
   await changed($)
+  leaveToList($)
   void result.settled.then(async notice => {
     if (notice !== undefined) {
       await setView($, v => ({ ...v, notice }))
@@ -101,7 +122,7 @@ export async function renderPane($: any, e: any): Promise<any> {
     return (
       <Box flexDirection="column">
         {header(ui, width, e.props.isFocused === true, crumb)}
-        {DecisionView($, { ...common, d: decision, view, readyCount: ready.length, onChanged: () => void changed($) })}
+        {DecisionView($, { ...common, d: decision, view, readyCount: ready.length, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
       </Box>
     )
   }
@@ -109,7 +130,7 @@ export async function renderPane($: any, e: any): Promise<any> {
     return (
       <Box flexDirection="column">
         {top}
-        {ReviewView($, { ...common, ready, view, onConfirm: ids => void confirm($, ids) })}
+        {ReviewView($, { ...common, ready, view, onConfirm: ids => void confirm($, ids), onLeave: () => leaveToList($) })}
       </Box>
     )
   }

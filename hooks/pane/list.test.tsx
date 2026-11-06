@@ -150,7 +150,7 @@ test('review: ready rows start ticked, Confirm is last with hotkey c, and confir
   ]
   const confirmed: string[][] = []
   let view = openReview(INITIAL_VIEW, ['d1', 'd2'])
-  on('ui.render', ($$, e) => ReviewView($$, { ui: $$.ui.resolve(e), ready, view, width: 49, onConfirm: ids => void confirmed.push(ids) }))
+  on('ui.render', ($$, e) => ReviewView($$, { ui: $$.ui.resolve(e), ready, view, width: 49, onConfirm: ids => void confirmed.push(ids), onLeave: () => {} }))
 
   let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const buttons = await ui.findAll({ type: 'Button' })

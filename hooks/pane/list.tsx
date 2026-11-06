@@ -192,11 +192,11 @@ export function ListView($: any, props: ListProps): any {
       <Text> </Text>
       <Box>
         <Button key="t" hotkey="t" plain onPress={() => setView($, v => ({ ...v, tab: nextTab(tabs, tab?.key) }))}>
-          next tab
+          {'next tab  '}
         </Button>
         {readyCount > 0 ? (
           <Button key="s" hotkey="s" plain onPress={onSend}>
-            {`send ${readyCount}`}
+            {`send ${readyCount}  `}
           </Button>
         ) : null}
         <Button key="h" hotkey="h" plain onPress={onHide}>
@@ -214,11 +214,13 @@ type ReviewProps = {
   width: number
   /** Called with the ticked ids, only when at least one is ticked. */
   onConfirm: (ids: string[]) => void
+  /** Called when the screen goes back to the list. */
+  onLeave: () => void
 }
 
 /** The answers ready to send, each ticked; Confirm is last in the ring. Returns an element tree. */
 export function ReviewView($: any, props: ReviewProps): any {
-  const { ui, ready, view, width, onConfirm } = props
+  const { ui, ready, view, width, onConfirm, onLeave } = props
   const { Box, Text, Button } = ui
   const ticked = ready.filter(d => view.ticked.includes(d.id)).map(d => d.id)
 
@@ -242,8 +244,12 @@ export function ReviewView($: any, props: ReviewProps): any {
       <Text> </Text>
       <Text dimColor>{`${ready.length} ready, ${ticked.length} ticked. Nothing is sent until you confirm.`}</Text>
       <Box>
-        <Button key="b" hotkey="b" plain onPress={() => setView($, v => ({ ...v, screen: 'list' }))}>
-          back
+        <Button key="b" hotkey="b" plain onPress={() => {
+            void setView($, v => ({ ...v, screen: 'list' }))
+            onLeave()
+          }}
+        >
+          {'back  '}
         </Button>
         <Button
           key="confirm"
