@@ -62,7 +62,7 @@ export function isQuestionsInChat(text: string): boolean {
 export function turnText(messages: readonly Message[], answer: string): string {
   const texts: string[] = []
   for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]
+    const m = messages[i]!
     if (m.role === 'user' && (m.toolResults ?? []).length === 0) {
       break
     }

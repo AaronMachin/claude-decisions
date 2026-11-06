@@ -132,7 +132,7 @@ function fakeStore(): StoreCtx {
   }
 }
 
-const QUESTIONS = [
+const QUESTIONS: any[] = [
   {
     question: 'Where should shared recipe links live?',
     header: 'Links',
@@ -162,16 +162,16 @@ test('AskUserQuestion becomes decisions and is answered with the object shape', 
   const { decisions } = await readAll($)
   expect(decisions.map(d => d.kind)).toEqual(['choice', 'question', 'question'])
   expect(decisions.every(d => d.group === 'Questions from Claude' && d.section === 'needs-you')).toBe(true)
-  expect(decisions[0].title).toBe('Where should shared recipe links live?')
-  expect(decisions[0].options.map(o => [o.label, o.changes])).toEqual([
+  expect(decisions[0]!.title).toBe('Where should shared recipe links live?')
+  expect(decisions[0]!.options.map(o => [o.label, o.changes])).toEqual([
     ['Database', 'a table of tokens'],
     ['Signed URL', 'nothing stored'],
   ])
-  expect(decisions[0].recommendation).toBeUndefined()
-  expect(decisions[0].scenario).toContain('Links')
-  expect(decisions[1].options).toEqual([])
-  expect(decisions[2].options).toEqual([])
-  expect(decisions[2].scenario).toContain('Pick any of: Time, First view, Never')
+  expect(decisions[0]!.recommendation).toBeUndefined()
+  expect(decisions[0]!.scenario).toContain('Links')
+  expect(decisions[1]!.options).toEqual([])
+  expect(decisions[2]!.options).toEqual([])
+  expect(decisions[2]!.scenario).toContain('Pick any of: Time, First view, Never')
 })
 
 test('one question reads as a single number', async () => {
@@ -205,8 +205,8 @@ test('the rules section is added once as a session section, with identical text 
   const second = addRulesSection(base)
 
   expect(first.sections.map(s => s.id)).toEqual(['intro', 'decisions:rules'])
-  expect(first.sections[1].scope).toBe('session')
-  expect(first.sections[1].text).toBe(second.sections[1].text)
+  expect(first.sections[1]!.scope).toBe('session')
+  expect(first.sections[1]!.text).toBe(second.sections[1]!.text)
   expect(addRulesSection(first).sections).toHaveLength(2)
   for (const phrase of RULE_PHRASES) {
     expect(RULES_TEXT).toContain(phrase)
@@ -217,18 +217,18 @@ test('the open list is added as a context block that says to call decisions_list
   const $ = fakeStore()
   const empty = await addContextBlock($, { blocks: [{ name: 'claudeMd', text: 'c' }] })
   expect(empty.blocks.map(b => b.name)).toEqual(['claudeMd', 'decisions'])
-  expect(empty.blocks[1].text).toContain('No open decisions')
+  expect(empty.blocks[1]!.text).toContain('No open decisions')
   await create($, { group: 'G', kind: 'choice', title: 'Where it lives', scenario: 's', options: [{ id: 1, label: 'Root' }], sources: [], dependsOn: [] })
   const full = await addContextBlock($, { blocks: [] })
-  expect(full.blocks[0].text).toContain('Where it lives')
-  expect(full.blocks[0].text).toContain('decisions_list')
+  expect(full.blocks[0]!.text).toContain('Where it lives')
+  expect(full.blocks[0]!.text).toContain('decisions_list')
 })
 
 test('the note is appended at session start unless the conversation already holds it', async () => {
   const fresh = fakeSession([])
   await noteAtSessionStart(fresh.$)
   expect(fresh.appended).toHaveLength(1)
-  expect(fresh.appended[0].message.content[0].text).toBe(NOTE)
+  expect(fresh.appended[0]!.message.content[0].text).toBe(NOTE)
 
   const held = fakeSession([{ role: 'user', text: NOTE }])
   await noteAtSessionStart(held.$)
