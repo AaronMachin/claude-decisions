@@ -1,4 +1,4 @@
-import { fixedOptionsFor } from './pane/kinds'
+import { fixedOptionsFor } from './kind-options'
 import { create, readAll, readOne, write } from './store'
 import type { Decision, Kind, Section, StoreCtx } from './store'
 

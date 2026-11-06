@@ -4,6 +4,7 @@ import { readAll } from '../store'
 import { DecisionView, INITIAL_VIEW, PANE_ID, readView, setView } from './decision'
 import { ThreadView } from './thread'
 import { ListView, ReviewView, activeTab, openReview, statusText, tabsFor, truncate } from './list'
+import { BatchView, batchRows } from './kinds'
 import { firstKey } from './sections'
 
 /** Sets the status line from what's in the store. */
@@ -42,8 +43,11 @@ export async function hidePane($: any): Promise<void> {
 
 /** The `ui.focus` hook: the person's up and down arrive here, so the highlight follows the ring. */
 export async function followFocus($: any, element: string | undefined): Promise<void> {
+  const batch = /^batch:(.+)$/.exec(element ?? '')
   const match = /^opt:(\d+)$/.exec(element ?? '')
-  if (match) {
+  if (batch) {
+    await setView($, v => ({ ...v, batchRow: batch[1] }))
+  } else if (match) {
     await setView($, v => ({ ...v, highlight: Number(match[1]) }))
   } else if (element === 'discuss') {
     await setView($, v => ({ ...v, highlight: undefined }))
@@ -145,6 +149,17 @@ export async function renderPane($: any, e: any): Promise<any> {
       <Box flexDirection="column">
         {header(ui, width, e.props.isFocused === true, crumb)}
         {DecisionView($, { ...common, d: decision, all: decisions, view, readyCount: ready.length, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
+      </Box>
+    )
+  }
+  if (view.screen === 'batch') {
+    const batchTab = activeTab(tabs, view)
+    const rows = batchRows(batchTab?.decisions ?? [])
+
+    return (
+      <Box flexDirection="column">
+        {header(ui, width, e.props.isFocused === true, `${batchTab?.label ?? 'Other'} > assumptions`)}
+        {BatchView($, { ...common, rows, view, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
       </Box>
     )
   }

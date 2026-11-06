@@ -184,3 +184,6 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | --- | --- | --- |
 | 108 | `options` and `recommendation` are no longer in the add schema's `required` list; the tool refuses a choice without them, with the reason **(Claude's call)** | Four of the five kinds must not carry options, and a schema that demands them would push Claude to invent some. |
 | 109 | `FIXED_OPTIONS` carries a one-line `changes` for every fixed option, written by the tool **(Claude's call)** | Every finding reads the same and the pane's option lines are never empty. |
+| 110 | The fixed options live in `hooks/kind-options.ts`, re-exported by `hooks/pane/kinds.tsx` **(Claude's call)** | `tool.ts` and the seed script run outside the pane, and `kinds.tsx` imports the pane's state module, which a plain Node run can't load. |
+| 111 | On the batch screen `1` and `2` act on the row the pane last saw the ring on, or the first open row when it has seen none **(Claude's call)** | The digit keys are not tied to a row, so the ring's last known place is the only row there is. |
+| 112 | `enter` on a marked batch row saves that row only and moves the ring to the next open row; `Confirm N` saves all marks and returns to the list **(Claude's call)** | One row at a time is how the person would walk down the list, and `Confirm` is the single step for `r`. |
