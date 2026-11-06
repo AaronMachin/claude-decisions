@@ -53,9 +53,9 @@ export async function followFocus($: any, element: string | undefined): Promise<
  * the engine picks. Put it on the first row of the open tab once the list is drawn.
  */
 export function leaveToList($: any): void {
-  setTimeout(() => {
+  $.clock.after(80, () => {
     void focusFirstRow($)
-  }, 80)
+  })
 }
 
 async function focusFirstRow($: any): Promise<void> {

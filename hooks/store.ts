@@ -71,7 +71,7 @@ export type StoreCtx = {
     read: (path: string) => Promise<any>
     write: (path: string, text: string) => Promise<void>
     exists: (path: string) => Promise<boolean>
-    list: (path?: string) => Promise<{ name: string }[]>
+    list: (path: string) => Promise<{ name: string }[]>
   }
 }
 

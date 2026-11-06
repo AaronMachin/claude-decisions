@@ -76,7 +76,7 @@ export function nextTab(tabs: Tab[], current: string | undefined): string | unde
   }
   const index = tabs.findIndex(t => t.key === current)
 
-  return tabs[(index + 1) % tabs.length].key
+  return tabs[(index + 1) % tabs.length]?.key
 }
 
 export function activeTab(tabs: Tab[], view: PaneView): Tab | undefined {

@@ -45,9 +45,9 @@ test('tabs follow first appearance, then Other, then Parked; a parked decision l
   ]
   const tabs = tabsFor(all)
   expect(tabs.map(t => t.key)).toEqual(['g:Sharing links', 'g:Config file plan', 'other', 'parked'])
-  expect(tabs[0].decisions.map(d => d.number)).toEqual([1, 6])
-  expect(tabs[3].decisions.map(d => d.number)).toEqual([4])
-  expect(tabs[1].decisions).toHaveLength(1)
+  expect(tabs[0]!.decisions.map(d => d.number)).toEqual([1, 6])
+  expect(tabs[3]!.decisions.map(d => d.number)).toEqual([4])
+  expect(tabs[1]!.decisions).toHaveLength(1)
 })
 
 test('sections split needs-you from answered', () => {
@@ -155,7 +155,7 @@ test('review: ready rows start ticked, Confirm is last with hotkey c, and confir
   let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const buttons = await ui.findAll({ type: 'Button' })
   expect(buttons.map(b => b.props.key)).toEqual(['tick:d1', 'tick:d2', 'b', 'confirm'])
-  expect(buttons[3].props.hotkey).toBe('c')
+  expect(buttons[3]!.props.hotkey).toBe('c')
   expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/^\[x\] d1/)
   await ui.press({ key: 'confirm', plugin: 'test' })
   expect(confirmed).toEqual([['d1', 'd2']])

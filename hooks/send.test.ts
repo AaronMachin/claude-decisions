@@ -137,7 +137,7 @@ test('only ticked answers are sent and marked sent; an unticked one stays ready'
     ['d1', 'ready'],
     ['d2', 'sent'],
   ])
-  expect((await readAll(ctx)).decisions[1].sentAt).toBeDefined()
+  expect((await readAll(ctx)).decisions[1]!.sentAt).toBeDefined()
 })
 
 test('a second confirm for the same ids sends nothing again', async () => {
@@ -156,7 +156,7 @@ test('a submit that fails puts the answers back to ready and says so', async () 
   const result = await sendTicked(ctx, ['d1'])
   expect(result.sent).toBe(1)
   expect(await result.settled).toMatch(/not sent.*back to ready/i)
-  const [d] = (await readAll(ctx)).decisions
+  const d = (await readAll(ctx)).decisions[0]!
   expect(d.state).toBe('ready')
   expect(d.sentAt).toBeUndefined()
 })

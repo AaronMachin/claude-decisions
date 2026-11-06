@@ -111,3 +111,16 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 59 | The mod marks decisions `sent` when the person confirms, before the prompt is delivered, and puts them back to `ready` if the submit fails **(Claude's call)** | There's no tool for Claude to mark them, and a second `c` must not send them twice. |
 | 60 | The pane opens unfocused when Claude adds a decision, unless the person hid it (`h`) **(Claude's call)** | The design says so; the `/config` setting that turns it off belongs to a later workstream. |
 | 61 | The pane header says `keys on` or `keys off` and doesn't name the focus chord **(Claude's call)** | The chord is the person's binding to move. |
+
+## 6 November 2026: workstream 1, core loop (build)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 62 | The "previous digit" is a plain object in the module, not in `PaneView` (replaces the `typed` field the spec listed) **(Claude's call)** | Two quick keys run before the first await settles, so it can't wait on a state write, and losing it on a reload costs nothing. |
+| 63 | The pane's drawing and glue live in `hooks/pane/render.tsx`, so `register.tsx` stays wiring only **(Claude's call)** | CONTRIBUTING asks for one `on(...)` line per hook; the spec's file list had no home for the glue. |
+| 64 | After the pane returns to the list, the ring is put on the list's first row 80 ms later (`$.clock.after`) **(Claude's call)** | In the real session the ring otherwise landed on whichever row the engine picked, so `enter` could open an answered decision instead of the one waiting. |
+| 65 | Focusing the park Input is also done 80 ms after it appears **(Claude's call)** | `autoFocus` only applies when the pane first takes the keys, so typed words went to the pane's hotkeys. |
+| 66 | The digit row is drawn as the engine draws a hotkey Button (`1: 1  2: 2`) and shown dim under the rule **(Claude's call, for a person to try)** | The spike drew it that way and it reads as a key hint; nobody has judged it yet. |
+| 67 | The 1000 ms gap for a second digit stays **(Claude's call, for a person to try)** | The real session only used single digits, so there is still no data on what feels right. |
+| 68 | `sendTicked` returns `{ sent, settled }`, where `settled` resolves with a notice if the submit failed **(Claude's call)** | The submit isn't awaited (it waits for Claude's turn to end), but a failure still has to put the answers back and tell the person. |
+| 69 | A mod's `$` can't be put in an object or passed to an arrow function, and a state reference has to be written in the file that uses it, so state is read and written only through `setView` and `readView` in `decision.tsx` **(Claude's call)** | The engine refused to load the mod otherwise; it's a rule of the mod API, not a choice, but it shapes where code can go. |

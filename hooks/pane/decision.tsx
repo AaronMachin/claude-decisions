@@ -162,9 +162,9 @@ export function setView($: any, change: (v: PaneView) => PaneView): Promise<unkn
 
 /** Moves the ring to a key once the next draw has put it on screen. */
 export function focusLater($: any, key: string): void {
-  setTimeout(() => {
+  $.clock.after(80, () => {
     void $.ui.focus({ requestId: PANE_ID, key }).catch(() => undefined)
-  }, 80)
+  })
 }
 
 export function readView($: any): Promise<PaneView> {

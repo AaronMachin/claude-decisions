@@ -74,7 +74,7 @@ test('add stores an open decision with numbered options and says how many are op
   const $ = fake()
   expect(await addDecision($, GOOD)).toEqual({ result: 'Added d1 to the pane. 1 open.' })
   expect(await addDecision($, { ...GOOD, title: 'Second' })).toEqual({ result: 'Added d2 to the pane. 2 open.' })
-  const [first] = (await readAll($)).decisions
+  const first = (await readAll($)).decisions[0]!
   expect(first.options.map(o => o.id)).toEqual([1, 2])
   expect(first.recommendation).toEqual({ option: 1, reason: 'Every other tool reads from the root.' })
   expect(first.state).toBe('open')
@@ -106,9 +106,9 @@ test('list includes ready and parked decisions and leaves out sent ones', async 
     await addDecision($, { ...GOOD, group: undefined, title })
   }
   const all = (await readAll($)).decisions
-  await write($, { ...all[1], state: 'ready', answer: { option: 2, answeredAt: 'now' } })
-  await write($, { ...all[2], state: 'parked', parkedReason: 'waiting on the design review' })
-  await write($, { ...all[3], state: 'sent' })
+  await write($, { ...all[1]!, state: 'ready', answer: { option: 2, answeredAt: 'now' } })
+  await write($, { ...all[2]!, state: 'parked', parkedReason: 'waiting on the design review' })
+  await write($, { ...all[3]!, state: 'sent' })
   const { result } = await listDecisions($)
   expect(result).toBe(
     [
