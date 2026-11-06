@@ -145,3 +145,10 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 83 | The setting is `discussionReplies` with the values `main session`, `fork`, `quick model`, read when the module loads **(Claude's call)** | M4 names the setting; a change in `/config` reloads the module. |
 | 84 | After a fork or quick reply, `m` re-asks that same question to the main session, shown as `m ask main session` **(Claude's call, Aaron's coordinator asked for it if small)** | A fork reply that says it can't see files is otherwise a dead end short of changing the setting. |
 | 85 | Anything that calls `$.model.fork` or `$.model.complete` is tested with a plain fake `$`, since the kit's `$` has no `$.model` and `on('model.fork')` doesn't stand in for it **(checked 7 November)** | The kit refuses the call with "undefined is not an object (evaluating '$.model.fork')". |
+
+## 7 November 2026: workstream 2, discussions (build)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 86 | `discuss.ts` reaches the pane's state through a branch (`setState`/`readState`) that tests can switch to an in-memory copy, not through a replaceable function **(Claude's call)** | The kit gives a test body no `$.state`, and the mod API only lets `$` be passed to a function declaration, so a swapped function can't take it. |
+| 87 | `f` and `m` reuse the question already in the thread, so a resend adds a reply under it, not a second copy of the question **(Claude's call)** | The thread then shows one question with every reply it got. |

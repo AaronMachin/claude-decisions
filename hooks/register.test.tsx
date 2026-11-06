@@ -344,3 +344,14 @@ test('decisions_update through the hooks revises the decision and refreshes the 
   expect(JSON.parse(file).revisions).toHaveLength(1)
   expect(JSON.stringify(await $.tool.call({ tool: UPDATE_TOOL, id: 'd9', summary: 'x', addOptions: [{ label: 'a' }] }))).toContain('no such decision')
 })
+
+test('the turn hooks pass an unrelated turn through untouched', async ($, on) => {
+  engine(on)
+  on('turn.start', (_: any, e: any) => ({ turnId: e.turnId }))
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  await start($)
+  const started = await $.turn.start({ text: 'read the files', turnId: 't1' })
+  expect(started.turnId).toBe('t1')
+  const done = await $.turn.complete({ turnId: 't1', answer: 'done' } as any)
+  expect(done).toBeDefined()
+})

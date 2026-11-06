@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PLACEHOLDER, addWaiter, askModel, isBusy, markLate, routeComplete, routeStart, sentText, contextFor, markAnswered, recordQuestion, recordReply } from './discuss'
+import { INITIAL_VIEW } from './pane/decision'
+import type { PaneView } from '../types'
+import { PLACEHOLDER, RESENT_NOTICE, RUN, addWaiter, askMain, askQuestion, configure, currentMode, onTurnComplete, onTurnStart, resendToFork, useViewApi, askModel, isBusy, markLate, routeComplete, routeStart, sentText, contextFor, markAnswered, recordQuestion, recordReply } from './discuss'
 import { buildAnswerPrompt } from './send'
 import { create, readOne, write } from './store'
 import type { Decision, StoreCtx } from './store'
@@ -177,4 +179,123 @@ test('a waiter marked late still returns its reply, flagged late', () => {
   markLate('e1')
   routeStart({ text: framed(sent), turnId: 'w1' })
   expect(routeComplete({ turnId: 'w1', answer: 'late one' })?.waiter.late).toBe(true)
+})
+
+/** A fake `$`: the store, the calls a reply makes, and the pane's state kept in memory. */
+function world(model: Partial<{ fork: any; complete: any }> = {}, submit?: (text: string) => Promise<unknown>) {
+  let state: PaneView = { ...INITIAL_VIEW }
+  useViewApi({
+    set: async change => void (state = change(state)),
+    read: async () => state,
+  })
+  const submitted: string[] = []
+  const $: any = {
+    ...fakeStore(),
+    ui: { status: () => undefined, invalidate: () => undefined },
+    prompt: { submit: async ({ text }: { text: string }) => (submitted.push(text), submit ? submit(text) : undefined) },
+    model: {
+      fork: model.fork ?? (async () => ({ isAnswered: true, text: 'fork says' })),
+      complete: model.complete ?? (async () => ({ isAnswered: true, text: 'quick says' })),
+    },
+  }
+
+  return { $, submitted, view: () => state }
+}
+
+const next = async (e: any) => ({ turnId: e.turnId })
+
+test('main while Claude is idle is waiting, answering when its turn starts, and cleared with the reply under the question', async () => {
+  const w = world()
+  const d = await make(w.$)
+  await askQuestion(w.$, 'main', d.id, 'Does CI find it?')
+  expect(w.submitted).toEqual([`On decision 1 · Where the config file lives: Does CI find it?`])
+  expect(w.view().pending.map(p => p.status)).toEqual(['waiting'])
+
+  await onTurnStart(w.$, { text: `The decisions plugin sent "${w.submitted[0]}"`, turnId: 'a1' }, next)
+  expect(w.view().pending.map(p => p.status)).toEqual(['answering'])
+  await onTurnComplete(w.$, { turnId: 'a1', answer: 'Yes, it does.' }, next)
+  expect(w.view().pending).toEqual([])
+  expect((await readOne(w.$, d.id))!.thread.map(e => `${e.who}:${e.text}`)).toEqual(['person:Does CI find it?', 'claude:Yes, it does.'])
+})
+
+test('main while a turn is running is queued, and an unrelated turn ending does not answer it', async () => {
+  const w = world()
+  const d = await make(w.$)
+  await onTurnStart(w.$, { text: 'read the eight files', turnId: 'busy' }, next)
+  await askQuestion(w.$, 'main', d.id, 'Which is cheaper?')
+  expect(w.view().pending.map(p => p.status)).toEqual(['queued'])
+  await onTurnComplete(w.$, { turnId: 'busy', answer: 'the earlier task' }, next)
+  expect(w.view().pending.map(p => p.status)).toEqual(['queued'])
+  expect((await readOne(w.$, d.id))!.thread).toHaveLength(1)
+  await onTurnStart(w.$, { text: `The decisions plugin sent "${w.submitted[0]}"`, turnId: 'mine' }, next)
+  await onTurnComplete(w.$, { turnId: 'mine', answer: 'Root.' }, next)
+  expect(w.view().pending).toEqual([])
+  expect((await readOne(w.$, d.id))!.thread.map(e => e.text)).toEqual(['Which is cheaper?', 'Root.'])
+})
+
+test('fork and quick write their reply under the question, and a failed call is kept with its reason', async () => {
+  const w = world({ complete: async () => ({ isAnswered: false, reason: 'api-error' }) })
+  const d = await make(w.$)
+  await askQuestion(w.$, 'fork', d.id, 'one?')
+  expect(w.view().pending).toEqual([])
+  expect((await readOne(w.$, d.id))!.thread.map(e => `${e.who}:${e.text}`)).toEqual(['person:one?', 'fork:fork says'])
+  await askQuestion(w.$, 'quick', d.id, 'two?')
+  expect(w.view().pending).toEqual([expect.objectContaining({ mode: 'quick', status: 'failed', reason: 'api-error' })])
+})
+
+test('f sends a queued question to the fork, and the late main reply still lands under the same question', async () => {
+  const w = world()
+  const d = await make(w.$)
+  await onTurnStart(w.$, { text: 'busy', turnId: 'busy' }, next)
+  await askQuestion(w.$, 'main', d.id, 'queued one?')
+  await resendToFork(w.$)
+  expect(w.view().notice).toBe(RESENT_NOTICE)
+  expect(w.view().pending).toEqual([])
+  expect((await readOne(w.$, d.id))!.thread.map(e => `${e.who}:${e.text}`)).toEqual(['person:queued one?', 'fork:fork says'])
+  await onTurnComplete(w.$, { turnId: 'busy', answer: 'x' }, next)
+  await onTurnStart(w.$, { text: `The decisions plugin sent "${w.submitted[0]}"`, turnId: 'late' }, next)
+  await onTurnComplete(w.$, { turnId: 'late', answer: 'late main reply' }, next)
+  expect((await readOne(w.$, d.id))!.thread.map(e => `${e.who}:${e.text}`)).toEqual(['person:queued one?', 'claude:late main reply', 'fork:fork says'])
+  expect(w.view().pending).toEqual([])
+})
+
+test('a pending question from another load of the mod is resendable, and a rejected submit is failed', async () => {
+  const w = world({}, async () => { throw new Error('no session') })
+  const d = await make(w.$)
+  await askQuestion(w.$, 'main', d.id, 'will this send?')
+  for (let i = 0; i < 5; i++) {
+    await Promise.resolve()
+  }
+  expect(w.view().pending[0]).toMatchObject({ status: 'failed', reason: 'no session' })
+
+  const w2 = world()
+  const d2 = await make(w2.$)
+  const q = await recordQuestion(w2.$, d2.id, 'orphan?')
+  let state: PaneView = { ...INITIAL_VIEW, pending: [{ asked: q!.asked, decisionId: d2.id, mode: 'main', status: 'answering', run: RUN + 'old' }] }
+  useViewApi({ set: async c => void (state = c(state)), read: async () => state })
+  await resendToFork(w2.$)
+  expect(state.pending).toEqual([])
+  expect((await readOne(w2.$, d2.id))!.thread.map(e => e.who)).toEqual(['person', 'fork'])
+})
+
+test('m asks the newest fork-answered question again to the main session', async () => {
+  const w = world()
+  const d = await make(w.$)
+  await askQuestion(w.$, 'fork', d.id, 'can you see the files?')
+  let state: PaneView = { ...INITIAL_VIEW, decisionId: d.id }
+  useViewApi({ set: async c => void (state = c(state)), read: async () => state })
+  await askMain(w.$)
+  expect(w.submitted).toEqual(['On decision 1 · Where the config file lives: can you see the files?'])
+  expect(state.pending[0]).toMatchObject({ mode: 'main', status: 'waiting' })
+})
+
+test('the setting picks the mode', () => {
+  configure({})
+  expect(currentMode()).toBe('main')
+  configure({ discussionReplies: 'fork' })
+  expect(currentMode()).toBe('fork')
+  configure({ discussionReplies: 'quick model' })
+  expect(currentMode()).toBe('quick')
+  configure({ discussionReplies: 'main session' })
+  expect(currentMode()).toBe('main')
 })

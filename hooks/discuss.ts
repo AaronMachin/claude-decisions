@@ -1,4 +1,7 @@
-import { readOne, write } from './store'
+import type { PaneView, PendingQuestion } from '../types'
+import { readView, setView } from './pane/decision'
+import { statusText } from './pane/list'
+import { readAll, readOne, write } from './store'
 import type { Decision, StoreCtx, ThreadEntry } from './store'
 
 /** Appends the person's question to the thread and moves an open decision to live. Undefined when the decision is missing. */
@@ -166,4 +169,168 @@ export function routeComplete(e: { turnId: string; agentId?: string; answer: str
   const [waiter] = waiters.splice(at, 1)
 
   return { waiter: waiter!, text: e.answer.trim() === '' ? PLACEHOLDER : e.answer }
+}
+
+export type Mode = 'main' | 'fork' | 'quick'
+
+/** `/config`'s `Discussion replies` value as a mode; anything unknown is the main session. */
+export function modeOf(option: unknown): Mode {
+  return option === 'fork' ? 'fork' : option === 'quick model' ? 'quick' : 'main'
+}
+
+let configured: Mode = 'main'
+
+/** Called by `register(on, options)`: the mode for questions asked from now on. */
+export function configure(options: { discussionReplies?: unknown } | undefined): void {
+  configured = modeOf(options?.discussionReplies)
+}
+
+export function currentMode(): Mode {
+  return configured
+}
+
+/** The pane state, behind a seam so tests can use their own (the kit gives a test body no `$.state`). */
+type ViewApi = { set: (change: (v: PaneView) => PaneView) => Promise<unknown>; read: () => Promise<PaneView> }
+let testView: ViewApi | undefined
+
+export function useViewApi(api: ViewApi | undefined): void {
+  testView = api
+}
+
+/** `$` can only be passed to a function declaration, so the seam is a branch, not a replaceable function. */
+async function setState($: any, change: (v: PaneView) => PaneView): Promise<unknown> {
+  return testView ? testView.set(change) : setView($, change)
+}
+
+async function readState($: any): Promise<PaneView> {
+  return testView ? testView.read() : readView($)
+}
+
+/** Refreshes the status line and redraws the pane. */
+async function redraw($: any): Promise<void> {
+  const { decisions } = await readAll($)
+  $.ui.status(statusText(decisions))
+  $.ui.invalidate('ui.render')
+}
+
+function without(list: PendingQuestion[], asked: string, mode?: Mode): PendingQuestion[] {
+  return list.filter(p => !(p.asked === asked && (mode === undefined || p.mode === mode)))
+}
+
+async function setPending($: any, change: (list: PendingQuestion[]) => PendingQuestion[]): Promise<void> {
+  await setState($, v => ({ ...v, pending: change(v.pending) }))
+}
+
+/** Sends a question already in the thread to a replier, and takes the reply when it lands. */
+async function dispatch($: any, mode: Mode, d: Decision, asked: string, question: string): Promise<void> {
+  const isBusyNow = isBusy()
+  const status: PendingQuestion['status'] = mode === 'main' ? (isBusyNow ? 'queued' : 'waiting') : 'answering'
+  await setPending($, list => [...without(list, asked, mode), { asked, decisionId: d.id, mode, status, run: RUN }])
+  await setState($, v => ({ ...v, isAsking: false }))
+  await redraw($)
+
+  const fail = async (reason: string) => {
+    await setPending($, list => list.map(p => (p.asked === asked && p.mode === mode ? { ...p, status: 'failed', reason } : p)))
+    await redraw($)
+  }
+
+  if (mode === 'main') {
+    addWaiter({ decisionId: d.id, asked, sent: sentText(d, question) })
+    $.prompt.submit({ text: sentText(d, question) }).catch(async (error: unknown) => {
+      markLate(asked)
+      await fail(error instanceof Error ? error.message : String(error))
+    })
+
+    return
+  }
+  const reply = await askModel($, mode, d, question)
+  if (!reply.ok) {
+    await fail(reply.reason)
+
+    return
+  }
+  await recordReply($, d.id, asked, mode, reply.text)
+  await setPending($, list => without(list, asked, mode))
+  await redraw($)
+}
+
+/** The person sent a question from the thread: keep it, clear the draft, hand it to the replier. */
+export async function askQuestion($: any, mode: Mode, decisionId: string, question: string): Promise<void> {
+  const recorded = await recordQuestion($, decisionId, question)
+  const d = await readOne($, decisionId)
+  if (!recorded || !d) {
+    return
+  }
+  await setState($, v => {
+    const { [decisionId]: _gone, ...drafts } = v.drafts
+    return { ...v, drafts }
+  })
+  await dispatch($, mode, d, recorded.asked, question)
+}
+
+/** The question a pending entry stands for, from the thread. */
+async function questionOf($: any, p: PendingQuestion): Promise<{ d: Decision; text: string } | undefined> {
+  const d = await readOne($, p.decisionId)
+  const text = d?.thread.find(e => e.who === 'person' && e.at === p.asked)?.text
+
+  return d && text !== undefined ? { d, text } : undefined
+}
+
+export const RESENT_NOTICE = 'Sent to the fork. The main-session copy is still queued and will land here too.'
+
+/** `f`: the oldest queued, failed or orphaned question goes to the fork instead. */
+export async function resendToFork($: any): Promise<void> {
+  const { pending } = await readState($)
+  const target = pending.find(p => p.status === 'queued' || p.status === 'failed' || p.run !== RUN)
+  const found = target ? await questionOf($, target) : undefined
+  if (!target || !found) {
+    return
+  }
+  if (target.mode === 'main') {
+    markLate(target.asked)
+  }
+  await setPending($, list => without(list, target.asked, target.mode))
+  await setState($, v => ({ ...v, notice: target.mode === 'main' && target.status === 'queued' ? RESENT_NOTICE : undefined }))
+  await dispatch($, 'fork', found.d, target.asked, found.text)
+}
+
+/** `m`: the newest question that a fork or the quick model answered is asked again, to the main session. */
+export async function askMain($: any): Promise<void> {
+  const { decisionId } = await readState($)
+  const d = decisionId ? await readOne($, decisionId) : undefined
+  if (!d) {
+    return
+  }
+  const at = d.thread.map(e => e.who).findLastIndex(who => who === 'fork' || who === 'quick')
+  const question = at === -1 ? undefined : d.thread.slice(0, at).findLast(e => e.who === 'person')
+  if (!question) {
+    return
+  }
+  await dispatch($, 'main', d, question.at, question.text)
+}
+
+/** The `turn.start` hook's work: a reply turn that begins is "answering". */
+export async function onTurnStart($: any, e: any, next: (e: any) => Promise<any>): Promise<any> {
+  const waiter = routeStart(e)
+  if (waiter && !waiter.late) {
+    await setPending($, list => list.map(p => (p.asked === waiter.asked && p.mode === 'main' ? { ...p, status: 'answering' } : p)))
+    await redraw($)
+  }
+
+  return next(e)
+}
+
+/** The `turn.complete` hook's work: the claimed turn's answer goes into the thread under its question. */
+export async function onTurnComplete($: any, e: any, next: (e: any) => Promise<any>): Promise<any> {
+  const done = await next(e)
+  const routed = routeComplete(e)
+  if (routed) {
+    await recordReply($, routed.waiter.decisionId, routed.waiter.asked, 'claude', routed.text)
+    if (!routed.waiter.late) {
+      await setPending($, list => without(list, routed.waiter.asked, 'main'))
+    }
+    await redraw($)
+  }
+
+  return done
 }
