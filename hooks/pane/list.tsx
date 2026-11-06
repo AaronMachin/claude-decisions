@@ -129,7 +129,7 @@ export function openReview(view: PaneView, readyIds: string[]): PaneView {
 function chosenText(d: Decision): string {
   const o = d.options.find(x => x.id === d.answer?.option)
 
-  return o ? `✓ ${o.id} ${o.label}` : '✓'
+  return o ? `✓ ${o.id} ${o.label}` : '✓ discussed'
 }
 
 /** The right-hand part of a list row: wide panes say more. */

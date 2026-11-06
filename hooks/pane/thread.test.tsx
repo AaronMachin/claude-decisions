@@ -199,6 +199,7 @@ test('Mark answered makes the decision ready and returns to the list; it is not 
   await ui.press({ key: 'mark' })
   expect(await ui.find({ key: 'row:d1' })).toBeDefined()
   expect(seen.statuses.at(-1)).toBe('Decisions: 0 open · 1 ready')
+  expect((await ui.find({ key: 'row:d1' }))?.text).toContain('✓ discussed')
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'discuss' })
   expect(await ui.find({ key: 'mark' })).toBeUndefined()
