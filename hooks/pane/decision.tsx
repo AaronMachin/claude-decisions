@@ -1,6 +1,7 @@
 import { atom, read, update } from 'claude-code'
 
 import type { PaneView } from '../../types'
+import { reopenDependents, reopenNotice } from '../dependents'
 import { readOne, write } from '../store'
 import type { Decision, StoreCtx } from '../store'
 
@@ -126,6 +127,23 @@ export async function chooseOption(store: StoreCtx, d: Decision, option: number)
   return next
 }
 
+/**
+ * Chooses an option and, when it replaces a different earlier answer, reopens the
+ * decisions that depend on this one. Returns the decision and the notice for the list.
+ */
+export async function chooseAndReopen(store: StoreCtx, d: Decision, option: number): Promise<{ decision: Decision; notice?: string } | undefined> {
+  const previous = ((await readOne(store, d.id)) ?? d).answer
+  const decision = await chooseOption(store, d, option)
+  if (!decision) {
+    return undefined
+  }
+  if (previous?.option === undefined || previous.option === option) {
+    return { decision }
+  }
+
+  return { decision, notice: reopenNotice(d.id, await reopenDependents(store, decision, previous)) }
+}
+
 export async function parkDecision(store: StoreCtx, d: Decision, reason: string): Promise<boolean> {
   if (reason.trim() === '') {
     return false
@@ -187,10 +205,11 @@ export function DecisionView($: any, props: Props): any {
   const digits = Array.from({ length: Math.min(d.options.length, 10) }, (_, i) => (i + 1 === 10 ? '0' : String(i + 1)))
 
   const choose = async (option: number) => {
-    if (await chooseOption($, d, option)) {
+    const chosen = await chooseAndReopen($, d, option)
+    if (chosen) {
       typing.typed = undefined
       typing.option = undefined
-      await setView($, v => ({ ...v, screen: 'list', decisionId: undefined, highlight: undefined, notice: undefined }))
+      await setView($, v => ({ ...v, screen: 'list', decisionId: undefined, highlight: undefined, notice: chosen.notice }))
       onChanged()
       onLeave()
     }

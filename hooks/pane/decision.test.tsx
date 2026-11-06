@@ -5,6 +5,7 @@ import type { Decision, StoreCtx } from '../store'
 import {
   INITIAL_VIEW,
   back,
+  chooseAndReopen,
   chooseOption,
   highlightFor,
   highlightRecommendation,
@@ -204,4 +205,28 @@ test('a choice, a park and an unpark made from a stale copy keep a reply that la
   now = await readOne(store, stale.id)
   expect(now?.state).toBe('open')
   expect(now?.thread.length).toBe(2)
+})
+
+test('changing a ready answer reopens its ready dependents and says so; the same answer does not', async () => {
+  const store = fakeStore()
+  const base = { version: 1, section: 'needs-you', kind: 'choice', scenario: 's', options: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }], sources: [], thread: [], revisions: [], createdAt: 't', updatedAt: 't' } as unknown as Decision
+  await write(store, { ...base, id: 'd1', number: 1, title: 'First', dependsOn: [], state: 'ready', answer: { option: 1, answeredAt: 't' } })
+  await write(store, { ...base, id: 'd2', number: 2, title: 'Second', dependsOn: ['d1'], state: 'ready', answer: { option: 2, answeredAt: 't' } })
+  await write(store, { ...base, id: 'd3', number: 3, title: 'Third', dependsOn: ['d1'], state: 'sent', answer: { option: 2, answeredAt: 't' } })
+  const d1 = (await readOne(store, 'd1'))!
+  expect((await chooseAndReopen(store, d1, 1))?.notice).toBeUndefined()
+  expect((await readOne(store, 'd2'))!.state).toBe('ready')
+  const result = await chooseAndReopen(store, d1, 2)
+  expect(result?.notice).toBe('d1 changed. Reopened d2. d3 was already sent.')
+  expect((await readOne(store, 'd2'))!.state).toBe('open')
+  expect((await readOne(store, 'd2'))!.reopenedBy?.id).toBe('d1')
+})
+
+test('a first answer reopens nothing', async () => {
+  const store = fakeStore()
+  const base = { version: 1, section: 'needs-you', kind: 'choice', scenario: 's', options: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }], sources: [], thread: [], revisions: [], createdAt: 't', updatedAt: 't' } as unknown as Decision
+  await write(store, { ...base, id: 'd1', number: 1, title: 'First', dependsOn: [], state: 'open' })
+  await write(store, { ...base, id: 'd2', number: 2, title: 'Second', dependsOn: ['d1'], state: 'ready', answer: { option: 2, answeredAt: 't' } })
+  expect((await chooseAndReopen(store, (await readOne(store, 'd1'))!, 1))?.notice).toBeUndefined()
+  expect((await readOne(store, 'd2'))!.state).toBe('ready')
 })
