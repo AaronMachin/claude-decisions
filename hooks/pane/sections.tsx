@@ -74,8 +74,9 @@ export function pageOf(rows: Decision[], page: number, size: number): Page {
 /** `n`: toward the end. `o`: toward the start. Both stay inside the pages there are. */
 export function movePage(view: PaneView, by: 1 | -1, total: number, size: number): PaneView {
   const last = Math.max(0, Math.ceil(total / size) - 1)
+  const shown = Math.min(Math.max(0, view.sectionPage), last)
 
-  return { ...view, sectionPage: Math.min(Math.max(0, view.sectionPage + by), last) }
+  return { ...view, sectionPage: Math.min(Math.max(0, shown + by), last) }
 }
 
 /** The open assumptions in "Needs you", which the batch screen goes through. */
@@ -100,4 +101,9 @@ export function firstKey(tab: Tab | undefined): string | undefined {
   }
 
   return groups.answered[0] ? `row:${groups.answered[0].id}` : undefined
+}
+
+/** How many answered rows to draw, so the keys under them stay in view: a few when a section is open, otherwise what the pane has left. */
+export function answeredRoom(rows: number, needsYouLines: number, hasOpenSection: boolean): number {
+  return hasOpenSection ? 3 : Math.max(3, rows - 9 - needsYouLines)
 }

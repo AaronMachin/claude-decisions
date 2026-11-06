@@ -123,7 +123,7 @@ async function confirmOne($: any, rows: Decision[], id: string, props: BatchProp
   }
   const result = await confirmMarks($, rows, { [id]: mark })
   const next = nextUnanswered(rows, id)
-  await setView($, v => ({ ...v, marks: Object.fromEntries(Object.entries(v.marks).filter(([k]) => k !== id)) }))
+  await setView($, v => ({ ...v, marks: Object.fromEntries(Object.entries(v.marks).filter(([k]) => k !== id)), notice: result.notice }))
   props.onChanged()
   if (next === undefined) {
     await goToList($, result.notice, props.onChanged, props.onLeave)
@@ -177,6 +177,7 @@ export function BatchView($: any, props: BatchProps): any {
         </Button>
       ))}
       <Text dimColor>{'-'.repeat(Math.max(1, width))}</Text>
+      {view.notice ? <Text dimColor>{view.notice}</Text> : null}
       {count > 0 ? (
         <Button key="confirm" variant="primary" onPress={() => confirmAll($, rows, props)}>
           {`Confirm ${count}`}

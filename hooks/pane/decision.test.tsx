@@ -370,3 +370,12 @@ test('any kind parks with a reason and shows it back', async () => {
   await unparkDecision(store, parked)
   expect((await readOne(store, d.id))!.state).toBe('open')
 })
+
+test('unparking leaves the decision in the section it had', async () => {
+  const store = fakeStore()
+  await addDecision(store, { ...KIND_CASES[2]!.input, section: 'claudes-call' })
+  const d = (await readAll(store)).decisions[0]!
+  await parkDecision(store, d, 'later')
+  await unparkDecision(store, (await readOne(store, d.id))!)
+  expect((await readOne(store, d.id))!.section).toBe('claudes-call')
+})

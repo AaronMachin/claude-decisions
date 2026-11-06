@@ -307,3 +307,13 @@ test('list counts only needs-you as waiting and names the folded ones by id', as
   await write($, { ...d, reopenedBy: { id: 'd9', at: 't' } })
   expect((await listDecisions($)).result).toContain('Reopened because d9 changed.')
 })
+
+test('more refusals name their field: blocks type, dependsOn type, a blank reason on a fixed kind, section on a withdrawn decision', async () => {
+  const $ = fake()
+  await addDecision($, FINDING)
+  const d = (await readAll($)).decisions[0]!
+  expect(validateUpdate({ id: 'd1', summary: 's', blocks: 5 }, d, [d])).toMatch(/blocks must be a sentence/)
+  expect(validateUpdate({ id: 'd1', summary: 's', dependsOn: 'd2' }, d, [d])).toMatch(/dependsOn must be a list/)
+  expect(validateAdd({ ...FINDING, recommendation: { option: 1, reason: ' ' } }, [])).toMatch(/recommendation\.reason is required/)
+  expect(validateUpdate({ id: 'd1', summary: 's', section: 'claudes-call' }, { ...d, state: 'withdrawn' }, [d])).toMatch(/already withdrawn/)
+})

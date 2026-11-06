@@ -162,3 +162,8 @@ test('the 47-finding fixture passes the tool and seeds as 12 needing the person,
   const total2 = (pick: (g: ReturnType<typeof sectionsFor>) => Decision[]) => t2.reduce((n, t) => n + pick(sectionsFor(t)).length, 0)
   expect([total2(g => g.needsYou), total2(g => g.claudesCall), total2(g => g.alreadyDecided), total2(g => g.answered)]).toEqual([6, 24, 11, 6])
 })
+
+test('a stale page number after the section shrinks is clamped before n or o moves it', () => {
+  expect(movePage({ ...INITIAL_VIEW, sectionPage: 5 }, -1, 10, 4).sectionPage).toBe(1)
+  expect(movePage({ ...INITIAL_VIEW, sectionPage: 5 }, 1, 10, 4).sectionPage).toBe(2)
+})

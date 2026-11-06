@@ -1,7 +1,7 @@
 import type { PaneView } from '../../types'
 import type { Decision } from '../store'
 import { focusLater, setView } from './decision'
-import { FOLDED, assumptionsIn, foldAll, foldedRows, isWaiting, movePage, pageOf, pageSize, sectionsFor, toggleSection } from './sections'
+import { FOLDED, answeredRoom, assumptionsIn, foldAll, foldedRows, isWaiting, movePage, pageOf, pageSize, sectionsFor, toggleSection } from './sections'
 
 export type Tab = { key: string; label: string; decisions: Decision[] }
 
@@ -216,8 +216,10 @@ export function ListView($: any, props: ListProps): any {
       </Box>
     )
   }
-  const answeredRows = sections.answered.length === 0 ? 0 : sections.answered.length + 1
-  const fixedRows = 9 + sections.needsYou.length + answeredRows + (batch.length >= 2 ? 1 : 0)
+  const needsYouLines = sections.needsYou.reduce((n, d) => n + (secondLine(d, isParkedTab) === undefined ? 1 : 2), 0)
+  const answeredShown = sections.answered.slice(0, answeredRoom(rows, needsYouLines, view.openSection !== undefined))
+  const answeredHidden = sections.answered.length - answeredShown.length
+  const fixedRows = 9 + needsYouLines + (answeredShown.length === 0 ? 0 : answeredShown.length + 1 + (answeredHidden > 0 ? 1 : 0)) + (batch.length >= 2 ? 1 : 0)
   const size = pageSize(rows, fixedRows)
   const foldedHeading = (f: (typeof FOLDED)[number]) => {
     const all = tab ? foldedRows(tab, f.section) : []
@@ -301,7 +303,8 @@ export function ListView($: any, props: ListProps): any {
       {sections.parked.length > 0 ? <Text bold>{`Parked (${sections.parked.length})`}</Text> : null}
       {sections.parked.map(row)}
       {sections.answered.length > 0 ? <Text bold>{`Answered (${sections.answered.length})`}</Text> : null}
-      {sections.answered.map(row)}
+      {answeredShown.map(row)}
+      {answeredHidden > 0 ? <Text dimColor>{`     ${answeredHidden} more answered`}</Text> : null}
       {unreadable > 0 ? <Text dimColor>{`${unreadable} decision file${unreadable === 1 ? '' : 's'} couldn't be read`}</Text> : null}
       <Text> </Text>
       <Box>

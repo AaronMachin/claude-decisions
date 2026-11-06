@@ -254,6 +254,9 @@ export function validateUpdate(input: Record<string, any>, d: Decision | undefin
       return 'decisions_update refused: a task is always in needs-you.'
     }
   }
+  if (input.blocks !== undefined && typeof input.blocks !== 'string') {
+    return 'decisions_update refused: blocks must be a sentence, or an empty string to clear it.'
+  }
   if (input.dependsOn !== undefined) {
     if (!Array.isArray(input.dependsOn)) {
       return 'decisions_update refused: dependsOn must be a list of decision ids.'

@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { Decision } from '../store'
+import { REVIEW_47 } from './review-47'
 import { INITIAL_VIEW } from './decision'
 import { ListView, ReviewView, counts, visibleTabs, nextTab, openReview, rowMeta, rowText, secondLine, sectionsFor, statusText, tabsFor, toggleTick, truncate } from './list'
 
@@ -283,4 +284,16 @@ test('a wide row says question, and blocking when the decision blocks work', () 
   expect(rowMeta(make({ kind: 'question', options: [] }), 96)).toBe('question · open')
   expect(rowMeta(make({ blocks: 'the plan' }), 96)).toBe('2 options · open · blocking')
   expect(rowMeta(make({ state: 'parked' }), 49)).toBe('')
+})
+
+test('with the 47-finding review in a short pane the answered rows give way, so the key row stays in', async ($, on) => {
+  const all = REVIEW_47.map((f: any, i: number) => make({ ...(f as object), id: `d${i + 1}`, number: i + 1, group: 'Search review', options: [{ id: 1, label: 'Agree' }] } as Partial<Decision>))
+  const answered = all.map((d: Decision, i: number) => (i < 12 && d.section === 'needs-you' ? { ...d, state: 'ready' as const, answer: { option: 1, answeredAt: 't' } } : d))
+  const ui = await drawList($, on, answered, { ...INITIAL_VIEW, openSection: 'claudes-call' }, 24)
+  const buttons = (await ui.findAll({ type: 'Button' })).map((b: any) => b.props.key as string)
+  const rowCount = buttons.filter((k: string) => k.startsWith('row:')).length
+  expect(rowCount).toBeLessThanOrEqual(24 - 8)
+  expect(buttons).toContain('t')
+  expect(buttons).toContain('h')
+  await ui.unmount()
 })
