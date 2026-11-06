@@ -2,6 +2,9 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Decision } from '../store'
 import { INITIAL_VIEW } from './decision'
+import { readAll } from '../store'
+import { addDecision } from '../tool'
+import { REVIEW_47 as fixture } from './review-47'
 import { counts, sectionsFor, statusText, tabsFor } from './list'
 import { assumptionsIn, firstKey, foldAll, foldedRows, movePage, pageOf, pageSize, toggleSection } from './sections'
 
@@ -115,4 +118,47 @@ test('assumptions in Needs you are the batch', () => {
   counter = 0
   const all = [make({ kind: 'assumption' }), make({ kind: 'assumption', section: 'claudes-call' }), make({ kind: 'assumption', state: 'ready', answer: { option: 1, answeredAt: 't' } }), make()]
   expect(assumptionsIn(tabsFor(all)[0]!).map(d => d.id)).toEqual(['d1'])
+})
+
+test('the 47-finding fixture passes the tool and seeds as 12 needing the person, 24 and 11 folded', async () => {
+  const files = new Map<string, string>()
+  const store = {
+    env: { get: async () => '/home/test' },
+    session: { cwd: async () => '/work/pantry' },
+    process: { run: async () => ({ exitCode: 0, stdout: '/work/pantry/.git\n' }) },
+    fs: {
+      read: async (p: string) => {
+        if (!files.has(p)) {
+          throw new Error('ENOENT')
+        }
+        return files.get(p)!
+      },
+      write: async (p: string, t: string) => void files.set(p, t),
+      exists: async (p: string) => files.has(p),
+      list: async (dir: string) => {
+        const found = [...files.keys()].filter(p => p.startsWith(dir + '/')).map(p => ({ name: p.slice(dir.length + 1) }))
+        if (found.length === 0) {
+          throw new Error('ENOENT')
+        }
+        return found
+      },
+    },
+  }
+  expect(fixture).toHaveLength(47)
+  for (const finding of fixture) {
+    expect(await addDecision(store, finding)).toHaveProperty('result')
+  }
+  const { decisions } = await readAll(store)
+  expect(decisions).toHaveLength(47)
+  expect(decisions.every(d => /^[A-Z][A-Za-z ]+: /.test(d.title))).toBe(true)
+  const tabs = tabsFor(decisions)
+  expect(tabs.map(t => t.label)).toEqual(['Search review', 'Image uploads'])
+  const total = (pick: (g: ReturnType<typeof sectionsFor>) => Decision[]) => tabs.reduce((n, t) => n + pick(sectionsFor(t)).length, 0)
+  expect([total(g => g.needsYou), total(g => g.claudesCall), total(g => g.alreadyDecided)]).toEqual([12, 24, 11])
+  // answering six of those needing the person leaves 6 / 24 / 11 / 6
+  const answered = decisions.filter(d => d.section === 'needs-you').slice(0, 6).map(d => ({ ...d, state: 'ready' as const, answer: { option: 1, answeredAt: 't' } }))
+  const after = decisions.map(d => answered.find(a => a.id === d.id) ?? d)
+  const t2 = tabsFor(after)
+  const total2 = (pick: (g: ReturnType<typeof sectionsFor>) => Decision[]) => t2.reduce((n, t) => n + pick(sectionsFor(t)).length, 0)
+  expect([total2(g => g.needsYou), total2(g => g.claudesCall), total2(g => g.alreadyDecided), total2(g => g.answered)]).toEqual([6, 24, 11, 6])
 })
