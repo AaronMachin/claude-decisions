@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Decision } from '../store'
 import { REVIEW_47 } from './review-47'
+import { movePage, pageSize } from './sections'
 import { INITIAL_VIEW } from './decision'
 import { ListView, ReviewView, counts, visibleTabs, nextTab, openReview, rowMeta, rowText, secondLine, sectionsFor, statusText, tabsFor, toggleTick, truncate } from './list'
 
@@ -295,5 +296,43 @@ test('with the 47-finding review in a short pane the answered rows give way, so 
   expect(rowCount).toBeLessThanOrEqual(24 - 8)
   expect(buttons).toContain('t')
   expect(buttons).toContain('h')
+  await ui.unmount()
+})
+
+test('30 findings for the person in a short pane are paged, the key row stays in, and n reaches the last one', async ($, on) => {
+  counter = 0
+  const thirty = Array.from({ length: 30 }, () => make({ kind: 'finding' }))
+  const tabs = tabsFor(thirty)
+  let view = INITIAL_VIEW
+  on('ui.render', ($$: any, e: any) =>
+    ListView($$, { ui: $$.ui.resolve(e), tabs, view, width: 49, rows: 20, readyCount: 0, unreadable: 0, onSend: () => {}, onHide: () => {} }),
+  )
+  const seen = new Set<string>()
+  for (let step = 0; step < 10; step++) {
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const keys = await keysOf(ui)
+    const rows = keys.filter((k: string) => k.startsWith('row:'))
+    expect(rows.length).toBeLessThanOrEqual(20 - 9)
+    expect(keys).toContain('t')
+    expect(keys).toContain('h')
+    rows.forEach((k: string) => seen.add(k))
+    await ui.unmount()
+    if (!keys.includes('n')) {
+      break
+    }
+    view = movePage(view, 1, 30, pageSize(20, 13))
+  }
+  expect(seen.size).toBe(30)
+  expect(seen.has('row:d30')).toBe(true)
+})
+
+test('an open folded section leaves a paged Needs you on its first page, with a line saying how to see the rest', async ($, on) => {
+  counter = 0
+  const all = [...Array.from({ length: 30 }, () => make({ kind: 'finding' })), make({ kind: 'finding', section: 'claudes-call' })]
+  const ui = await drawList($, on, all, { ...INITIAL_VIEW, openSection: 'claudes-call' }, 20)
+  const keys = await keysOf(ui)
+  expect(keys).toContain('t')
+  expect(keys).not.toContain('n')
+  expect(await ui.find({ type: 'Text', text: /more need you/ })).toBeDefined()
   await ui.unmount()
 })

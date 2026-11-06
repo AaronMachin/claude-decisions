@@ -216,7 +216,12 @@ export function ListView($: any, props: ListProps): any {
       </Box>
     )
   }
-  const needsYouLines = sections.needsYou.reduce((n, d) => n + (secondLine(d, isParkedTab) === undefined ? 1 : 2), 0)
+  const needsReserve = 13 + (view.openSection !== undefined ? 5 : 0)
+  const needsSize = pageSize(rows, needsReserve)
+  const needsPaged = sections.needsYou.length > needsSize
+  const needsPage = pageOf(sections.needsYou, view.openSection === undefined ? view.sectionPage : 0, needsSize)
+  const needsShown = needsPaged ? needsPage.rows : sections.needsYou
+  const needsYouLines = needsShown.reduce((n, d) => n + (secondLine(d, isParkedTab) === undefined ? 1 : 2), 0)
   const answeredShown = sections.answered.slice(0, answeredRoom(rows, needsYouLines, view.openSection !== undefined))
   const answeredHidden = sections.answered.length - answeredShown.length
   const fixedRows = 9 + needsYouLines + (answeredShown.length === 0 ? 0 : answeredShown.length + 1 + (answeredHidden > 0 ? 1 : 0)) + (batch.length >= 2 ? 1 : 0)
@@ -298,7 +303,24 @@ export function ListView($: any, props: ListProps): any {
           {`Check ${batch.length} assumptions together`}
         </Button>
       ) : null}
-      {sections.needsYou.map(row)}
+      {needsShown.map(row)}
+      {needsPaged && view.openSection === undefined && (needsPage.hasEarlier || needsPage.hasNext) ? (
+        <Box>
+          {needsPage.hasEarlier ? (
+            <Button key="o" hotkey="o" plain onPress={() => setView($, v => movePage(v, -1, sections.needsYou.length, needsSize))}>
+              {'o earlier  '}
+            </Button>
+          ) : null}
+          {needsPage.hasNext ? (
+            <Button key="n" hotkey="n" plain onPress={() => setView($, v => movePage(v, 1, sections.needsYou.length, needsSize))}>
+              {`n next ${Math.min(needsSize, needsPage.remaining)} more`}
+            </Button>
+          ) : null}
+        </Box>
+      ) : null}
+      {needsPaged && view.openSection !== undefined ? (
+        <Text dimColor>{truncate(`     ${sections.needsYou.length - needsShown.length} more need you: fold the open section to page them`, width - 2)}</Text>
+      ) : null}
       {FOLDED.map(foldedHeading)}
       {sections.parked.length > 0 ? <Text bold>{`Parked (${sections.parked.length})`}</Text> : null}
       {sections.parked.map(row)}
