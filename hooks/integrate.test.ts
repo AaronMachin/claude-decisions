@@ -15,6 +15,7 @@ import {
   nudgeAfterTurn,
   onCompact,
   refuseSubagent,
+  resetNotes,
   turnText,
 } from './integrate'
 import { create, readAll } from './store'
@@ -236,6 +237,7 @@ test('the note is appended at session start unless the conversation already hold
 })
 
 test('after /clear the first prompt appends the note; a later prompt does not', async () => {
+  resetNotes()
   const cleared = fakeSession([])
   ;(cleared.$.session as any).turns = async () => 0
   await noteOnSubmit(cleared.$)
@@ -286,4 +288,17 @@ test('a skipped, precompute or subagent compaction passes through and sets no fl
   ;(quiet.$.session as any).turns = async () => 9
   await noteOnSubmit(quiet.$)
   expect(quiet.appended).toHaveLength(0)
+})
+
+test('the note appended at session start is not appended again by the first prompt, but is after /clear', async () => {
+  resetNotes()
+  const started = fakeSession([])
+  ;(started.$.session as any).turns = async () => 0
+  await noteAtSessionStart(started.$)
+  await noteOnSubmit(started.$)
+  expect(started.appended).toHaveLength(1)
+
+  await noteOnSubmit(started.$)
+  expect(started.appended).toHaveLength(2)
+  resetNotes()
 })

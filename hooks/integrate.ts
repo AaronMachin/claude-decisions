@@ -216,14 +216,26 @@ async function holdsNote($: any): Promise<boolean> {
   return messages.some(m => m.role === 'user' && m.text.includes(NOTE))
 }
 
-/** At session start, unless a reload finds the note already in the conversation. */
+let isNoteDue = false
+let isNotedAtStart = false
+
+/** For tests: forget what has been appended. */
+export function resetNotes(): void {
+  isNoteDue = false
+  isNotedAtStart = false
+}
+
+/**
+ * At session start, unless a reload finds the note already in the conversation.
+ * The transcript doesn't show an appended message until a turn has run, so the
+ * first prompt is told not to append it again (a real session showed it twice).
+ */
 export async function noteAtSessionStart($: any): Promise<void> {
   if (!(await holdsNote($))) {
     await $.session.append(asNote)
+    isNotedAtStart = true
   }
 }
-
-let isNoteDue = false
 
 /**
  * On a prompt: the first one after /clear (session.start does not fire there), or the
@@ -233,6 +245,11 @@ export async function noteOnSubmit($: any): Promise<void> {
   if (isNoteDue) {
     isNoteDue = false
     await $.session.append(asNote)
+
+    return
+  }
+  if (isNotedAtStart) {
+    isNotedAtStart = false
 
     return
   }
