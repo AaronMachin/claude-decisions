@@ -211,9 +211,9 @@ test('each kind is accepted and stored with the options the tool fills in', asyn
 
 test('options on a fixed kind, or a recommendation outside its options, are refused naming the field', () => {
   expect(validateAdd({ ...FINDING, options: [{ label: 'x' }] }, [])).toMatch(/options: the options of a finding are fixed/)
-  expect(validateAdd({ ...FINDING, recommendation: { option: 5, reason: 'r' } }, [])).toMatch(/recommendation\.option must be a number from 1 to 4 for a finding/)
+  expect(validateAdd({ ...FINDING, recommendation: { option: 5, reason: 'r' } }, [])).toMatch(/recommendation\.option must be a number from 1 to 4 when kind is finding/)
   expect(validateAdd({ ...FINDING, recommendation: undefined }, [])).toMatch(/recommendation\.option must be a number from 1 to 4/)
-  expect(validateAdd({ ...FINDING, kind: 'assumption', recommendation: { option: 3, reason: 'r' } }, [])).toMatch(/from 1 to 2 for a assumption/)
+  expect(validateAdd({ ...FINDING, kind: 'assumption', recommendation: { option: 3, reason: 'r' } }, [])).toMatch(/from 1 to 2 when kind is assumption/)
   expect(validateAdd({ kind: 'question', title: 't', scenario: 's', options: [{ label: 'x' }] }, [])).toMatch(/a question has no options/)
   expect(validateAdd({ kind: 'question', title: 't', scenario: 's', recommendation: { option: 1, reason: 'r' } }, [])).toMatch(/recommendation: a question has none/)
   expect(validateAdd({ kind: 'question', title: 't', scenario: 's' }, [])).toBeUndefined()
@@ -242,4 +242,68 @@ test('section is checked and stored, and defaults to needs-you', async () => {
 
 test('the add description stays under what reaches Claude', () => {
   expect(ADD_DESCRIPTION.length).toBeLessThan(4096)
+})
+
+test('update replaces dependsOn and blocks, and refuses unknown ids, itself and a loop', async () => {
+  const $ = fake()
+  await addDecision($, GOOD)
+  await addDecision($, { ...GOOD, title: 'Second' })
+  await addDecision($, { ...GOOD, title: 'Third' })
+  const all = (await readAll($)).decisions
+  expect(validateUpdate({ id: 'd2', summary: 's', dependsOn: ['d9'] }, all[1], all)).toMatch(/dependsOn d9: no such decision/)
+  expect(validateUpdate({ id: 'd2', summary: 's', dependsOn: ['d2'] }, all[1], all)).toMatch(/cannot depend on itself/)
+  expect(await updateDecision($, { id: 'd2', summary: 'Now depends on d1', dependsOn: ['d1'], blocks: ' the plan ' })).toEqual({
+    result: 'Updated d2: Now depends on d1. The earlier version is kept in the thread.',
+  })
+  const next = (await readAll($)).decisions
+  expect(next[1]!.dependsOn).toEqual(['d1'])
+  expect(next[1]!.blocks).toBe('the plan')
+  expect(next[1]!.revisions).toHaveLength(1)
+  expect(next[1]!.thread[0]!.text).toBe('↻ Now depends on d1')
+  expect(validateUpdate({ id: 'd1', summary: 's', dependsOn: ['d2'] }, next[0], next)).toMatch(/that would make a loop/)
+  expect(validateUpdate({ id: 'd1', summary: 's', dependsOn: ['d3'] }, next[0], next)).toBeUndefined()
+  await updateDecision($, { id: 'd2', summary: 'No longer blocks', blocks: '' })
+  expect((await readAll($)).decisions[1]!.blocks).toBeUndefined()
+})
+
+test('update moves a decision between sections, but not an answered one', async () => {
+  const $ = fake()
+  await addDecision($, { ...FINDING, section: 'claudes-call' })
+  expect(await updateDecision($, { id: 'd1', summary: 'Moved to Needs you', section: 'needs-you' })).toHaveProperty('result')
+  const d = (await readAll($)).decisions[0]!
+  expect(d.section).toBe('needs-you')
+  expect(d.revisions[0]!.before.section).toBe('claudes-call')
+  expect(validateUpdate({ id: 'd1', summary: 's', section: 'x' }, d, [d])).toMatch(/section must be one of/)
+  expect(validateUpdate({ id: 'd1', summary: 's', section: 'claudes-call' }, { ...d, state: 'ready' }, [d])).toMatch(/already answered/)
+  expect(validateUpdate({ id: 'd1', summary: 's' }, d, [d])).toMatch(/nothing to change\. Give addOptions, recommendation, dependsOn, blocks or section/)
+})
+
+test('update refuses options on fixed kinds and a recommendation on a question or task', async () => {
+  const $ = fake()
+  await addDecision($, FINDING)
+  await addDecision($, { kind: 'question', title: 'Which account', scenario: 's' })
+  await addDecision($, { kind: 'go-ahead', isTask: true, title: 'Sign in', scenario: 's' })
+  const [f, q, t] = (await readAll($)).decisions
+  expect(validateUpdate({ id: 'd1', summary: 's', addOptions: [{ label: 'x' }] }, f)).toMatch(/addOptions: the options of a finding are fixed/)
+  expect(validateUpdate({ id: 'd2', summary: 's', recommendation: { option: 1, reason: 'r' } }, q)).toMatch(/recommendation: a question has none/)
+  expect(validateUpdate({ id: 'd3', summary: 's', recommendation: { option: 1, reason: 'r' } }, t)).toMatch(/a task has none/)
+  expect(validateUpdate({ id: 'd3', summary: 's', section: 'claudes-call' }, t, [])).toMatch(/a task is always in needs-you/)
+})
+
+test('list counts only needs-you as waiting and names the folded ones by id', async () => {
+  const $ = fake()
+  await addDecision($, FINDING)
+  await addDecision($, { ...FINDING, title: 'Search ranking: two', section: 'claudes-call' })
+  await addDecision($, { ...FINDING, title: 'Search ranking: three', section: 'claudes-call' })
+  await addDecision($, { ...FINDING, title: 'Search ranking: four', section: 'already-decided' })
+  await addDecision($, { kind: 'go-ahead', isTask: true, title: 'Sign in', scenario: 's' })
+  const { result } = await listDecisions($)
+  expect(result).toContain('2 waiting for the person')
+  expect(result).toContain("Claude's call (2, not waiting for the person, they can overrule): d2, d3.")
+  expect(result).toContain('Already decided (1, not waiting for the person, they can overrule): d4.')
+  expect(result).toContain('d5 [Other] open for the person to do: Sign in.')
+  expect(result).not.toContain('Search ranking: two')
+  const d = (await readAll($)).decisions[0]!
+  await write($, { ...d, reopenedBy: { id: 'd9', at: 't' } })
+  expect((await listDecisions($)).result).toContain('Reopened because d9 changed.')
 })

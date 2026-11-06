@@ -109,7 +109,7 @@ id (required): the decision, such as "d3".
 summary (required): one plain line for the thread, such as "Added option 3, Per workspace" or "Recommendation moved to 2".
 addOptions (optional): [{ label, changes }] appended after the existing options, so they take the next numbers. A decision has 12 options at most.
 recommendation (optional): { option, reason }. option is the option's NUMBER, counting any you add in this call.
-Give addOptions, recommendation or both.
+Give at least one of addOptions, recommendation, dependsOn, blocks and section (a decision moved to another section, for example into needs-you).
 
 REFUSALS
 Refused, with the reason in the result, when the id is unknown, the decision is already sent, the summary is blank, nothing is given to change, an added option has no label or there would be more than 12, or the recommendation names an option that does not exist. Fix the named field and call again.`
@@ -131,6 +131,13 @@ export const UPDATE_INPUT_SCHEMA = {
       type: 'object',
       properties: { option: { type: 'number' }, reason: { type: 'string' } },
       required: ['option', 'reason'],
+    },
+    dependsOn: { type: 'array', items: { type: 'string' }, description: 'Replaces the list of decisions to answer first (such as "d2"). Refused for an unknown id, itself or a loop.' },
+    blocks: { type: 'string', description: 'Replaces what cannot go on until this is answered, in words. Empty clears it.' },
+    section: {
+      type: 'string',
+      enum: ['needs-you', 'claudes-call', 'already-decided'],
+      description: 'Moves the decision, for example a finding a discussion showed needs the person. Refused once it is answered.',
     },
   },
   required: ['id', 'summary'],
@@ -181,7 +188,7 @@ export function validateAdd(input: Record<string, any>, existingIds: string[]): 
     } else {
       const number = input.recommendation?.option
       if (!Number.isInteger(number) || number < 1 || number > fixed.length) {
-        return `decisions_add refused: recommendation.option must be a number from 1 to ${fixed.length} for a ${kind}.`
+        return `decisions_add refused: recommendation.option must be a number from 1 to ${fixed.length} when kind is ${kind}.`
       }
       if (isBlank(input.recommendation.reason)) {
         return 'decisions_add refused: recommendation.reason is required. Say why in a sentence and call again.'
@@ -215,7 +222,7 @@ export function validateAdd(input: Record<string, any>, existingIds: string[]): 
 }
 
 /** The refusal text for a malformed update, or undefined when it's fine. */
-export function validateUpdate(input: Record<string, any>, d: Decision | undefined): string | undefined {
+export function validateUpdate(input: Record<string, any>, d: Decision | undefined, all: Decision[] = []): string | undefined {
   if (!d) {
     return `decisions_update refused: ${String(input.id)}: no such decision.`
   }
@@ -226,8 +233,55 @@ export function validateUpdate(input: Record<string, any>, d: Decision | undefin
     return 'decisions_update refused: summary is required. Say what changed in one line.'
   }
   const added: any[] = input.addOptions ?? []
-  if (added.length === 0 && input.recommendation === undefined) {
-    return 'decisions_update refused: nothing to change. Give addOptions or recommendation.'
+  if (added.length === 0 && ['recommendation', 'dependsOn', 'blocks', 'section'].every(f => input[f] === undefined)) {
+    return 'decisions_update refused: nothing to change. Give addOptions, recommendation, dependsOn, blocks or section.'
+  }
+  const isFixed = fixedOptionsFor(d.kind, d.isTask === true) !== undefined || d.kind === 'question'
+  if (added.length > 0 && isFixed) {
+    return `decisions_update refused: addOptions: the options of a ${d.isTask ? 'task' : d.kind} are fixed.`
+  }
+  if (input.recommendation !== undefined && (d.kind === 'question' || d.isTask)) {
+    return `decisions_update refused: recommendation: ${d.isTask ? 'a task' : 'a question'} has none.`
+  }
+  if (input.section !== undefined) {
+    if (!SECTIONS.includes(input.section)) {
+      return `decisions_update refused: section must be one of ${SECTIONS.join(', ')}.`
+    }
+    if (d.state === 'ready') {
+      return `decisions_update refused: ${d.id} is already answered, so it has left its section.`
+    }
+    if (d.isTask && input.section !== 'needs-you') {
+      return 'decisions_update refused: a task is always in needs-you.'
+    }
+  }
+  if (input.dependsOn !== undefined) {
+    if (!Array.isArray(input.dependsOn)) {
+      return 'decisions_update refused: dependsOn must be a list of decision ids.'
+    }
+    const known = new Map(all.map(x => [x.id, x]))
+    for (const id of input.dependsOn) {
+      if (id === d.id) {
+        return `decisions_update refused: dependsOn ${id}: a decision cannot depend on itself.`
+      }
+      if (!known.has(id)) {
+        return `decisions_update refused: dependsOn ${id}: no such decision.`
+      }
+    }
+    const reaches = (from: string, seen: Set<string>): boolean => {
+      if (from === d.id) {
+        return true
+      }
+      if (seen.has(from)) {
+        return false
+      }
+      seen.add(from)
+
+      return (known.get(from)?.dependsOn ?? []).some(next => reaches(next, seen))
+    }
+    const loop = (input.dependsOn as string[]).find(id => reaches(id, new Set()))
+    if (loop !== undefined) {
+      return `decisions_update refused: dependsOn ${loop}: that would make a loop, ${loop} already depends on ${d.id}.`
+    }
   }
   for (const [index, option] of added.entries()) {
     if (isBlank(option?.label)) {
@@ -254,7 +308,7 @@ export function validateUpdate(input: Record<string, any>, d: Decision | undefin
 /** Applies an update: keeps the version it replaces, adds a ↻ line to the thread, writes the file. */
 export async function updateDecision($: StoreCtx, input: Record<string, any>): Promise<{ result: string } | { deny: string }> {
   const d = typeof input.id === 'string' ? await readOne($, input.id) : undefined
-  const reason = validateUpdate(input, d)
+  const reason = validateUpdate(input, d, (await readAll($)).decisions)
   if (reason !== undefined || !d) {
     return { deny: reason ?? 'decisions_update refused: no such decision.' }
   }
@@ -273,6 +327,9 @@ export async function updateDecision($: StoreCtx, input: Record<string, any>): P
     recommendation: input.recommendation
       ? { option: input.recommendation.option, reason: String(input.recommendation.reason).trim() }
       : d.recommendation,
+    ...(input.dependsOn !== undefined ? { dependsOn: input.dependsOn } : {}),
+    ...(input.blocks !== undefined ? (isBlank(input.blocks) ? { blocks: undefined } : { blocks: String(input.blocks).trim() }) : {}),
+    ...(input.section !== undefined ? { section: input.section } : {}),
     revisions: [...d.revisions, { at, summary, before }],
     thread: [...d.thread, { who: 'claude', text: `↻ ${summary}`, at, revision: d.revisions.length }],
   })
@@ -327,19 +384,28 @@ function line(d: Decision): string {
   if (d.state === 'parked') {
     return `${d.id} ${group} parked (${d.parkedReason ?? 'no reason given'}): ${d.title}.`
   }
-  const options = d.options.map(o => `${o.id} ${o.label}`).join(', ')
+  const options = d.options.length > 0 ? ` Options: ${d.options.map(o => `${o.id} ${o.label}`).join(', ')}.` : ''
   const recommended = d.recommendation ? ` Recommended: ${d.recommendation.option}.` : ''
+  const reopened = d.reopenedBy ? ` Reopened because ${d.reopenedBy.id} changed.` : ''
+  const kind = d.isTask ? ' for the person to do' : d.kind === 'choice' ? '' : ` ${d.kind}`
 
-  return `${d.id} ${group} ${d.state}: ${d.title}. Options: ${options}.${recommended}`
+  return `${d.id} ${group} ${d.state}${kind}: ${d.title}.${options}${recommended}${reopened}`
 }
+
+const FOLDED: { section: Section; name: string }[] = [
+  { section: 'claudes-call', name: "Claude's call" },
+  { section: 'already-decided', name: 'Already decided' },
+]
 
 export async function listDecisions($: StoreCtx): Promise<{ result: string }> {
   const { decisions } = await readAll($)
-  const waiting = decisions.filter(d => WAITING.includes(d.state))
+  const isOpen = (d: Decision) => WAITING.includes(d.state)
+  const waiting = decisions.filter(d => isOpen(d) && d.section === 'needs-you')
+  const folded = FOLDED.map(f => ({ ...f, ids: decisions.filter(d => isOpen(d) && d.section === f.section).map(d => d.id) }))
   const ready = decisions.filter(d => d.state === 'ready')
   const parked = decisions.filter(d => d.state === 'parked')
 
-  if (waiting.length + ready.length + parked.length === 0) {
+  if (waiting.length + ready.length + parked.length + folded.reduce((n, f) => n + f.ids.length, 0) === 0) {
     return { result: 'No open decisions in the pane.' }
   }
   const parts = [
@@ -347,8 +413,12 @@ export async function listDecisions($: StoreCtx): Promise<{ result: string }> {
     ready.length > 0 ? `${ready.length} answered but not sent` : '',
     parked.length > 0 ? `${parked.length} parked` : '',
   ].filter(Boolean)
+  const foldedLines = folded
+    .filter(f => f.ids.length > 0)
+    .map(f => `${f.name} (${f.ids.length}, not waiting for the person, they can overrule): ${f.ids.join(', ')}.`)
+  const head = parts.length > 0 ? `Decisions in the pane: ${parts.join(', ')}.` : 'Nothing is waiting for the person.'
 
-  return { result: [`Decisions in the pane: ${parts.join(', ')}.`, ...[...waiting, ...ready, ...parked].map(line)].join('\n') }
+  return { result: [head, ...[...waiting, ...ready, ...parked].map(line), ...foldedLines].join('\n') }
 }
 
 export async function registerTools($: { tool: { register: (spec: any) => Promise<unknown> } }): Promise<void> {
