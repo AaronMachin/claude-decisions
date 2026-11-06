@@ -369,3 +369,13 @@ test('an empty or text-less fork or quick reply is stored as a visible placehold
     expect((await readOne(w.$, d.id))!.thread.map(e => e.text)).toEqual(['anything?', '(no reply text)'])
   }
 })
+
+test('m pressed twice sends one prompt while that question already has a main-session waiter', async () => {
+  const w = world()
+  const d = await make(w.$)
+  await askQuestion(w.$, 'fork', d.id, 'ask the main one too?')
+  await w.setView(v => ({ ...v, decisionId: d.id }))
+  await askMain(w.$)
+  await askMain(w.$)
+  expect(w.submitted).toHaveLength(1)
+})

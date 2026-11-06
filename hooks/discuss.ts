@@ -323,6 +323,10 @@ export async function askMain($: any): Promise<void> {
   if (!question) {
     return
   }
+  const { pending } = await readState($)
+  if (pending.some(p => p.decisionId === d.id && p.asked === question.at && p.mode === 'main')) {
+    return
+  }
   await dispatch($, 'main', d, question.at, question.text)
 }
 
