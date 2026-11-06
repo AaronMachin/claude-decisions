@@ -381,5 +381,5 @@ test('the compose and context hooks add the rules section and the open list', as
   const composed = await $.prompt.compose(input)
   expect(composed.sections.map((s: any) => s.id)).toEqual(['intro', 'decisions:rules'])
   const again = await $.prompt.compose(input)
-  expect(again.sections[1].text).toBe(composed.sections[1].text)
+  expect(again.sections[1]!.text).toBe(composed.sections[1]!.text)
 })
