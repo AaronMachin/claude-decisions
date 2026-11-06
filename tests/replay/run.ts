@@ -38,7 +38,7 @@ function storeFolders() {
 }
 
 function claude(prompt, cwd, resume) {
-  const argv = ['-p', prompt, '--plugin-dir', repo, '--model', 'sonnet', '--output-format', 'json', '--max-turns', '12', '--allowedTools', 'mcp__decisions__*']
+  const argv = ['-p', prompt, '--plugin-dir', repo, '--model', 'sonnet', '--output-format', 'json', '--max-turns', '12', '--permission-mode', 'dontAsk', '--allowedTools', 'mcp__decisions__*', 'Read', 'Glob', 'Grep', 'Bash(git:*)']
   if (resume) {
     argv.push('--resume', resume)
   }

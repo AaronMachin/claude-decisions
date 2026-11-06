@@ -8,7 +8,7 @@ This folder replays question-heavy sessions against the mod and counts how many 
 npx -y tsx <repo>/tests/replay/run.ts [--sessions <folder>] [--text <folder>] [--flagged]
 ```
 
-- It runs `claude -p` (headless, Sonnet, the plugin loaded from this repository) in a fresh Pantry git project per session, sending each prompt with `--resume`. Decisions the mod puts in the pane are not answered.
+- It runs `claude -p` (headless, Sonnet, the plugin loaded from this repository) in a fresh Pantry git project per session, sending each prompt with `--resume`. Decisions the mod puts in the pane are not answered. It runs with `--permission-mode dontAsk` and read-only tools plus git: without that, a prompt that makes Claude reach for Edit hung the headless run until the timeout.
 - The output is one line of counts per session and a total: turns, questions in chat, decisions added, turns the nudge detector would nudge after, turns where the detector and the counter agree, and how many flags came from the mid-text rule and the last-sentence rule. No prompt or reply text is printed, so the output is safe to log for private sessions.
 - `--text` and `--flagged` write or print reply text: use them on the made-up sessions only.
 - Headless runs cannot show the real nudge (the reminder after a turn doesn't reach the transcript), so "would nudge" comes from the detector, not from watching it.
