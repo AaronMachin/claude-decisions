@@ -29,6 +29,8 @@ Neither of these works yet.
 ## Repository
 
 - `docs/design.md` - the design
+- `docs/decisions.md` - every decision so far and why
+- `CONTRIBUTING.md` - principles and how changes are made
 - `docs/findings/` - what the prototype test and the spikes showed
 - `spikes/` - throwaway experiments, one per question about the mod API
 
