@@ -359,7 +359,7 @@ Discussion:
   claude: no, the current one has the Node version it needs.
 ```
 
-The second example shows what the format looks like once workstreams 2 has a condition and a thread to put in. With one answer the first line says "Answer", not "Answers". Claude reads the prompt as arriving from the plugin ("The decisions plugin sent ..."), which is how the engine labels it.
+The second example shows what the format looks like once workstream 2 has a condition and a thread to put in. With one answer the first line says "Answer", not "Answers". Claude reads the prompt as arriving from the plugin ("The decisions plugin sent ..."), which is how the engine labels it.
 
 ## Tests
 
