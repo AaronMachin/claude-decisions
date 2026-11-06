@@ -191,7 +191,7 @@ A list row is one Button keyed `row:<id>`, `plain`, drawing `d1  Where the confi
 | Decision | `p` | park: asks "Why park it?" in an Input; `enter` parks it, an empty `enter` cancels. On a parked decision `p` puts it back to `open` **(Claude's call, nothing in D3 or D4 says how to unpark)** |
 | Decision | `s`, `h` | as on the list |
 | Review | up / down, `enter` | move to a row, tick or untick it |
-| Review | `c` | confirm: send the ticked answers |
+| Review | `c`, or `enter` on the Confirm Button | confirm: send the ticked answers. The Confirm Button is last in the ring, hotkey `c`; `enter` on a row only ticks or unticks it |
 | Review | `b` | back, nothing sent |
 
 How the keys are wired is spike 0's route (decisions.md S1):
