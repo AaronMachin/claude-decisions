@@ -2,6 +2,7 @@ import type { Register } from 'claude-code'
 
 import { changed, followFocus, openFocused, openForNewDecision, refreshStatus, renderPane } from './pane/render'
 import { configure, onTurnComplete, onTurnStart } from './discuss'
+import { nudgeAfterTurn } from './integrate'
 import { PANE_ID } from './pane/decision'
 import { ADD_TOOL, LIST_TOOL, UPDATE_TOOL, addDecision, listDecisions, registerTools, updateDecision } from './tool'
 
@@ -41,6 +42,13 @@ export const register: Register = (on, options) => {
   on('turn.start', ($, e, next) => onTurnStart($, e, next))
 
   on('turn.complete', ($, e, next) => onTurnComplete($, e, next))
+
+  on('turn.complete', async ($, e, next) => {
+    const done = await next(e)
+    await nudgeAfterTurn($, e).catch(() => undefined)
+
+    return done
+  })
 
   on('ui.focus', async ($, e, next) => {
     if (e.requestId === PANE_ID) {
