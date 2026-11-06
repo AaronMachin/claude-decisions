@@ -13,10 +13,15 @@ export const INITIAL_VIEW: PaneView = {
   isParking: false,
   parkDraft: '',
   isHidden: false,
+  isAsking: false,
+  isMarking: false,
+  drafts: {},
+  pending: [],
+  threadSkip: 0,
 }
 
 // Change the tag when PaneView's fields change: it declines what an earlier version stored.
-const viewAtom = atom({ plugin: 'decisions', key: 'view' } as const, INITIAL_VIEW, { shape: 'view-1' })
+const viewAtom = atom({ plugin: 'decisions', key: 'view' } as const, INITIAL_VIEW, { shape: 'view-2' })
 
 export type Typed = { digit: string; at: number } | undefined
 export type Typing = { typed: Typed; option: number | undefined }

@@ -27,6 +27,8 @@ export type ThreadEntry = {
   who: 'person' | 'claude' | 'fork' | 'quick'
   text: string
   at: string
+  /** On a ↻ line: the index into `Decision.revisions` of the version it replaced. */
+  revision?: number
 }
 
 export type Revision = {
