@@ -124,3 +124,36 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 67 | The 1000 ms gap for a second digit stays **(Claude's call, for a person to try)** | The real session only used single digits, so there is still no data on what feels right. |
 | 68 | `sendTicked` returns `{ sent, settled }`, where `settled` resolves with a notice if the submit failed **(Claude's call)** | The submit isn't awaited (it waits for Claude's turn to end), but a failure still has to put the answers back and tell the person. |
 | 69 | A mod's `$` can't be put in an object or passed to an arrow function, and a state reference has to be written in the file that uses it, so state is read and written only through `setView` and `readView` in `decision.tsx` **(Claude's call)** | The engine refused to load the mod otherwise; it's a rule of the mod API, not a choice, but it shapes where code can go. |
+
+## 7 November 2026: workstream 2, discussions (spec)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 70 | The thread is its own screen, reached from the `Discuss` Button; `b` goes back to the decision **(Claude's call)** | D3 says `enter` with nothing highlighted opens the discussion, and the decision screen has no room for a growing thread. |
+| 71 | The question box is closed until `enter` on an `Ask a question` Button; an empty `enter` cancels **(Claude's call)** | An open Input swallows hotkeys (row 57), so `d`, `f` and `b` would type letters. |
+| 72 | `f` sends a stuck question to the fork; `o` and `n` page the thread; `d` highlights `Mark answered` **(Claude's call)** | None of them is used by another workstream's keys (D4), and `f` stands for fork. |
+| 73 | A revision is a `claude` thread entry starting `↻ ` with a `revision` index into `revisions`, and the `↻` line is a Button that opens the earlier version **(Claude's call)** | One ordered thread, and the line goes out with the answer prompt with no change to `send.ts`. |
+| 74 | `decisions_update` takes `id`, `summary`, `addOptions` and `recommendation`; it is refused for `sent`, `superseded` and `withdrawn` decisions **(Claude's call)** | The prompt asks for "add an option, move the recommendation"; a sent answer can't be revised under the person. |
+| 75 | `d` then `enter` marks a decision `ready` with the text "settled in the discussion, see below" and no option **(Claude's call)** | The discussion holds what was decided and the answer prompt sends all of it. |
+| 76 | Pending questions live in `$.state` with the id of the load of the mod that holds them, never in the thread **(Claude's call)** | A reload leaves a question nothing will answer, and the thread must never hold one as "queued". |
+| 77 | A reply is written directly under its question, and a reply to a `sent` decision is kept without changing its state **(Claude's call)** | Two questions asked in a row each keep their own reply. |
+| 78 | Resending a queued main-session question to the fork doesn't cancel it; its reply lands in the thread too **(Claude's call)** | `$.prompt.submit` can't be cancelled, and dropping a reply Claude already wrote loses information. |
+| 79 | The main-session reply is matched by `plugin sent "On decision` and the sent text, not by order **(Claude's call, from Phase 1's wrong-turn bug)** | Two questions can queue, and the next turn to end may belong to something else. |
+| 80 | The fork's prompt carries the decision and says it can't read files; the quick model gets only the decision; both answer in at most four sentences **(Claude's call)** | Spike 0 (S3) found the fork can't read files, and a pane reply has to be short. |
+| 81 | `chooseOption`, `parkDecision` and `unparkDecision` re-read the file before writing **(Claude's call)** | A reply landing between a draw and a keypress would otherwise be overwritten with the older copy. |
+| 82 | The thread shows the newest entries that fit the pane's rows, and `o` and `n` page through the rest **(Claude's call)** | Hotkeys only work for Buttons wholly in view, so the key row can't scroll out. |
+| 83 | The setting is `discussionReplies` with the values `main session`, `fork`, `quick model`, read when the module loads **(Claude's call)** | M4 names the setting; a change in `/config` reloads the module. |
+| 84 | After a fork or quick reply, `m` re-asks that same question to the main session, shown as `m ask main session` **(Claude's call, Aaron's coordinator asked for it if small)** | A fork reply that says it can't see files is otherwise a dead end short of changing the setting. |
+| 85 | Anything that calls `$.model.fork` or `$.model.complete` is tested with a plain fake `$`, since the kit's `$` has no `$.model` and `on('model.fork')` doesn't stand in for it **(checked 7 November)** | The kit refuses the call with "undefined is not an object (evaluating '$.model.fork')". |
+
+## 7 November 2026: workstream 2, discussions (build)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 86 | `discuss.ts` reaches the pane's state through a branch (`setState`/`readState`) that tests can switch to an in-memory copy, not through a replaceable function **(Claude's call)** | The kit gives a test body no `$.state`, and the mod API only lets `$` be passed to a function declaration, so a swapped function can't take it. |
+| 87 | `f` and `m` reuse the question already in the thread, so a resend adds a reply under it, not a second copy of the question **(Claude's call)** | The thread then shows one question with every reply it got. |
+| 88 | The main-session reply turn is found by the sent text itself, with the `plugin sent` framing only as a second check, not by `plugin sent "On decision` **(Claude's call, from a real session on Claude Code 2.1.319)** | The engine's framing changed since Phase 1: the turn's text is now `The decisions plugin sent a message:` then the sent text, so matching the old quoted form never found the reply. |
+| 89 | Opening a decision from the list, and going back to it from the thread, puts the ring on `Discuss` 80 ms later **(Claude's call, found in a real session)** | `enter` on a freshly opened decision pressed an option the ring happened to land on, so it answered the decision instead of opening the discussion (D3). |
+| 90 | A reply goes at the end of its question's group (after the question and anything already under it, before the next question), not directly under the question (replaces row 77's placement) **(Claude's call, found in a real session)** | A late main reply after a fork reply landed above it, out of order, and the newest-first window then hid it. |
+| 91 | `f` resends only the open decision's own stuck question; pending entries and waiters are matched by decision as well as by the question's time **(Claude's call, from the review)** | Two decisions can have a question at the same millisecond, and `f` on one thread must not send another's. |
+| 92 | The thread counts 18 fixed rows and 15% more text rows than characters say, and a single entry too long for the room is cut with `…` **(Claude's call, from the review)** | The key row has to stay in view for the hotkeys to work, and words wrap earlier than characters alone suggest. |

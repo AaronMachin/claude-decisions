@@ -130,3 +130,21 @@ test('an id another session took meanwhile is skipped, and five misses give up',
   await expect(create(ctx, INPUT)).rejects.toThrow(/could not allocate/i)
   ctx.fs.exists = real
 })
+
+test('a thread entry keeps its revision index through a write and read', async () => {
+  const files = new Map<string, string>()
+  const store: any = {
+    env: { get: async () => '/home/t' },
+    session: { cwd: async () => '/w/p' },
+    process: { run: async () => ({ exitCode: 0, stdout: '/w/p/.git\n' }) },
+    fs: {
+      read: async (p: string) => files.get(p) ?? '',
+      write: async (p: string, t: string) => void files.set(p, t),
+      exists: async (p: string) => files.has(p),
+      list: async (p: string) => [...files.keys()].filter(k => k.startsWith(p + '/')).map(k => ({ name: k.slice(p.length + 1) })),
+    },
+  }
+  const made = await create(store, { kind: 'choice', title: 't', scenario: 's', options: [{ id: 1, label: 'a' }], sources: [], dependsOn: [] })
+  await write(store, { ...made, thread: [{ who: 'claude', text: '↻ x', at: 'now', revision: 0 }] })
+  expect((await readOne(store, made.id))?.thread[0]?.revision).toBe(0)
+})

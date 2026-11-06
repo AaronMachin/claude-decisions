@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 
 import type { PaneView } from '../../types'
-import { write } from '../store'
+import { readOne, write } from '../store'
 import type { Decision, StoreCtx } from '../store'
 
 export const PANE_ID = 'decisions'
@@ -13,10 +13,15 @@ export const INITIAL_VIEW: PaneView = {
   isParking: false,
   parkDraft: '',
   isHidden: false,
+  isAsking: false,
+  isMarking: false,
+  drafts: {},
+  pending: [],
+  threadSkip: 0,
 }
 
 // Change the tag when PaneView's fields change: it declines what an earlier version stored.
-const viewAtom = atom({ plugin: 'decisions', key: 'view' } as const, INITIAL_VIEW, { shape: 'view-1' })
+const viewAtom = atom({ plugin: 'decisions', key: 'view' } as const, INITIAL_VIEW, { shape: 'view-2' })
 
 export type Typed = { digit: string; at: number } | undefined
 export type Typing = { typed: Typed; option: number | undefined }
@@ -110,7 +115,7 @@ export async function chooseOption(store: StoreCtx, d: Decision, option: number)
     return undefined
   }
   const next: Decision = {
-    ...d,
+    ...((await readOne(store, d.id)) ?? d),
     state: 'ready',
     answer: { option, answeredAt: new Date().toISOString() },
   }
@@ -123,13 +128,13 @@ export async function parkDecision(store: StoreCtx, d: Decision, reason: string)
   if (reason.trim() === '') {
     return false
   }
-  await write(store, { ...d, state: 'parked', parkedReason: reason.trim() })
+  await write(store, { ...((await readOne(store, d.id)) ?? d), state: 'parked', parkedReason: reason.trim() })
 
   return true
 }
 
 export async function unparkDecision(store: StoreCtx, d: Decision): Promise<void> {
-  const { parkedReason: _gone, ...rest } = d
+  const { parkedReason: _gone, ...rest } = (await readOne(store, d.id)) ?? d
   await write(store, { ...rest, state: 'open' })
 }
 
@@ -216,7 +221,22 @@ export function DecisionView($: any, props: Props): any {
           </Box>
         )
       })}
-      <Button key="discuss" autoFocus onPress={() => setView($, v => ({ ...v, notice: 'No discussion yet' }))}>
+      <Button
+        key="discuss"
+        autoFocus
+        onPress={async () => {
+          await setView($, v => ({
+            ...v,
+            screen: 'thread',
+            isAsking: (v.drafts[d.id] ?? '') !== '',
+            isMarking: false,
+            revisionIndex: undefined,
+            threadSkip: 0,
+            notice: undefined,
+          }))
+          focusLater($, (view.drafts[d.id] ?? '') !== '' ? 'ask-input' : 'ask')
+        }}
+      >
         Discuss
       </Button>
       {view.notice ? <Text dimColor>{view.notice}</Text> : null}

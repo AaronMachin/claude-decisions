@@ -1,10 +1,13 @@
 import type { Register } from 'claude-code'
 
-import { followFocus, openFocused, openForNewDecision, refreshStatus, renderPane } from './pane/render'
+import { changed, followFocus, openFocused, openForNewDecision, refreshStatus, renderPane } from './pane/render'
+import { configure, onTurnComplete, onTurnStart } from './discuss'
 import { PANE_ID } from './pane/decision'
-import { ADD_TOOL, LIST_TOOL, addDecision, listDecisions, registerTools } from './tool'
+import { ADD_TOOL, LIST_TOOL, UPDATE_TOOL, addDecision, listDecisions, registerTools, updateDecision } from './tool'
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  configure(options)
+
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'decisions', description: 'Open the decisions pane' })
     await registerTools($)
@@ -25,6 +28,19 @@ export const register: Register = on => {
   }).catch(() => ({ deny: 'decisions_add failed: the decisions could not be read or written. Say so in chat instead of retrying.' }))
 
   on('tool.call', { tool: LIST_TOOL }, $ => listDecisions($)).catch(() => ({ deny: 'decisions_list failed: the decisions could not be read.' }))
+
+  on('tool.call', { tool: UPDATE_TOOL }, async ($, e) => {
+    const answer = await updateDecision($, e)
+    if ('result' in answer) {
+      await changed($)
+    }
+
+    return answer
+  }).catch(() => ({ deny: 'decisions_update failed: the decision could not be read or written. Say so in chat instead of retrying.' }))
+
+  on('turn.start', ($, e, next) => onTurnStart($, e, next))
+
+  on('turn.complete', ($, e, next) => onTurnComplete($, e, next))
 
   on('ui.focus', async ($, e, next) => {
     if (e.requestId === PANE_ID) {

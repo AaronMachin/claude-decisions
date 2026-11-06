@@ -160,3 +160,17 @@ test('a submit that fails puts the answers back to ready and says so', async () 
   expect(d.state).toBe('ready')
   expect(d.sentAt).toBeUndefined()
 })
+
+test('a failed submit keeps a thread entry written while it was waiting', async () => {
+  let fail: (e: Error) => void = () => undefined
+  const { ctx } = fake(() => new Promise((_, reject) => void (fail = reject)))
+  await ready(ctx, 'First', 1)
+  const result = await sendTicked(ctx, ['d1'])
+  const sent = (await readAll(ctx)).decisions[0]!
+  await write(ctx, { ...sent, thread: [{ who: 'person', text: 'asked while sending', at: 'now' }] })
+  fail(new Error('refused'))
+  await result.settled
+  const d = (await readAll(ctx)).decisions[0]!
+  expect(d.state).toBe('ready')
+  expect(d.thread.map(e => e.text)).toEqual(['asked while sending'])
+})

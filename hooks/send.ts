@@ -1,4 +1,4 @@
-import { readAll, write } from './store'
+import { readAll, readOne, write } from './store'
 import type { Decision, StoreCtx } from './store'
 
 export type SendCtx = StoreCtx & { prompt: { submit: (args: { text: string }) => Promise<unknown> } }
@@ -50,7 +50,7 @@ export async function sendTicked(
   const text = buildAnswerPrompt(chosen)
   const sentAt = new Date().toISOString()
   for (const d of chosen) {
-    await write($, { ...d, state: 'sent', sentAt })
+    await write($, { ...((await readOne($, d.id)) ?? d), state: 'sent', sentAt })
   }
   const settled = Promise.resolve()
     .then(() => $.prompt.submit({ text }))
@@ -58,7 +58,7 @@ export async function sendTicked(
       () => undefined,
       async () => {
         for (const d of chosen) {
-          await write($, { ...d, state: 'ready', sentAt: undefined })
+          await write($, { ...((await readOne($, d.id)) ?? d), state: 'ready', sentAt: undefined })
         }
 
         return `${chosen.length} not sent: Claude could not take them. They are back to ready.`

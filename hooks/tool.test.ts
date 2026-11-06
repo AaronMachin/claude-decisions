@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { create, readAll, write } from './store'
 import type { StoreCtx } from './store'
-import { ADD_DESCRIPTION, ADD_TOOL, LIST_TOOL, addDecision, listDecisions, registerTools, validateAdd } from './tool'
+import { ADD_DESCRIPTION, ADD_TOOL, LIST_TOOL, UPDATE_DESCRIPTION, addDecision, listDecisions, registerTools, updateDecision, validateAdd, validateUpdate } from './tool'
 
 function fake(): StoreCtx {
   const files = new Map<string, string>()
@@ -131,7 +131,61 @@ test('the description fits in what reaches Claude and carries the rules', () => 
 test('both tools are registered with their schemas, not deferred', async () => {
   const registered: any[] = []
   await registerTools({ tool: { register: async (spec: any) => void registered.push(spec) } })
-  expect(registered.map(s => s.name)).toEqual(['decisions_add', 'decisions_list'])
+  expect(registered.map(s => s.name)).toEqual(['decisions_add', 'decisions_list', 'decisions_update'])
   expect(registered.every(s => s.isDeferred === false)).toBe(true)
   expect(registered[0].inputSchema.required).toEqual(['kind', 'title', 'scenario', 'options', 'recommendation'])
+})
+
+test('update refuses each bad shape with a reason', async () => {
+  const $ = fake()
+  await addDecision($, GOOD)
+  const d = (await readAll($)).decisions[0]!
+  expect(validateUpdate({ id: 'd9' }, undefined)).toMatch(/d9: no such decision/)
+  expect(validateUpdate({ id: 'd1', summary: 's', addOptions: [{ label: 'x' }] }, { ...d, state: 'sent' })).toMatch(/d1 is already sent; add a new decision instead/)
+  expect(validateUpdate({ id: 'd1', summary: ' ', addOptions: [{ label: 'x' }] }, d)).toMatch(/summary is required/)
+  expect(validateUpdate({ id: 'd1', summary: 's' }, d)).toMatch(/nothing to change/)
+  expect(validateUpdate({ id: 'd1', summary: 's', addOptions: [{ label: ' ' }] }, d)).toMatch(/option 3 has no label/)
+  const many = Array.from({ length: 11 }, (_, i) => ({ label: `o${i}` }))
+  expect(validateUpdate({ id: 'd1', summary: 's', addOptions: many }, d)).toMatch(/at most 12 options/)
+  expect(validateUpdate({ id: 'd1', summary: 's', recommendation: { option: 3, reason: 'r' } }, d)).toMatch(/recommendation\.option must be the number/)
+  expect(validateUpdate({ id: 'd1', summary: 's', addOptions: [{ label: 'x' }], recommendation: { option: 3, reason: 'r' } }, d)).toBeUndefined()
+})
+
+test('update adds an option, moves the recommendation, keeps the earlier version and writes the thread line', async () => {
+  const $ = fake()
+  await addDecision($, GOOD)
+  const answer = await updateDecision($, {
+    id: 'd1',
+    summary: 'Added option 3, Per workspace',
+    addOptions: [{ label: 'Per workspace', changes: 'one file per workspace' }],
+    recommendation: { option: 3, reason: 'fits a monorepo' },
+  })
+  expect(answer).toEqual({ result: 'Updated d1: Added option 3, Per workspace. The earlier version is kept in the thread.' })
+  const d = (await readAll($)).decisions[0]!
+  expect(d.options[2]).toEqual({ id: 3, label: 'Per workspace', changes: 'one file per workspace', fromDiscussion: true })
+  expect(d.recommendation).toEqual({ option: 3, reason: 'fits a monorepo' })
+  expect(d.revisions).toHaveLength(1)
+  expect(d.revisions[0]!.before.options).toHaveLength(2)
+  expect(d.revisions[0]!.before.recommendation?.option).toBe(1)
+  expect(d.revisions[0]!.before).not.toHaveProperty('thread')
+  expect(d.thread).toEqual([expect.objectContaining({ who: 'claude', text: '↻ Added option 3, Per workspace', revision: 0 })])
+})
+
+test('update keeps a ready decision\'s answer, and a refusal changes nothing', async () => {
+  const $ = fake()
+  await addDecision($, GOOD)
+  const d = (await readAll($)).decisions[0]!
+  await write($, { ...d, state: 'ready', answer: { option: 2, answeredAt: 'now' } })
+  await updateDecision($, { id: 'd1', summary: 'Recommendation moved to 2', recommendation: { option: 2, reason: 'simpler' } })
+  const after = (await readAll($)).decisions[0]!
+  expect(after.answer?.option).toBe(2)
+  expect(after.state).toBe('ready')
+  expect(await updateDecision($, { id: 'd1', summary: 'x' })).toHaveProperty('deny')
+  expect((await readAll($)).decisions[0]!.revisions).toHaveLength(1)
+})
+
+test('the update description fits in what reaches Claude and says a pane message is a question', () => {
+  expect(UPDATE_DESCRIPTION.length).toBeLessThanOrEqual(4096)
+  expect(UPDATE_DESCRIPTION).toMatch(/On decision <n>/)
+  expect(UPDATE_DESCRIPTION).toMatch(/not the answer/)
 })

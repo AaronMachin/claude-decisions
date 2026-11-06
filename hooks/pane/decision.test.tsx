@@ -186,3 +186,22 @@ test('parking needs a reason, and unparking returns it to open', async () => {
   expect(open.state).toBe('open')
   expect(open.parkedReason).toBeUndefined()
 })
+
+test('a choice, a park and an unpark made from a stale copy keep a reply that landed since', async () => {
+  const store = fakeStore()
+  const stale = await make(store)
+  const entry = { who: 'claude' as const, text: 'a reply', at: 'later' }
+  await write(store, { ...stale, thread: [entry] })
+
+  await chooseOption(store, stale, 1)
+  let now = await readOne(store, stale.id)
+  expect(now?.state).toBe('ready')
+  expect(now?.thread).toEqual([entry])
+
+  await parkDecision(store, stale, 'later')
+  await write(store, { ...(await readOne(store, stale.id))!, thread: [entry, { ...entry, text: 'second' }] })
+  await unparkDecision(store, stale)
+  now = await readOne(store, stale.id)
+  expect(now?.state).toBe('open')
+  expect(now?.thread.length).toBe(2)
+})
