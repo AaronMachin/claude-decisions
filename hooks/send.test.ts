@@ -68,7 +68,7 @@ test('one answer is worded as an answer, with no condition and no discussion', a
   const d = await ready(ctx, 'Where the config file lives', 1)
   expect(buildAnswerPrompt([d])).toBe(
     [
-      "Answer from the decisions pane. This is the person's decision, so act on it and don't ask again. A condition is part of the answer.",
+      "Answer from the decisions pane. This is the person's decision, so act on it and don't ask again. A condition is part of the answer. Do not write decision records or other files about the answers unless the person asks.",
       '',
       'Decision d1 · Where the config file lives (Config file plan)',
       'Chosen: 1. Project root',
@@ -92,7 +92,7 @@ test('several answers, with a condition and a discussion', async () => {
   }
   expect(buildAnswerPrompt([a, withThread])).toBe(
     [
-      "Answers from the decisions pane. These are the person's decisions, so act on them and don't ask again. A condition is part of the answer.",
+      "Answers from the decisions pane. These are the person's decisions, so act on them and don't ask again. A condition is part of the answer. Do not write decision records or other files about the answers unless the person asks.",
       '',
       'Decision d1 · Where the config file lives (Config file plan)',
       'Chosen: 1. Project root',

@@ -3,6 +3,17 @@
 import { create } from './store'
 import type { StoreCtx } from './store'
 
+/** Phrases every statement of the rules carries: the tool description, the system prompt section. */
+export const RULE_PHRASES = [
+  'decisions pane',
+  'one line in chat',
+  'decisions_list',
+  'AskUserQuestion',
+  'starts with the area',
+  'main session',
+  'recommendation',
+]
+
 export const NUDGE =
   'Reminder from the decisions mod: your last turn ended with questions written in chat. Put them in the decisions pane instead with decisions_add, and say in one line what you added.'
 

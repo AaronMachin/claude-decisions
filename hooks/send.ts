@@ -27,8 +27,8 @@ function block(d: Decision): string {
 export function buildAnswerPrompt(decisions: Decision[]): string {
   const intro =
     decisions.length === 1
-      ? "Answer from the decisions pane. This is the person's decision, so act on it and don't ask again. A condition is part of the answer."
-      : "Answers from the decisions pane. These are the person's decisions, so act on them and don't ask again. A condition is part of the answer."
+      ? "Answer from the decisions pane. This is the person's decision, so act on it and don't ask again. A condition is part of the answer. Do not write decision records or other files about the answers unless the person asks."
+      : "Answers from the decisions pane. These are the person's decisions, so act on them and don't ask again. A condition is part of the answer. Do not write decision records or other files about the answers unless the person asks."
 
   return [intro, ...decisions.map(block)].join('\n\n')
 }
