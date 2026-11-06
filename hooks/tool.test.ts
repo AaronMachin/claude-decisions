@@ -57,7 +57,7 @@ test('add refuses a missing scenario, naming it', () => {
 })
 
 test('add refuses every other malformed shape with a reason', () => {
-  expect(validateAdd({ ...GOOD, kind: 'finding' }, [])).toMatch(/kind must be choice; the other kinds arrive later/)
+  expect(validateAdd({ ...GOOD, kind: 'riddle' }, [])).toMatch(/kind must be one of choice, go-ahead, assumption, finding, question/)
   expect(validateAdd({ ...GOOD, options: [] }, [])).toMatch(/options needs 1 to 12\. Split a bigger choice into two decisions/)
   const thirteen = Array.from({ length: 13 }, (_, i) => ({ label: `o${i}` }))
   expect(validateAdd({ ...GOOD, options: thirteen }, [])).toMatch(/options needs 1 to 12/)
@@ -133,7 +133,7 @@ test('both tools are registered with their schemas, not deferred', async () => {
   await registerTools({ tool: { register: async (spec: any) => void registered.push(spec) } })
   expect(registered.map(s => s.name)).toEqual(['decisions_add', 'decisions_list', 'decisions_update'])
   expect(registered.every(s => s.isDeferred === false)).toBe(true)
-  expect(registered[0].inputSchema.required).toEqual(['kind', 'title', 'scenario', 'options', 'recommendation'])
+  expect(registered[0].inputSchema.required).toEqual(['kind', 'title', 'scenario'])
 })
 
 test('update refuses each bad shape with a reason', async () => {
@@ -188,4 +188,58 @@ test('the update description fits in what reaches Claude and says a pane message
   expect(UPDATE_DESCRIPTION.length).toBeLessThanOrEqual(4096)
   expect(UPDATE_DESCRIPTION).toMatch(/On decision <n>/)
   expect(UPDATE_DESCRIPTION).toMatch(/not the answer/)
+})
+
+const FINDING = { group: 'Search review', kind: 'finding', title: 'Search ranking: exact matches sort low', scenario: 'Searching "lemon" lists "lemonade" first.', recommendation: { option: 1, reason: 'It is a real bug.' } }
+
+test('each kind is accepted and stored with the options the tool fills in', async () => {
+  const $ = fake()
+  await addDecision($, { ...FINDING })
+  await addDecision($, { kind: 'go-ahead', title: 'Push the branch', scenario: 's', recommendation: { option: 1, reason: 'r' } })
+  await addDecision($, { kind: 'assumption', title: 'Settings are YAML', scenario: 's', recommendation: { option: 1, reason: 'r' } })
+  await addDecision($, { kind: 'question', title: 'Which staging account', scenario: 's' })
+  const all = (await readAll($)).decisions
+  expect(all.map(d => d.kind)).toEqual(['finding', 'go-ahead', 'assumption', 'question'])
+  expect(all[0]!.options.map(o => o.label)).toEqual(['Agree', 'Already decided', 'Disagree', 'Not sure'])
+  expect(all[0]!.options.every(o => o.changes)).toBe(true)
+  expect(all[1]!.options.map(o => o.label)).toEqual(['Yes', 'No'])
+  expect(all[2]!.options.map(o => o.label)).toEqual(['Right', 'Wrong'])
+  expect(all[3]!.options).toEqual([])
+  expect(all[3]!.recommendation).toBeUndefined()
+  expect(all.every(d => d.section === 'needs-you')).toBe(true)
+})
+
+test('options on a fixed kind, or a recommendation outside its options, are refused naming the field', () => {
+  expect(validateAdd({ ...FINDING, options: [{ label: 'x' }] }, [])).toMatch(/options: the options of a finding are fixed/)
+  expect(validateAdd({ ...FINDING, recommendation: { option: 5, reason: 'r' } }, [])).toMatch(/recommendation\.option must be a number from 1 to 4 for a finding/)
+  expect(validateAdd({ ...FINDING, recommendation: undefined }, [])).toMatch(/recommendation\.option must be a number from 1 to 4/)
+  expect(validateAdd({ ...FINDING, kind: 'assumption', recommendation: { option: 3, reason: 'r' } }, [])).toMatch(/from 1 to 2 for a assumption/)
+  expect(validateAdd({ kind: 'question', title: 't', scenario: 's', options: [{ label: 'x' }] }, [])).toMatch(/a question has no options/)
+  expect(validateAdd({ kind: 'question', title: 't', scenario: 's', recommendation: { option: 1, reason: 'r' } }, [])).toMatch(/recommendation: a question has none/)
+  expect(validateAdd({ kind: 'question', title: 't', scenario: 's' }, [])).toBeUndefined()
+})
+
+test('a task is a go-ahead with Done and Cannot do it, no recommendation, always in needs-you', async () => {
+  const task = { kind: 'go-ahead', isTask: true, title: 'Sign in to staging', scenario: 'Run the login command.' }
+  expect(validateAdd({ ...task, kind: 'finding' }, [])).toMatch(/isTask needs kind go-ahead/)
+  expect(validateAdd({ ...task, options: [{ label: 'x' }] }, [])).toMatch(/options: the options of a task are fixed/)
+  expect(validateAdd({ ...task, recommendation: { option: 1, reason: 'r' } }, [])).toMatch(/recommendation: a task has none/)
+  expect(validateAdd({ ...task, section: 'claudes-call' }, [])).toMatch(/a task is always in needs-you/)
+  const $ = fake()
+  await addDecision($, task)
+  const d = (await readAll($)).decisions[0]!
+  expect(d.isTask).toBe(true)
+  expect(d.options.map(o => o.label)).toEqual(['Done', "Can't do it"])
+})
+
+test('section is checked and stored, and defaults to needs-you', async () => {
+  expect(validateAdd({ ...FINDING, section: 'elsewhere' }, [])).toMatch(/section must be one of needs-you, claudes-call, already-decided/)
+  const $ = fake()
+  await addDecision($, { ...FINDING, section: 'claudes-call' })
+  await addDecision($, { ...FINDING, section: 'already-decided' })
+  expect((await readAll($)).decisions.map(d => d.section)).toEqual(['claudes-call', 'already-decided'])
+})
+
+test('the add description stays under what reaches Claude', () => {
+  expect(ADD_DESCRIPTION.length).toBeLessThan(4096)
 })

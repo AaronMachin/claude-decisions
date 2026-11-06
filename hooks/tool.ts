@@ -1,5 +1,6 @@
+import { fixedOptionsFor } from './pane/kinds'
 import { create, readAll, readOne, write } from './store'
-import type { Decision, StoreCtx } from './store'
+import type { Decision, Kind, Section, StoreCtx } from './store'
 
 export const ADD_TOOL = 'mcp__decisions__decisions_add'
 export const LIST_TOOL = 'mcp__decisions__decisions_list'
@@ -16,7 +17,7 @@ Do not use it for things you can find out by reading the code, status updates, o
 
 THE FIELDS
 group (optional but always give one): the piece of work, such as "Sharing links", "Search review" or "Config file plan". Reuse the exact same text for the same piece of work.
-kind (required): "choice", a pick between numbered options. It is the only kind for now.
+kind (required): choice, go-ahead, assumption, finding or question. Only choice takes options. section (optional): needs-you (default), claudes-call or already-decided. The schema explains each.
 title (required): a short plain sentence that makes sense to someone who has not read the conversation, such as "Where the config file lives". No ticket shorthand, no abbreviations you invented, no function or class names as the headline.
 scenario (required): a concrete example of what happens today, for someone who was not in the conversation. Not "the lookup could be slow" but "you run the command from a subfolder and it takes eight seconds because it walks up to the root".
 options (required, 1 to 12): each is { label, changes }. label is a few words. changes says what it would take and what changes for the person or the work if chosen. They are numbered by position, 1 first.
@@ -43,13 +44,30 @@ export const ADD_INPUT_SCHEMA = {
   type: 'object',
   properties: {
     group: { type: 'string', description: 'The piece of work this belongs to. Reuse the exact text for the same work.' },
-    kind: { type: 'string', enum: ['choice'] },
+    kind: {
+      type: 'string',
+      enum: ['choice', 'go-ahead', 'assumption', 'finding', 'question'],
+      description:
+        'choice: pick between your numbered options. go-ahead: yes or no to an action with side effects (1 Yes, 2 No). assumption: something you assumed and are carrying on with (1 Right, 2 Wrong). finding: one finding of a review, title starting with the area it is about (1 Agree, 2 Already decided, 3 Disagree, 4 Not sure). question: a fact only the person knows, with no options; they answer in the discussion. Only choice takes options; the others get theirs from the tool and a call that gives options is refused.',
+    },
+    section: {
+      type: 'string',
+      enum: ['needs-you', 'claudes-call', 'already-decided'],
+      description:
+        'Where it shows in its group. needs-you (default): the person must decide. claudes-call: you have decided and acted unless they overrule you. already-decided: an earlier answer or the code settles it. For a large review put only what needs the person in needs-you. For the other two, recommendation.reason says what you decided or what settles it.',
+    },
+    isTask: {
+      type: 'boolean',
+      description:
+        'True for something only the person can do (sign in, run a command), shown in a "For you to do" tab. kind must be go-ahead; give no options and no recommendation. The scenario carries the steps. They answer 1 Done or 2 Cannot do it.',
+    },
     title: { type: 'string', description: 'Plain title, readable without the conversation.' },
     scenario: { type: 'string', description: 'A concrete example of what happens, for someone who was not in the conversation.' },
     options: {
       type: 'array',
       minItems: 1,
       maxItems: 12,
+      description: 'Required for choice only; refused for every other kind.',
       items: {
         type: 'object',
         properties: {
@@ -78,7 +96,7 @@ export const ADD_INPUT_SCHEMA = {
     dependsOn: { type: 'array', items: { type: 'string' }, description: 'Ids of decisions to answer first.' },
     blocks: { type: 'string', description: 'What cannot go on until this is answered, in words.' },
   },
-  required: ['kind', 'title', 'scenario', 'options', 'recommendation'],
+  required: ['kind', 'title', 'scenario'],
 }
 
 export const UPDATE_DESCRIPTION = `Revises a decision that is already in the decisions pane: adds an option, or moves the recommendation. The earlier version is kept, and the thread shows a line for the change.
@@ -124,6 +142,9 @@ function isBlank(value: unknown): boolean {
   return typeof value !== 'string' || value.trim() === ''
 }
 
+const KINDS: Kind[] = ['choice', 'go-ahead', 'assumption', 'finding', 'question']
+const SECTIONS: Section[] = ['needs-you', 'claudes-call', 'already-decided']
+
 /** The refusal text for a malformed add, or undefined when it's fine. */
 export function validateAdd(input: Record<string, any>, existingIds: string[]): string | undefined {
   for (const field of ['title', 'scenario', 'kind']) {
@@ -132,25 +153,57 @@ export function validateAdd(input: Record<string, any>, existingIds: string[]): 
       return `decisions_add refused: ${field} is required. Write ${how} and call again.`
     }
   }
-  if (input.kind !== 'choice') {
-    return 'decisions_add refused: kind must be choice; the other kinds arrive later.'
+  if (!KINDS.includes(input.kind)) {
+    return `decisions_add refused: kind must be one of ${KINDS.join(', ')}.`
   }
+  const kind: Kind = input.kind
+  const isTask = input.isTask === true
+  if (input.section !== undefined && !SECTIONS.includes(input.section)) {
+    return `decisions_add refused: section must be one of ${SECTIONS.join(', ')}.`
+  }
+  if (isTask && kind !== 'go-ahead') {
+    return 'decisions_add refused: isTask needs kind go-ahead. The options are Done and Cannot do it, filled in for you.'
+  }
+  if (isTask && input.section !== undefined && input.section !== 'needs-you') {
+    return 'decisions_add refused: a task is always in needs-you. Leave section out.'
+  }
+  const fixed = fixedOptionsFor(kind, isTask)
   const options = input.options
-  if (!Array.isArray(options) || options.length < 1 || options.length > 12) {
-    return 'decisions_add refused: options needs 1 to 12. Split a bigger choice into two decisions.'
-  }
-  for (const [index, option] of options.entries()) {
-    if (isBlank(option?.label)) {
-      return `decisions_add refused: option ${index + 1} has no label.`
+  if (fixed !== undefined || kind === 'question') {
+    if (options !== undefined) {
+      const what = fixed ? `the options of a ${isTask ? 'task' : kind} are fixed (${fixed.map((o, i) => `${i + 1} ${o.label}`).join(', ')})` : 'a question has no options'
+      return `decisions_add refused: options: ${what}. Leave options out and call again.`
     }
-  }
-  const recommendation = input.recommendation
-  const number = recommendation?.option
-  if (!Number.isInteger(number) || number < 1 || number > options.length) {
-    return 'decisions_add refused: recommendation.option must be the number of one of the options.'
-  }
-  if (isBlank(recommendation.reason)) {
-    return 'decisions_add refused: recommendation.reason is required. Say why in a sentence and call again.'
+    if (fixed === undefined || isTask) {
+      if (input.recommendation !== undefined) {
+        return `decisions_add refused: recommendation: ${isTask ? 'a task' : 'a question'} has none. Leave it out and call again.`
+      }
+    } else {
+      const number = input.recommendation?.option
+      if (!Number.isInteger(number) || number < 1 || number > fixed.length) {
+        return `decisions_add refused: recommendation.option must be a number from 1 to ${fixed.length} for a ${kind}.`
+      }
+      if (isBlank(input.recommendation.reason)) {
+        return 'decisions_add refused: recommendation.reason is required. Say why in a sentence and call again.'
+      }
+    }
+  } else {
+    if (!Array.isArray(options) || options.length < 1 || options.length > 12) {
+      return 'decisions_add refused: options needs 1 to 12. Split a bigger choice into two decisions.'
+    }
+    for (const [index, option] of options.entries()) {
+      if (isBlank(option?.label)) {
+        return `decisions_add refused: option ${index + 1} has no label.`
+      }
+    }
+    const recommendation = input.recommendation
+    const number = recommendation?.option
+    if (!Number.isInteger(number) || number < 1 || number > options.length) {
+      return 'decisions_add refused: recommendation.option must be the number of one of the options.'
+    }
+    if (isBlank(recommendation.reason)) {
+      return 'decisions_add refused: recommendation.reason is required. Say why in a sentence and call again.'
+    }
   }
   for (const id of input.dependsOn ?? []) {
     if (!existingIds.includes(id)) {
@@ -235,21 +288,30 @@ export async function addDecision($: StoreCtx, input: Record<string, any>): Prom
   if (reason !== undefined) {
     return { deny: reason }
   }
+  const kind: Kind = input.kind
+  const isTask = input.isTask === true
+  const fixed = fixedOptionsFor(kind, isTask)
+  const options = fixed
+    ? fixed.map((o, index) => ({ id: index + 1, label: o.label, changes: o.changes }))
+    : kind === 'question'
+      ? []
+      : input.options.map((o: any, index: number) => ({
+          id: index + 1,
+          label: o.label.trim(),
+          ...(isBlank(o.changes) ? {} : { changes: o.changes.trim() }),
+        }))
   const made = await create($, {
     group: isBlank(input.group) ? undefined : String(input.group).trim(),
-    kind: 'choice',
+    kind,
     title: input.title.trim(),
     scenario: input.scenario.trim(),
-    options: input.options.map((o: any, index: number) => ({
-      id: index + 1,
-      label: o.label.trim(),
-      ...(isBlank(o.changes) ? {} : { changes: o.changes.trim() }),
-    })),
-    recommendation: { option: input.recommendation.option, reason: input.recommendation.reason.trim() },
+    options,
+    ...(input.recommendation ? { recommendation: { option: input.recommendation.option, reason: input.recommendation.reason.trim() } } : {}),
     sources: input.sources ?? [],
     dependsOn: input.dependsOn ?? [],
     ...(isBlank(input.blocks) ? {} : { blocks: input.blocks.trim() }),
-  })
+    ...(isTask ? { isTask: true } : {}),
+  }, input.section ?? 'needs-you')
   const open = decisions.filter(d => WAITING.includes(d.state)).length + 1
 
   return { result: `Added ${made.id} to the pane. ${open} open.` }

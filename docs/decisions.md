@@ -177,3 +177,10 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 105 | `reopenDependents` is in a new `hooks/dependents.ts`, and the 47-finding fixture is seeded by a script through `addDecision` **(Claude's call, asked in the spec)** | A cycle between `decision.tsx` and `sections.tsx` otherwise; 47 model-made calls add cost, not evidence. |
 | 106 | Section paging uses `n` (toward the end) and `o` (toward the start), the thread's keys, replacing `e` in row 98 **(approved by the coordinator)** | Paging reads the same on every screen. |
 | 107 | `decisions_update` also takes `section`, refused for a `ready` or `sent` decision **(approved by the coordinator)** | Claude can move a finding into "Needs you" once a discussion shows it needs the person. |
+
+## 7 November 2026: workstream 3, kinds and reviews (build)
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 108 | `options` and `recommendation` are no longer in the add schema's `required` list; the tool refuses a choice without them, with the reason **(Claude's call)** | Four of the five kinds must not carry options, and a schema that demands them would push Claude to invent some. |
+| 109 | `FIXED_OPTIONS` carries a one-line `changes` for every fixed option, written by the tool **(Claude's call)** | Every finding reads the same and the pane's option lines are never empty. |

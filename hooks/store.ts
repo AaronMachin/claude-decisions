@@ -155,14 +155,14 @@ export async function write($: StoreCtx, decision: Decision): Promise<void> {
 let queue: Promise<unknown> = Promise.resolve()
 
 /** Allocates the next id and writes the decision; adds in one session run one at a time. */
-export function create($: StoreCtx, input: NewDecision): Promise<Decision> {
-  const run = queue.then(() => allocate($, input))
+export function create($: StoreCtx, input: NewDecision, section: Section = 'needs-you'): Promise<Decision> {
+  const run = queue.then(() => allocate($, input, section))
   queue = run.catch(() => undefined)
 
   return run
 }
 
-async function allocate($: StoreCtx, input: NewDecision): Promise<Decision> {
+async function allocate($: StoreCtx, input: NewDecision, section: Section): Promise<Decision> {
   const dir = await storeDir($)
   const taken = (await names($, dir)).map(name => /^d(\d+)\.json$/.exec(name)?.[1]).filter(Boolean).map(Number)
   let number = Math.max(0, ...taken) + 1
@@ -178,7 +178,7 @@ async function allocate($: StoreCtx, input: NewDecision): Promise<Decision> {
       version: 1,
       id,
       number,
-      section: 'needs-you',
+      section,
       state: 'open',
       thread: [],
       revisions: [],
