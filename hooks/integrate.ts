@@ -119,7 +119,7 @@ type AskQuestion = {
 const ASK_GROUP = 'Questions from Claude'
 
 function scenarioOf(q: AskQuestion, labels: string[]): string {
-  const lead = [q.header, q.description ?? 'Claude asked this and had no more to say.'].filter(Boolean).join('. ')
+  const lead = [q.header, q.description ?? 'Claude asked this in chat and had no more to say.'].filter(Boolean).join('. ')
   const extra: string[] = []
   if (q.multiSelect === true && labels.length > 0) {
     extra.push(`Pick any of: ${labels.join(', ')}.`)
@@ -140,6 +140,9 @@ export async function answerAskUserQuestion(
   $: StoreCtx,
   e: { questions: AskQuestion[] },
 ): Promise<{ result: { questions: AskQuestion[]; answers: Record<string, never> }; context: string[] } | { deny: string }> {
+  if (e.questions.length === 0) {
+    return { result: { questions: e.questions, answers: {} }, context: ['No questions were given, so nothing was added to the decisions pane.'] }
+  }
   const numbers: number[] = []
   try {
     for (const q of e.questions) {

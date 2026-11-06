@@ -302,3 +302,9 @@ test('the note appended at session start is not appended again by the first prom
   expect(started.appended).toHaveLength(2)
   resetNotes()
 })
+
+test('an AskUserQuestion with no questions adds nothing and says so', async () => {
+  const answer: any = await answerAskUserQuestion(fakeStore(), { questions: [] })
+
+  expect(answer.context[0]).toContain('nothing was added')
+})
