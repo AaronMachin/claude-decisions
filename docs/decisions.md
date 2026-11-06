@@ -211,3 +211,4 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | # | Decision | Why |
 | --- | --- | --- |
 | 126 | One `on` per event without a matcher: the nudge runs inside the existing `turn.complete` hook, after discussions' work **(Claude's call, forced by the engine)** | The engine refuses a second unmatched `on("turn.complete")` ("registered twice without a matcher"). Every hook this workstream adds to an event the mod already uses goes inside the existing one. |
+| 127 | A free-text, number or multi-select AskUserQuestion becomes kind `question`; number questions add "Answer with a number from min to max" to the scenario **(Claude's call)** | A choice takes one answer and a question has no numbered options; the min and max would otherwise be lost. |

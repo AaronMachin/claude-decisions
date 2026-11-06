@@ -1,5 +1,8 @@
 /** How Claude is steered to the pane: the nudge, AskUserQuestion, subagent refusals and the prompt hooks. */
 
+import { create } from './store'
+import type { StoreCtx } from './store'
+
 export const NUDGE =
   'Reminder from the decisions mod: your last turn ended with questions written in chat. Put them in the decisions pane instead with decisions_add, and say in one line what you added.'
 
@@ -80,4 +83,76 @@ export async function nudgeAfterTurn($: any, e: { agentId?: string; reason?: str
   }
   lastNudged = key
   await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: NUDGE }] } })
+}
+
+export const SUBAGENT_REFUSAL =
+  'Only the main session adds decisions. Report this to the main session in your final message and it will add it to the pane.'
+
+/** A subagent's call (it carries an agentId) is refused before anything is written. */
+export function refuseSubagent(e: { agentId?: string }): { deny: string } | undefined {
+  return e.agentId === undefined ? undefined : { deny: SUBAGENT_REFUSAL }
+}
+
+type AskQuestion = {
+  question: string
+  header?: string
+  description?: string
+  kind?: 'choice' | 'text' | 'number'
+  options?: { label: string; description?: string }[]
+  multiSelect?: boolean
+  min?: number
+  max?: number
+}
+
+const ASK_GROUP = 'Questions from Claude'
+
+function scenarioOf(q: AskQuestion, labels: string[]): string {
+  const lead = [q.header, q.description ?? 'Claude asked this and had no more to say.'].filter(Boolean).join('. ')
+  const extra: string[] = []
+  if (q.multiSelect === true && labels.length > 0) {
+    extra.push(`Pick any of: ${labels.join(', ')}.`)
+  }
+  if (q.kind === 'number' && q.min !== undefined && q.max !== undefined) {
+    extra.push(`Answer with a number from ${q.min} to ${q.max}.`)
+  }
+
+  return [lead.endsWith('.') ? lead : `${lead}.`, ...extra].join(' ')
+}
+
+/**
+ * AskUserQuestion: each question becomes a decision (a choice when it has options and
+ * takes one answer, otherwise a question), and the call is answered at once with the
+ * object shape the tool requires and a note that the questions are in the pane.
+ */
+export async function answerAskUserQuestion(
+  $: StoreCtx,
+  e: { questions: AskQuestion[] },
+): Promise<{ result: { questions: AskQuestion[]; answers: Record<string, never> }; context: string[] } | { deny: string }> {
+  const numbers: number[] = []
+  try {
+    for (const q of e.questions) {
+      const options = q.options ?? []
+      const isChoice = options.length > 0 && q.multiSelect !== true && (q.kind ?? 'choice') === 'choice'
+      const made = await create($, {
+        group: ASK_GROUP,
+        kind: isChoice ? 'choice' : 'question',
+        title: q.question.trim(),
+        scenario: scenarioOf(q, options.map(o => o.label)),
+        options: isChoice
+          ? options.map((o, index) => ({ id: index + 1, label: o.label, ...(o.description ? { changes: o.description } : {}) }))
+          : [],
+        sources: [],
+        dependsOn: [],
+      })
+      numbers.push(made.number)
+    }
+  } catch {
+    return { deny: 'The decisions pane could not be written. Ask in chat this once.' }
+  }
+  const range = numbers.length === 1 ? `${numbers[0]}` : `${numbers[0]}-${numbers[numbers.length - 1]}`
+
+  return {
+    result: { questions: e.questions, answers: {} },
+    context: [`Added to the decisions pane as ${range}. The person will answer there and the answers arrive as a prompt; carry on with other work.`],
+  }
 }

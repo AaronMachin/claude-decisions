@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
-import { NUDGE, isQuestionsInChat, nudgeAfterTurn, turnText } from './integrate'
+import { NUDGE, answerAskUserQuestion, isQuestionsInChat, nudgeAfterTurn, refuseSubagent, turnText } from './integrate'
+import { readAll } from './store'
+import type { StoreCtx } from './store'
 
 type Message = { role: 'user' | 'assistant'; text: string; toolResults?: unknown[] }
 
@@ -82,4 +84,98 @@ test('the nudge stays quiet on a statement, an offer, a subagent turn and a disc
   ])
   await nudgeAfterTurn(reply.$, { reason: 'answer', answer: 'Because of packages. Does that change your answer?' })
   expect(reply.appended).toHaveLength(0)
+})
+
+// AskUserQuestion into the pane, and subagent refusals
+
+function fakeStore(): StoreCtx {
+  const files = new Map<string, string>()
+
+  return {
+    env: { get: async () => '/home/test' },
+    session: { cwd: async () => '/work/pantry' },
+    process: { run: async () => ({ exitCode: 0, stdout: '/work/pantry/.git\n' }) },
+    fs: {
+      read: async (path: string) => {
+        const text = files.get(path)
+        if (text === undefined) {
+          throw new Error('ENOENT')
+        }
+        return text
+      },
+      write: async (path: string, text: string) => void files.set(path, text),
+      exists: async (path: string) => files.has(path),
+      list: async (dir: string) => {
+        const found = [...files.keys()].filter(p => p.startsWith(dir + '/')).map(p => ({ name: p.slice(dir.length + 1) }))
+        if (found.length === 0) {
+          throw new Error('ENOENT')
+        }
+        return found
+      },
+    },
+  }
+}
+
+const QUESTIONS = [
+  {
+    question: 'Where should shared recipe links live?',
+    header: 'Links',
+    options: [
+      { label: 'Database', description: 'a table of tokens' },
+      { label: 'Signed URL', description: 'nothing stored' },
+    ],
+    multiSelect: false,
+  },
+  { question: 'What should the link page be called?', header: 'Naming', kind: 'text', options: [], multiSelect: false },
+  {
+    question: 'Which of these should links expire with?',
+    header: 'Expiry',
+    options: [{ label: 'Time' }, { label: 'First view' }, { label: 'Never' }],
+    multiSelect: true,
+  },
+]
+
+test('AskUserQuestion becomes decisions and is answered with the object shape', async () => {
+  const $ = fakeStore()
+  const answer: any = await answerAskUserQuestion($, { questions: QUESTIONS })
+
+  expect(answer.result).toEqual({ questions: QUESTIONS, answers: {} })
+  expect(answer.context).toHaveLength(1)
+  expect(answer.context[0]).toContain('Added to the decisions pane as 1-3.')
+
+  const { decisions } = await readAll($)
+  expect(decisions.map(d => d.kind)).toEqual(['choice', 'question', 'question'])
+  expect(decisions.every(d => d.group === 'Questions from Claude' && d.section === 'needs-you')).toBe(true)
+  expect(decisions[0].title).toBe('Where should shared recipe links live?')
+  expect(decisions[0].options.map(o => [o.label, o.changes])).toEqual([
+    ['Database', 'a table of tokens'],
+    ['Signed URL', 'nothing stored'],
+  ])
+  expect(decisions[0].recommendation).toBeUndefined()
+  expect(decisions[0].scenario).toContain('Links')
+  expect(decisions[1].options).toEqual([])
+  expect(decisions[2].options).toEqual([])
+  expect(decisions[2].scenario).toContain('Pick any of: Time, First view, Never')
+})
+
+test('one question reads as a single number', async () => {
+  const $ = fakeStore()
+  const answer: any = await answerAskUserQuestion($, { questions: [QUESTIONS[0]] })
+
+  expect(answer.context[0]).toContain('as 1.')
+})
+
+test('a store that cannot be written answers with the one deny that lets Claude ask in chat', async () => {
+  const $ = fakeStore()
+  $.fs.write = async () => {
+    throw new Error('disk full')
+  }
+  const answer: any = await answerAskUserQuestion($, { questions: [QUESTIONS[0]] })
+
+  expect(answer.deny).toContain('Ask in chat')
+})
+
+test('a call from a subagent is refused with a reason to report to the main session; the main session passes', () => {
+  expect((refuseSubagent({ agentId: 'a1' }) as any).deny).toContain('main session')
+  expect(refuseSubagent({})).toBeUndefined()
 })
