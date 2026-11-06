@@ -158,6 +158,7 @@ test('review: ready rows start ticked, Confirm is last with hotkey c, and confir
   const buttons = await ui.findAll({ type: 'Button' })
   expect(buttons.map(b => b.props.key)).toEqual(['tick:d1', 'tick:d2', 'b', 'confirm'])
   expect(buttons[3]!.props.hotkey).toBe('c')
+  expect(await ui.find({ type: 'Text', text: /Enter ticks or unticks a row, c sends/ })).toBeDefined()
   expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/^\[x\] d1/)
   await ui.press({ key: 'confirm', plugin: 'test' })
   expect(confirmed).toEqual([['d1', 'd2']])

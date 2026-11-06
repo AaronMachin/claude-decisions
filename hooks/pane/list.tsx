@@ -381,7 +381,7 @@ export function ReviewView($: any, props: ReviewProps): any {
         </Box>
       ))}
       <Text> </Text>
-      <Text dimColor>{`${ready.length} ready, ${ticked.length} ticked. Nothing is sent until you confirm.`}</Text>
+      <Text dimColor>{`${ready.length} ready, ${ticked.length} ticked. Nothing is sent until you confirm. Enter ticks or unticks a row, c sends.`}</Text>
       <Box>
         <Button key="b" hotkey="b" plain onPress={() => {
             void setView($, v => ({ ...v, screen: 'list' }))
