@@ -390,7 +390,7 @@ const nudges = (appended: any[]) => appended.filter(a => JSON.stringify(a).inclu
 test('a turn that ends with questions in chat gets the nudge appended once through turn.complete', async ($, on) => {
   engine(on)
   const appended: any[] = []
-  on('session.messages', () => ({
+  on('session.messages', (): any => ({
     value: [
       { role: 'user', text: 'plan sharing' },
       { role: 'assistant', text: 'Two things.\n1. Redis?\n2. Postgres?' },
@@ -411,7 +411,7 @@ test('a turn that ends with questions in chat gets the nudge appended once throu
 test('a turn that ends with a statement gets no nudge', async ($, on) => {
   engine(on)
   const appended: any[] = []
-  on('session.messages', () => ({ value: [{ role: 'user', text: 'hi' }, { role: 'assistant', text: 'Added 2 decisions.' }] }))
+  on('session.messages', (): any => ({ value: [{ role: 'user', text: 'hi' }, { role: 'assistant', text: 'Added 2 decisions.' }] }))
   on('session.append', (_: any, e: any, next: any) => {
     appended.push(e)
     return next(e)
