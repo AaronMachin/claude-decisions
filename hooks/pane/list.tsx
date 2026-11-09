@@ -60,14 +60,14 @@ export function counts(all: Decision[]): { open: number; ready: number; parked: 
   }
 }
 
-/** The status line: undefined (cleared) when nothing is open, ready or parked. The engine already puts the mod's name in front. */
+/** The status line: undefined (cleared) when nothing is open, ready or parked; "nothing needs you" leads when only ready or parked ones are left. The engine already puts the mod's name in front. */
 export function statusText(all: Decision[]): string | undefined {
   const { open, ready, parked } = counts(all)
   if (open + ready + parked === 0) {
     return undefined
   }
 
-  return [`${open} open`, ready > 0 ? `${ready} ready` : '', parked > 0 ? `${parked} parked` : '']
+  return [open > 0 ? `${open} open` : 'nothing needs you', ready > 0 ? `${ready} ready` : '', parked > 0 ? `${parked} parked` : '']
     .filter(Boolean)
     .join(' · ')
 }
@@ -268,6 +268,7 @@ export function ListView($: any, props: ListProps): any {
   const tab = activeTab(tabs, view)
   const sections = tab ? sectionsFor(tab) : { needsYou: [], claudesCall: [], alreadyDecided: [], answered: [], parked: [] }
   const elsewhere = waitingElsewhere(tabs, tab)
+  const isIdle = newestOpenTab(tabs) === undefined
   const first = elsewhere
     ? undefined
     : (sections.needsYou[0] ?? sections.parked[0] ?? (sections.claudesCall.length + sections.alreadyDecided.length > 0 ? undefined : sections.answered[0]))
@@ -396,7 +397,11 @@ export function ListView($: any, props: ListProps): any {
         {tabRow.hasRight ? <Text dimColor>›</Text> : null}
       </Box>
       {compact ? null : Rule(ui, width, 'rule:sections')}
-      {isParkedTab ? null : heading('Needs you', sections.needsYou.length)}
+      {isIdle ? (
+        <Text key="idle" color="success">
+          {truncate(readyCount > 0 ? `✓ Nothing needs you · ${readyCount} ready to send (s)` : '✓ Nothing needs you', width)}
+        </Text>
+      ) : isParkedTab ? null : heading('Needs you', sections.needsYou.length)}
       {elsewhere ? (
         <Button key="goto-waiting" plain autoFocus onPress={() => void showTab($, tabs, elsewhere.tab.key)}>
           {mark('goto-waiting')}

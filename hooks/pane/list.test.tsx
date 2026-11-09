@@ -66,7 +66,8 @@ test('the status line counts open and ready, and clears when nothing is left', (
   expect(statusText([])).toBeUndefined()
   expect(statusText([make({ state: 'sent' })])).toBeUndefined()
   expect(statusText([make(), make(), make({ state: 'ready' })])).toBe('2 open · 1 ready')
-  expect(statusText([make({ state: 'parked' })])).toBe('0 open · 1 parked')
+  expect(statusText([make({ state: 'parked' })])).toBe('nothing needs you · 1 parked')
+  expect(statusText([make({ state: 'ready' })])).toBe('nothing needs you · 1 ready')
   expect(counts([make(), make({ state: 'live' })]).open).toBe(2)
 })
 
@@ -217,10 +218,11 @@ test('folded sections show a heading with a count and no rows; Needs you stays o
   await ui.unmount()
 })
 
-test('Needs you shows with a count of 0, and the first heading takes the ring when nothing waits', async ($, on) => {
+test('when nothing anywhere needs the person, the list says so instead of "Needs you 0", and the first heading takes the ring', async ($, on) => {
   counter = 0
   const ui = await drawList($, on, [make({ section: 'claudes-call' })])
-  expect(await ui.find({ type: 'Text', text: 'Needs you  0' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '✓ Nothing needs you' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Needs you  0' })).toBeUndefined()
   expect((await ui.find({ key: 'section:claudes-call' }))?.props.autoFocus).toBe(true)
   await ui.unmount()
 })
@@ -466,5 +468,22 @@ test('compact Send screen puts its key hints under the heading and pages the tic
   view = { ...view, compactPage: 1 }
   ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.findAll({ type: 'Button' })).map(b => String(b.props.key)).filter(k => k.startsWith('tick:'))).toEqual(['tick:d7', 'tick:d8', 'tick:d9'])
+  await ui.unmount()
+})
+
+test('nothing needs you, with answers ready: the line says how many are ready to send', async ($, on) => {
+  counter = 0
+  const all = [make({ state: 'ready' })]
+  const tabs = tabsFor(all)
+  on('ui.render', ($$: any, e: any) => ListView($$, { ui: $$.ui.resolve(e), tabs, view: INITIAL_VIEW, width: 49, rows: 40, readyCount: 1, unreadable: 0, onSend: () => {}, onHide: () => {} }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: '✓ Nothing needs you · 1 ready to send (s)' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a tab with nothing waiting still shows "Needs you  0" while another tab has something', async ($, on) => {
+  counter = 0
+  const ui = await drawList($, on, [make({ group: 'A', state: 'sent' }), make({ group: 'B' })], { ...INITIAL_VIEW, tab: 'g:A' } as PaneView)
+  expect(await ui.find({ type: 'Text', text: '✓ Nothing needs you' })).toBeUndefined()
   await ui.unmount()
 })

@@ -212,7 +212,7 @@ test('enter on the first row opens the decision; a number highlights, the same n
   await ui.press({ key: 'opt:2' })
   expect(await ui.find({ key: 'row:d1' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Answered  1' })).toBeDefined()
-  expect(seen.statuses.at(-1)).toBe('0 open · 1 ready')
+  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 ready')
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/✓ Per package chosen/)
   expect((await ui.find({ key: 'line:1' }))?.text).not.toMatch(/✓/)
@@ -241,7 +241,7 @@ test('send: nothing is submitted until confirm, and only ticked answers go', asy
   expect(seen.submitted).toHaveLength(1)
   expect(seen.submitted[0]).toContain('Decision d2')
   expect(seen.submitted[0]).not.toContain('Decision d1')
-  expect(seen.statuses.at(-1)).toBe('0 open · 1 ready')
+  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 ready')
   await ui.unmount()
 })
 
@@ -287,7 +287,7 @@ test('p on a parked decision puts it back to open, through the pane', async ($, 
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'p' })
   await ui.input({ key: 'park', text: 'later' })
-  expect(seen.statuses.at(-1)).toBe('0 open · 1 parked')
+  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 parked')
   await ui.press({ key: 't' })
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'p' }))?.text).toMatch(/unpark/)
@@ -334,7 +334,7 @@ test('a send that fails shows its notice in the pane and the answers are ready a
   for (let i = 0; i < 20; i++) {
     await Promise.resolve()
   }
-  expect(seen.statuses.at(-1)).toBe('0 open · 1 ready')
+  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 ready')
   expect(await ui.find({ type: 'Text', text: /not sent/ })).toBeDefined()
   await ui.unmount()
 })
