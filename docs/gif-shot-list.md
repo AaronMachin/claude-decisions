@@ -19,9 +19,9 @@ Setups (`<repo>` is where you cloned this repository):
 | Name | Command |
 | --- | --- |
 | empty | `cd "$(<repo>/demo/make-pantry.sh | tail -1)" && CLAUDE_CODE_NO_FLICKER=1 claude --model sonnet` |
-| seeded | `cd "$(<repo>/demo/make-pantry.sh --seed | tail -1)" && CLAUDE_CODE_NO_FLICKER=1 claude --model sonnet` |
+| seeded | `cd "$(<repo>/demo/make-pantry.sh --seed | tail -1)" && CLAUDE_CODE_NO_FLICKER=1 claude --session-id "$(cat .git/pantry-session)" --model sonnet` |
 
-The seeded project has two tabs. "Sharing links" holds two choices ("Where share links live" and "What a receiver can do with a shared recipe") and five assumptions. "Pantry review" holds eight findings: four needing you (one of them parked), two Claude's call, two already decided.
+The pane shows only the decisions of the session that added them, so the seeded setup starts Claude in the session the seed stamped them with. The seeded project has two tabs. "Sharing links" holds two choices ("Where share links live" and "What a receiver can do with a shared recipe") and five assumptions. "Pantry review" holds eight findings: four needing you (one of them parked), two Claude's call, two already decided.
 
 ## Shots
 

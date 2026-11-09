@@ -181,7 +181,7 @@ export function validateAdd(input: Record<string, any>, existingIds: string[]): 
       if (input.recommendation !== undefined) {
         return `decisions_add refused: recommendation: ${isTask ? 'a task' : 'a question'} has none. Leave it out and call again.`
       }
-    } else {
+    } else if (input.recommendation !== undefined) {
       const number = input.recommendation?.option
       if (!Number.isInteger(number) || number < 1 || number > fixed.length) {
         return `decisions_add refused: recommendation.option must be a number from 1 to ${fixed.length} when kind is ${kind}.`

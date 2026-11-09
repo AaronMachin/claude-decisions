@@ -5,7 +5,10 @@
 #
 # With no folder it makes one with mktemp -d. A given folder must be empty or not exist yet,
 # and must not be inside this repository. --seed also fills the project's decisions store
-# (needs Node, for npx). The last line printed is the project's folder.
+# (needs Node, for npx). The pane shows only the decisions of the session that added them,
+# so --seed stamps them with a new session id, kept in .git/pantry-session: start Claude
+# with `claude --session-id "$(cat .git/pantry-session)"` to see them. The last line
+# printed is the project's folder.
 set -e
 
 repo=$(cd "$(dirname "$0")/.." && pwd -P)
@@ -52,7 +55,9 @@ sh "$repo/evals/pantry-setup.sh"
 rm -f last-commit.diff
 
 if [ "$seed" = yes ]; then
-  npx -y tsx "$repo/demo/seed.ts"
+  session=$(node -e 'console.log(require("node:crypto").randomUUID())')
+  printf '%s\n' "$session" > .git/pantry-session
+  DECISIONS_SESSION=$session npx -y tsx "$repo/demo/seed.ts"
 fi
 
 echo "$folder"

@@ -44,17 +44,17 @@ Ranked by how many testers hit it and whether it made someone fail.
 
 | # | Finding | Hit by | Outcome |
 | --- | --- | --- | --- |
-| 1 | The pane's keys and a half-typed prompt don't coexist the first time: `/decisions` hands the draft back and turns keys off, `ctrl+s` is a trap, and nothing on the pane said the focus key keeps the draft | A, B, C, D (two FAILs) | Partly fixed (0254915). The pane now says how. Still open: question in the log (opening the pane with a draft) |
-| 2 | Key hints and the header scroll out of view when a decision is taller than the pane (12 options, long findings, the Send screen) | B, C, D | Question logged (layout) |
-| 3 | The highlighted row is reverse video only, so it can't be seen in plain text, and arrow, Up and tab-strip order surprised people (Up from the first row reaches the tab strip, Enter there switches tab) | A, B, C, D | Question logged (add a marker?) |
+| 1 | The pane's keys and a half-typed prompt don't coexist the first time: `/decisions` hands the draft back and turns keys off, `ctrl+s` is a trap, and nothing on the pane said the focus key keeps the draft | A, B, C, D (two FAILs) | Fixed (0254915, 0fa2f57, c111c07): a line above the prompt names the focus key while decisions wait (the pane's own line does on a narrow fullscreen terminal), and the Focus key setting makes it name a moved key |
+| 2 | Key hints and the header scroll out of view when a decision is taller than the pane (12 options, long findings, the Send screen) | B, C, D | Fixed (a4167c8, e4528cc, c5610ef): below 14 rows every screen is compact and paged with `o`, so the keys stay in view |
+| 3 | The highlighted row is reverse video only, so it can't be seen in plain text, and arrow, Up and tab-strip order surprised people (Up from the first row reaches the tab strip, Enter there switches tab) | A, B, C, D | Fixed (90c4eb2, a243818): `›` marks the ringed row, Up and Down stay off the tab strip |
 | 4 | Option screens never said a number only highlights and Enter confirms | A, B, C | Fixed (6849319) |
 | 5 | The Send screen didn't say what Enter and `c` do; Enter on a tick row unticks it | A, D | Fixed (1e2b8b4) |
-| 6 | At under 110 columns and on the main screen the pane is 9 to 11 rows, and digit hotkeys only arm for Buttons fully in view, so on a tall decision no number key works | C, D | Question logged (layout and keys) |
+| 6 | At under 110 columns and on the main screen the pane is 9 to 11 rows, and digit hotkeys only arm for Buttons fully in view, so on a tall decision no number key works | C, D | Fixed (a4167c8, c5610ef): option rows carry their own keys, options page when they don't fit, and other pages' numbers stay in the key line; `9` then enter answered option 9 of 12 at 90 columns |
 | 7 | "ui.render hook skipped: threw decisions: $.process.run(git) aborted" lines in the conversation on most redraws | A, B | Fixed (7e3dc7a): git is run once per working folder |
 | 8 | An empty discussion looked broken (two divider lines and nothing between) | A, B, C, D | Fixed (d3bba23) |
 | 9 | No date on a parked decision, so "what you parked yesterday" couldn't be checked | A, B | Fixed (1964d01) |
-| 10 | "Check 6 assumptions together" reads as a heading, not a row you press (B needed three tries, D took it for a heading) | B, D | Question logged |
-| 11 | Titles truncate hard at 49 columns ("What a r…") so rows can't be told apart | B, D | Question logged |
+| 10 | "Check 6 assumptions together" reads as a heading, not a row you press (B needed three tries, D took it for a heading) | B, D | Fixed (9148cc2): "Check 6 assumptions together (enter)" |
+| 11 | Titles truncate hard at 49 columns ("What a r…") so rows can't be told apart | B, D | Fixed (9148cc2): the meta is dropped before the title is cut |
 | 12 | The tab names are the groups, so a task that says "PR review" finds no such tab | A, B, C, D | Not a defect of the pane: the seeded group names were mine. Noted for the colleague test: name tasks after what is on screen |
 | 13 | Outside the mod: the trust prompt defaults to "No, exit", `/help` doesn't list `/decisions`, `Left` in the pane falls through to Claude Code, and raw tool JSON fills the conversation | B, C, A | Not ours to change. Go in the README's limits |
 

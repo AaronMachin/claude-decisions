@@ -58,7 +58,7 @@ test('the groups hold the right decisions, and an answered one leaves its sectio
 test('the status line and counts count only what needs the person', () => {
   const all = review()
   expect(counts(all)).toEqual({ open: 3, ready: 1, parked: 0 })
-  expect(statusText(all)).toBe('Decisions: 3 open · 1 ready')
+  expect(statusText(all)).toBe('3 open · 1 ready')
 })
 
 test('a task has its own tab before Parked and is not in its group tab', () => {
@@ -124,7 +124,7 @@ test('the 47-finding fixture passes the tool and seeds as 12 needing the person,
   const files = new Map<string, string>()
   const store = {
     env: { get: async () => '/home/test' },
-    session: { cwd: async () => '/work/pantry' },
+    session: { cwd: async () => '/work/pantry', id: async () => 'session-1' },
     process: { run: async () => ({ exitCode: 0, stdout: '/work/pantry/.git\n' }) },
     fs: {
       read: async (p: string) => {

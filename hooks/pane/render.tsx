@@ -1,9 +1,12 @@
 import type { PaneView } from '../../types'
+import { notePaneFocus } from '../band'
 import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
-import { DecisionView, INITIAL_VIEW, PANE_ID, readView, setView } from './decision'
+import { DecisionView, INITIAL_VIEW, PANE_ID, focusTo, keysOffLines, readView, setView } from './decision'
+import { Header, isCompact } from './look'
 import { ThreadView } from './thread'
-import { ListView, ReviewView, activeTab, openReview, statusText, tabsFor, truncate } from './list'
+import { ListView, ReviewView, activeTab, newestOpenTab, openReview, statusText, tabsFor, waitingElsewhere } from './list'
+import { foldAll } from './sections'
 import { BatchView, batchRows } from './kinds'
 import { firstKey } from './sections'
 
@@ -19,16 +22,37 @@ export async function changed($: any): Promise<void> {
   $.ui.invalidate('ui.render')
 }
 
-/** `/decisions`: open the pane, focused, and stop treating it as hidden. */
+/** Puts the list on the tab holding the newest decision that waits for the person; `onlyIfIdle` leaves a tab that has some of its own. */
+async function showNewestOpenTab($: any, onlyIfIdle: boolean): Promise<void> {
+  const tabs = tabsFor((await readAll($)).decisions)
+  const target = newestOpenTab(tabs)
+  if (target === undefined) {
+    return
+  }
+  await setView($, v => (onlyIfIdle && waitingElsewhere(tabs, activeTab(tabs, v)) === undefined ? v : { ...foldAll(v), tab: target.key }))
+}
+
+/** Whether the pane has the keys now; false when the engine can't say. */
+async function isPaneFocused($: any): Promise<boolean> {
+  const panes: { id: string; isFocused?: boolean }[] = await $.ui.panes().catch(() => [])
+
+  return panes.some(p => p.id === PANE_ID && p.isFocused === true)
+}
+
+/** `/decisions`: open the pane, focused, on a tab with something to answer, and stop treating it as hidden. */
 export async function openFocused($: any): Promise<{ text: string }> {
   await setView($, v => ({ ...v, isHidden: false }))
+  await showNewestOpenTab($, true).catch(() => undefined)
   const opened = await $.ui.open({ id: PANE_ID, title: 'Decisions', focus: true })
 
   return { text: opened.isPlaced ? 'Decisions pane opened.' : `Decisions pane not placed: ${opened.reason}` }
 }
 
-/** Claude added a decision: open the pane without the keys, unless the person hid it. */
+/** Claude added a decision: open the pane without the keys, on the new decision's tab while the person isn't using the pane, unless they hid it. */
 export async function openForNewDecision($: any): Promise<void> {
+  if (!(await isPaneFocused($))) {
+    await showNewestOpenTab($, false).catch(() => undefined)
+  }
   const view = await readView($)
   if (!view.isHidden) {
     await $.ui.open({ id: PANE_ID, title: 'Decisions' })
@@ -41,8 +65,14 @@ export async function hidePane($: any): Promise<void> {
   await $.ui.close({ id: PANE_ID })
 }
 
-/** The `ui.focus` hook: the person's up and down arrive here, so the highlight follows the ring. */
+/** The person's moves onto the tab strip are kept off, so up from the first row stays on the list (row 167). */
+export function isTabKey(element: string | undefined): boolean {
+  return /^tab:/.test(element ?? '')
+}
+
+/** The `ui.focus` hook, once the ring has moved: records where it is for the `›`, and the highlight follows it. */
 export async function followFocus($: any, element: string | undefined): Promise<void> {
+  await setView($, v => ({ ...v, ring: element }))
   const batch = /^batch:(.+)$/.exec(element ?? '')
   const match = /^opt:(\d+)$/.exec(element ?? '')
   if (batch) {
@@ -69,10 +99,11 @@ export function leaveToList($: any): void {
 }
 
 async function focusFirstRow($: any): Promise<void> {
-  const { decisions } = await readAll($)
-  const key = firstKey(activeTab(tabsFor(decisions), await readView($)))
+  const tabs = tabsFor((await readAll($)).decisions)
+  const current = activeTab(tabs, await readView($))
+  const key = waitingElsewhere(tabs, current) ? 'goto-waiting' : firstKey(current)
   if (key) {
-    await $.ui.focus({ requestId: PANE_ID, key })
+    await focusTo($, key)
   }
 }
 
@@ -89,26 +120,24 @@ async function confirm($: any, ids: string[]): Promise<void> {
   })
 }
 
-function header(ui: any, width: number, isFocused: boolean, crumb?: string): any {
+function header(ui: any, width: number, isFocused: boolean, crumb: string | undefined, rows: number): any {
   const { Box, Text } = ui
-  const state = isFocused ? 'keys on' : 'keys off'
-  const pad = Math.max(1, width - 'Decisions'.length - state.length)
 
   return (
-    <Box flexDirection="column">
-      <Box>
-        <Text bold>Decisions</Text>
-        <Text>{' '.repeat(pad)}</Text>
-        {isFocused ? <Text bold>{state}</Text> : <Text dimColor>{state}</Text>}
-      </Box>
-      {isFocused ? null : <Text dimColor>Press the pane focus key (ctrl+x tab unless you moved it) to use it with a draft kept, or run /decisions with an empty prompt.</Text>}
-      {crumb ? <Text dimColor>{truncate(crumb, width)}</Text> : null}
+    <Box key="top" flexDirection="column">
+      {Header(ui, 'Decisions', isFocused, crumb, width)}
+      {(isFocused ? [] : keysOffLines(width, isCompact(rows))).map((line, index) => (
+        <Text key={`keys-off:${index}`} dimColor>
+          {line}
+        </Text>
+      ))}
     </Box>
   )
 }
 
 /** The `ui.render` hook for the pane: reads the files and the view, then draws the screen the view names. */
 export async function renderPane($: any, e: any): Promise<any> {
+  notePaneFocus($, e.props.isFocused === true)
   const ui = $.ui.resolve(e)
   const { Box, Text } = ui
   const width: number = e.props.bodyColumns
@@ -119,18 +148,20 @@ export async function renderPane($: any, e: any): Promise<any> {
   const common = {
     ui,
     width,
+    isFocused: e.props.isFocused === true,
     onSend: () => void setView($, v => openReview(v, ready.map(d => d.id))),
     onHide: () => void hidePane($),
   }
-  const top = header(ui, width, e.props.isFocused === true)
+  const rows: number = e.props.scroll?.bodyRows ?? 30
+  const top = header(ui, width, e.props.isFocused === true, undefined, rows)
   const decision = view.screen === 'decision' || view.screen === 'thread' ? decisions.find(d => d.id === view.decisionId) : undefined
 
   if (decision && view.screen === 'thread') {
-    const crumb = `${decision.group ?? 'Other'} > ${decision.id} > ${view.revisionIndex === undefined ? 'discussion' : 'earlier version'}`
+    const crumb = `${decision.group ?? 'Other'} › ${decision.id} › ${view.revisionIndex === undefined ? 'discussion' : 'earlier version'}`
 
     return (
       <Box flexDirection="column">
-        {header(ui, width, e.props.isFocused === true, crumb)}
+        {header(ui, width, e.props.isFocused === true, crumb, rows)}
         {ThreadView($, {
           ...common,
           d: decision,
@@ -144,23 +175,25 @@ export async function renderPane($: any, e: any): Promise<any> {
     )
   }
   if (decision) {
-    const crumb = `${decision.group ?? 'Other'} > ${decision.id}`
-
-    return (
-      <Box flexDirection="column">
-        {header(ui, width, e.props.isFocused === true, crumb)}
-        {DecisionView($, { ...common, d: decision, all: decisions, view, readyCount: ready.length, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
-      </Box>
-    )
+    return DecisionView($, {
+      ...common,
+      d: decision,
+      all: decisions,
+      view,
+      rows: e.props.scroll?.bodyRows ?? 30,
+      readyCount: ready.length,
+      onChanged: () => void changed($),
+      onLeave: () => leaveToList($),
+    })
   }
   if (view.screen === 'batch') {
     const batchTab = activeTab(tabs, view)
-    const rows = batchRows(batchTab?.decisions ?? [])
+    const batchList = batchRows(batchTab?.decisions ?? [])
 
     return (
       <Box flexDirection="column">
-        {header(ui, width, e.props.isFocused === true, `${batchTab?.label ?? 'Other'} > assumptions`)}
-        {BatchView($, { ...common, rows, view, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
+        {header(ui, width, e.props.isFocused === true, `${batchTab?.label ?? 'Other'} › assumptions`, rows)}
+        {BatchView($, { ...common, rows: batchList, paneRows: rows, view, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
       </Box>
     )
   }
@@ -168,7 +201,7 @@ export async function renderPane($: any, e: any): Promise<any> {
     return (
       <Box flexDirection="column">
         {top}
-        {ReviewView($, { ...common, ready, view, onConfirm: ids => void confirm($, ids), onLeave: () => leaveToList($) })}
+        {ReviewView($, { ...common, ready, view, rows, onConfirm: ids => void confirm($, ids), onLeave: () => leaveToList($) })}
       </Box>
     )
   }

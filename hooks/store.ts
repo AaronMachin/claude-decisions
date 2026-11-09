@@ -68,12 +68,18 @@ export type Decision = {
   createdAt: string
   updatedAt: string
   sentAt?: string
+  /**
+   * The id of the session that added it (`$.session.id()`). The pane, the status line,
+   * `decisions_list`, sending and the session note show only the current session's;
+   * a decision stored without one (before 10 November) is never shown.
+   */
+  session?: string
 }
 
 /** The part of `$` the store uses, so tests can hand it a fake. */
 export type StoreCtx = {
   env: { get: (name: 'HOME') => Promise<string | undefined> }
-  session: { cwd: () => Promise<string> }
+  session: { cwd: () => Promise<string>; id: () => Promise<string> }
   process: { run: (argv: string[]) => Promise<{ exitCode: number; stdout: string }> }
   fs: {
     read: (path: string) => Promise<any>
@@ -85,8 +91,13 @@ export type StoreCtx = {
 
 export type NewDecision = Omit<
   Decision,
-  'id' | 'number' | 'version' | 'createdAt' | 'updatedAt' | 'state' | 'thread' | 'revisions' | 'section'
+  'id' | 'number' | 'version' | 'createdAt' | 'updatedAt' | 'state' | 'thread' | 'revisions' | 'section' | 'session'
 >
+
+/** Whether a stored decision belongs to the session reading it. */
+export function isThisSession(d: Pick<Decision, 'session'>, session: string): boolean {
+  return d.session !== undefined && d.session !== '' && d.session === session
+}
 
 /** A folder name for a repository, from its git common directory (absolute). */
 export async function repoKey(commonDir: string): Promise<string> {
@@ -137,8 +148,10 @@ async function names($: StoreCtx, dir: string): Promise<string[]> {
   }
 }
 
+/** This session's decisions, oldest first, and how many files couldn't be read. Other sessions' decisions, and ones stored with no session, are left out. */
 export async function readAll($: StoreCtx): Promise<{ decisions: Decision[]; unreadable: number }> {
   const dir = await storeDir($)
+  const session = await $.session.id()
   const decisions: Decision[] = []
   let unreadable = 0
 
@@ -147,7 +160,10 @@ export async function readAll($: StoreCtx): Promise<{ decisions: Decision[]; unr
       continue
     }
     try {
-      decisions.push(JSON.parse(await $.fs.read(`${dir}/${name}`)) as Decision)
+      const d = JSON.parse(await $.fs.read(`${dir}/${name}`)) as Decision
+      if (isThisSession(d, session)) {
+        decisions.push(d)
+      }
     } catch {
       unreadable += 1
     }
@@ -156,9 +172,12 @@ export async function readAll($: StoreCtx): Promise<{ decisions: Decision[]; unr
   return { decisions: decisions.sort((a, b) => a.number - b.number), unreadable }
 }
 
+/** One of this session's decisions by id; undefined for another session's, or one that can't be read. */
 export async function readOne($: StoreCtx, id: string): Promise<Decision | undefined> {
   try {
-    return JSON.parse(await $.fs.read(fileOf(await storeDir($), id))) as Decision
+    const d = JSON.parse(await $.fs.read(fileOf(await storeDir($), id))) as Decision
+
+    return isThisSession(d, await $.session.id()) ? d : undefined
   } catch {
     return undefined
   }
@@ -193,6 +212,7 @@ async function allocate($: StoreCtx, input: NewDecision, section: Section): Prom
     const now = new Date().toISOString()
     const decision: Decision = {
       ...input,
+      session: await $.session.id(),
       version: 1,
       id,
       number,

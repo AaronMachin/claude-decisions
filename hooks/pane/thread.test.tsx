@@ -24,6 +24,7 @@ function engine(on: On, options: { failSubmit?: boolean } = {}): Seen {
   const seen: Seen = { files: new Map(), statuses: [], opened: [], closed: [], submitted: [], tools: [], commands: [], focused: [] }
   on('env.get', () => ({ value: '/home/test' }))
   on('session.cwd', () => ({ value: '/work/pantry' }))
+  on('session.id', () => ({ value: 'session-1' }))
   on('process.run', () => ({
     value: { exitCode: 0, stdout: '/work/pantry/.git\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   }))
@@ -199,8 +200,10 @@ test('Mark answered makes the decision ready and returns to the list; it is not 
   const ui = await openThread($)
   await ui.press({ key: 'mark' })
   expect(await ui.find({ key: 'row:d1' })).toBeDefined()
-  expect(seen.statuses.at(-1)).toBe('Decisions: 0 open · 1 ready')
-  expect((await ui.find({ key: 'row:d1' }))?.text).toContain('✓ discussed')
+  expect(seen.statuses.at(-1)).toBe('0 open · 1 ready')
+  // At 49 columns the title doesn't fit beside "✓ discussed  ready", so the meta gives way (row 168) and the heading says it's answered.
+  expect(await ui.find({ type: 'Text', text: 'Answered  1' })).toBeDefined()
+  expect((await ui.find({ key: 'row:d1' }))?.text).toContain('Where the config file lives')
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'discuss' })
   expect(await ui.find({ key: 'mark' })).toBeUndefined()

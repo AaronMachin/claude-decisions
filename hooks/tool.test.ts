@@ -10,7 +10,7 @@ function fake(): StoreCtx {
 
   return {
     env: { get: async () => '/home/test' },
-    session: { cwd: async () => '/work/pantry' },
+    session: { cwd: async () => '/work/pantry', id: async () => 'session-1' },
     process: { run: async () => ({ exitCode: 0, stdout: '/work/pantry/.git\n' }) },
     fs: {
       read: async (path: string) => {
@@ -213,7 +213,6 @@ test('each kind is accepted and stored with the options the tool fills in', asyn
 test('options on a fixed kind, or a recommendation outside its options, are refused naming the field', () => {
   expect(validateAdd({ ...FINDING, options: [{ label: 'x' }] }, [])).toMatch(/options: the options of a finding are fixed/)
   expect(validateAdd({ ...FINDING, recommendation: { option: 5, reason: 'r' } }, [])).toMatch(/recommendation\.option must be a number from 1 to 4 when kind is finding/)
-  expect(validateAdd({ ...FINDING, recommendation: undefined }, [])).toMatch(/recommendation\.option must be a number from 1 to 4/)
   expect(validateAdd({ ...FINDING, kind: 'assumption', recommendation: { option: 3, reason: 'r' } }, [])).toMatch(/from 1 to 2 when kind is assumption/)
   expect(validateAdd({ kind: 'question', title: 't', scenario: 's', options: [{ label: 'x' }] }, [])).toMatch(/a question has no options/)
   expect(validateAdd({ kind: 'question', title: 't', scenario: 's', recommendation: { option: 1, reason: 'r' } }, [])).toMatch(/recommendation: a question has none/)
@@ -327,4 +326,13 @@ test('the add description stays at or under 4,000 characters and carries every r
   expect(ADD_DESCRIPTION).toMatch(/after \/compact or \/clear/)
   expect(ADD_DESCRIPTION).toMatch(/review finding/)
   expect(UPDATE_DESCRIPTION).toMatch(/subagent/)
+})
+
+test('a go-ahead, assumption or finding with no recommendation is accepted; a choice still needs one', () => {
+  for (const kind of ['go-ahead', 'assumption', 'finding']) {
+    expect(validateAdd({ group: 'Recipe sharing', kind, title: 'Push the share-link branch', scenario: 's' }, [])).toBeUndefined()
+  }
+  expect(validateAdd({ ...FINDING, recommendation: { option: 5, reason: 'r' } }, [])).toMatch(/from 1 to 4/)
+  expect(validateAdd({ ...FINDING, recommendation: { option: 1, reason: '' } }, [])).toMatch(/recommendation\.reason is required/)
+  expect(validateAdd({ ...GOOD, recommendation: undefined }, [])).toMatch(/recommendation\.option must be the number of one of the options/)
 })

@@ -1,7 +1,9 @@
 import type { PaneView } from '../../types'
 import type { Decision, StoreCtx } from '../store'
-import { chooseAndReopen, focusLater, readView, setView } from './decision'
+import { chooseAndReopen, focusLater, readView, ringMark, setView } from './decision'
 import { truncate } from './list'
+import { KeyHints, Rule, isCompact } from './look'
+import type { Hint } from './look'
 
 export { FIXED_OPTIONS, fixedOptionsFor } from '../kind-options'
 export type { FixedOption } from '../kind-options'
@@ -100,8 +102,23 @@ type BatchProps = {
   rows: Decision[]
   view: PaneView
   width: number
+  /** The pane's rows: under the compact threshold the keys go under the heading and the rows are paged. */
+  paneRows?: number
   onChanged: () => void
   onLeave: () => void
+  /** The pane has the keys, so the ring (and its `›`) is shown. */
+  isFocused?: boolean
+}
+
+/** Rows the compact batch screen keeps for itself: the pane's title and crumb, the heading, the key line and the notice (one more while the keys are off). */
+const BATCH_COMPACT_FIXED = 5
+
+/** The page of batch rows drawn: the one holding the ringed row, else the one `o` moved to. */
+export function batchPage(rows: Decision[], ringed: string | undefined, size: number, compactPage: number): number {
+  const pages = Math.max(1, Math.ceil(rows.length / Math.max(1, size)))
+  const at = rows.findIndex(d => d.id === ringed)
+
+  return at >= 0 ? Math.floor(at / Math.max(1, size)) : Math.min(Math.max(0, compactPage), pages - 1)
 }
 
 async function goToList($: any, notice: string | undefined, onChanged: () => void, onLeave: () => void): Promise<void> {
@@ -123,7 +140,12 @@ async function confirmOne($: any, rows: Decision[], id: string, props: BatchProp
   }
   const result = await confirmMarks($, rows, { [id]: mark })
   const next = nextUnanswered(rows, id)
-  await setView($, v => ({ ...v, marks: Object.fromEntries(Object.entries(v.marks).filter(([k]) => k !== id)), notice: result.notice }))
+  await setView($, v => ({
+    ...v,
+    marks: Object.fromEntries(Object.entries(v.marks).filter(([k]) => k !== id)),
+    notice: result.notice,
+    ...(next === undefined ? {} : { batchRow: next.id }),
+  }))
   props.onChanged()
   if (next === undefined) {
     await goToList($, result.notice, props.onChanged, props.onLeave)
@@ -148,63 +170,101 @@ async function backFromBatch($: any, rows: Decision[], props: BatchProps): Promi
   await goToList($, undefined, props.onChanged, props.onLeave)
 }
 
-/** The assumptions batch: every row with its mark, `1` and `2` on the ringed row, `r` for the rest, `Confirm` to save. Returns an element tree. */
+/** The assumptions batch: every row with its mark, `1` and `2` on the ringed row, `r` for the rest, `Confirm` to save. Compact: keys under the heading, rows paged with `o`. Returns an element tree. */
 export function BatchView($: any, props: BatchProps): any {
   const { ui, rows, view, width } = props
   const { Box, Text, Button } = ui
   const marks = liveMarks(view.marks, rows)
   const count = Object.keys(marks).length
   const first = rows.find(isUnanswered)
+  const paneRows = props.paneRows ?? 30
+  const compact = isCompact(paneRows)
+  const size = compact ? Math.max(1, paneRows - BATCH_COMPACT_FIXED - (props.isFocused === true ? 0 : 1)) : Math.max(1, rows.length)
+  const pages = Math.max(1, Math.ceil(rows.length / size))
+  const page = batchPage(rows, view.batchRow, size, view.compactPage)
+  const shown = rows.slice(page * size, (page + 1) * size)
+  const firstShown = shown.find(isUnanswered)
+
+  const row = (d: Decision) => (
+    <Button
+      key={`batch:${d.id}`}
+      plain
+      autoFocus={d === (compact ? firstShown : first) ? true : undefined}
+      onPress={async () => {
+        if (marks[d.id] !== undefined && isUnanswered(d)) {
+          await confirmOne($, rows, d.id, props)
+        } else if (isUnanswered(d)) {
+          await setView($, v => ({ ...v, screen: 'decision', decisionId: d.id, highlight: undefined, isParking: false, notice: undefined }))
+          focusLater($, 'discuss')
+        }
+      }}
+    >
+      {`${ringMark(`batch:${d.id}`, view.ring, props.isFocused === true)} `}
+      {d.state === 'ready' ? <Text dimColor>{batchRowText(d, undefined, width - 2)}</Text> : batchRowText(d, marks[d.id], width - 2)}
+    </Button>
+  )
+  const hints: Hint[] = [
+    { id: '1', keyText: '1', label: 'right', hotkey: '1', onPress: () => void setMark($, rows, RIGHT) },
+    { id: '2', keyText: '2', label: 'wrong', hotkey: '2', onPress: () => void setMark($, rows, WRONG) },
+    {
+      id: 'r',
+      keyText: 'r',
+      label: 'rest right',
+      hotkey: 'r',
+      onPress: async () => {
+        await setView($, v => ({ ...v, marks: markRest(liveMarks(v.marks, rows), rows) }))
+        focusLater($, 'confirm')
+      },
+    },
+    ...(compact && pages > 1
+      ? [
+          {
+            id: 'o',
+            keyText: 'o',
+            label: 'more',
+            hotkey: 'o',
+            onPress: () => {
+              const next = (page + 1) % pages
+              const target = rows.slice(next * size, (next + 1) * size).find(isUnanswered) ?? rows[next * size]
+              void setView($, v => ({ ...v, compactPage: next, batchRow: target?.id }))
+              if (target) {
+                focusLater($, `batch:${target.id}`)
+              }
+            },
+          },
+        ]
+      : []),
+    { id: 'b', keyText: 'b', label: 'back', hotkey: 'b', onPress: () => void backFromBatch($, rows, props) },
+  ]
+  const confirmButton =
+    count > 0 ? (
+      <Button key="confirm" variant="primary" onPress={() => confirmAll($, rows, props)}>
+        {`Confirm ${count}`}
+      </Button>
+    ) : null
+
+  if (compact) {
+    return (
+      <Box flexDirection="column">
+        <Box>
+          <Text bold>{`Check ${rows.filter(isUnanswered).length} assumptions  `}</Text>
+          {confirmButton}
+        </Box>
+        {KeyHints(ui, hints, width, 1)}
+        {shown.map(row)}
+        {view.notice ? <Text dimColor>{truncate(view.notice, width)}</Text> : null}
+      </Box>
+    )
+  }
 
   return (
     <Box flexDirection="column">
       <Text bold>{`Check ${rows.filter(isUnanswered).length} assumptions`}</Text>
-      {rows.map(d => (
-        <Button
-          key={`batch:${d.id}`}
-          plain
-          autoFocus={d === first ? true : undefined}
-          onPress={async () => {
-            if (marks[d.id] !== undefined && isUnanswered(d)) {
-              await confirmOne($, rows, d.id, props)
-            } else if (isUnanswered(d)) {
-              await setView($, v => ({ ...v, screen: 'decision', decisionId: d.id, highlight: undefined, isParking: false, notice: undefined }))
-              focusLater($, 'discuss')
-            }
-          }}
-        >
-          {d.state === 'ready' ? <Text dimColor>{batchRowText(d, undefined, width)}</Text> : batchRowText(d, marks[d.id], width)}
-        </Button>
-      ))}
-      <Text dimColor>{'-'.repeat(Math.max(1, width))}</Text>
+      {rows.map(row)}
+      {Rule(ui, width, 'rule:batch')}
       {view.notice ? <Text dimColor>{view.notice}</Text> : null}
-      {count > 0 ? (
-        <Button key="confirm" variant="primary" onPress={() => confirmAll($, rows, props)}>
-          {`Confirm ${count}`}
-        </Button>
-      ) : null}
-      <Box>
-        <Button key="1" hotkey="1" plain onPress={() => setMark($, rows, RIGHT)}>
-          {'1 right  '}
-        </Button>
-        <Button key="2" hotkey="2" plain onPress={() => setMark($, rows, WRONG)}>
-          {'2 wrong  '}
-        </Button>
-        <Button
-          key="r"
-          hotkey="r"
-          plain
-          onPress={async () => {
-            await setView($, v => ({ ...v, marks: markRest(liveMarks(v.marks, rows), rows) }))
-            focusLater($, 'confirm')
-          }}
-        >
-          {'r rest right  '}
-        </Button>
-        <Button key="b" hotkey="b" plain onPress={() => backFromBatch($, rows, props)}>
-          back
-        </Button>
-      </Box>
+      {confirmButton}
+      {KeyHints(ui, hints, width, 2)}
     </Box>
   )
 }
