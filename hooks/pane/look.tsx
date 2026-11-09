@@ -138,18 +138,25 @@ export function KeyHints(ui: { Box: any; Text: any; Button: any }, hints: Hint[]
   )
 }
 
-/** The header: the title in bold with the keys state at the right of the same line, then the crumb, dim. */
+/**
+ * The header: the title in bold with the keys state at the right of the same line, then the crumb, dim.
+ * The keys state stops HEADER_RIGHT_GAP columns short of the edge: the pane's close mark sits over the last ones.
+ */
+/** Columns left clear at the header's right edge, where the engine draws the pane's close mark. */
+export const HEADER_RIGHT_GAP = 3
+
 export function Header(ui: { Box: any; Text: any }, title: string, isFocused: boolean, crumb: string | undefined, width: number): any {
   const { Box, Text } = ui
   const state = isFocused ? 'keys on' : 'keys off'
-  const room = Math.max(1, width - state.length - 1)
+  const usable = width - HEADER_RIGHT_GAP
+  const room = Math.max(1, usable - state.length - 1)
   const shown = cut(title, room)
 
   return (
     <Box key="header" flexDirection="column">
       <Box>
         <Text bold>{shown}</Text>
-        <Text>{' '.repeat(Math.max(1, width - shown.length - state.length))}</Text>
+        <Text>{' '.repeat(Math.max(1, usable - shown.length - state.length))}</Text>
         {isFocused ? <Text bold>{state}</Text> : <Text dimColor>{state}</Text>}
       </Box>
       {crumb ? <Text dimColor>{cut(crumb, width)}</Text> : null}
