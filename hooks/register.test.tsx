@@ -231,9 +231,9 @@ test('send: nothing is submitted until confirm, and only ticked answers go', asy
   }
   await ui.press({ key: 's' })
   expect(seen.submitted).toEqual([])
-  expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/^ {2}\[x\]/)
+  expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/^› \[x\]/)
   await ui.press({ key: 'tick:d1' })
-  expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/^ {2}\[ \]/)
+  expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/^› \[ \]/)
   expect(seen.submitted).toEqual([])
   await ui.press({ key: 'confirm' })
   await Promise.resolve()
@@ -876,5 +876,23 @@ test('an empty pane offers only h', async ($, on) => {
   await start($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.findAll({ type: 'Button' })).map(b => b.props.key)).toEqual(['h'])
+  await ui.unmount()
+})
+
+test('the Send and assumptions screens open with › on the row the ring starts on', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  for (const title of ['Codes are 8 characters', 'Links never expire']) {
+    await $.tool.call({ tool: ADD_TOOL, group: 'Config file plan', kind: 'assumption', title, scenario: 's' })
+  }
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'batch' })
+  expect((await ui.find({ key: 'batch:d2' }))?.text).toMatch(/^› d2/)
+  await ui.press({ key: 'b' })
+  await ui.press({ key: 'row:d1' })
+  await answer($, ui, 1)
+  await ui.press({ key: 's' })
+  expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/^› \[x\] d1/)
   await ui.unmount()
 })

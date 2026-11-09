@@ -164,9 +164,9 @@ export function toggleTick(ticked: string[], id: string): string[] {
   return ticked.includes(id) ? ticked.filter(t => t !== id) : [...ticked, id]
 }
 
-/** The review screen opens with every ready decision ticked. */
+/** The review screen opens with every ready decision ticked, the ring on the first (its autoFocus) and on the first page. */
 export function openReview(view: PaneView, readyIds: string[]): PaneView {
-  return { ...view, screen: 'review', ticked: readyIds, notice: undefined }
+  return { ...view, screen: 'review', ticked: readyIds, notice: undefined, compactPage: 0, ring: readyIds[0] === undefined ? undefined : `tick:${readyIds[0]}` }
 }
 
 function chosenText(d: Decision): string {
@@ -408,7 +408,7 @@ export function ListView($: any, props: ListProps): any {
           key="batch"
           plain
           onPress={async () => {
-            await setView($, v => ({ ...v, screen: 'batch', marks: {}, batchRow: undefined, notice: undefined }))
+            await setView($, v => ({ ...v, screen: 'batch', marks: {}, batchRow: undefined, compactPage: 0, ring: `batch:${batch[0]!.id}`, notice: undefined }))
             focusLater($, `batch:${batch[0]!.id}`)
           }}
         >
