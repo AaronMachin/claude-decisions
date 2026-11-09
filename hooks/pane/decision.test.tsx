@@ -26,7 +26,7 @@ function fakeStore(): StoreCtx {
 
   return {
     env: { get: async () => '/home/test' },
-    session: { cwd: async () => '/work/pantry' },
+    session: { cwd: async () => '/work/pantry', id: async () => 'session-1' },
     process: { run: async () => ({ exitCode: 0, stdout: '/work/pantry/.git\n' }) },
     fs: {
       read: async (path: string) => {
@@ -215,7 +215,7 @@ test('a choice, a park and an unpark made from a stale copy keep a reply that la
 
 test('changing a ready answer reopens its ready dependents and says so; the same answer does not', async () => {
   const store = fakeStore()
-  const base = { version: 1, section: 'needs-you', kind: 'choice', scenario: 's', options: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }], sources: [], thread: [], revisions: [], createdAt: 't', updatedAt: 't' } as unknown as Decision
+  const base = { version: 1, section: 'needs-you', kind: 'choice', scenario: 's', options: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }], sources: [], thread: [], revisions: [], createdAt: 't', updatedAt: 't', session: 'session-1' } as unknown as Decision
   await write(store, { ...base, id: 'd1', number: 1, title: 'First', dependsOn: [], state: 'ready', answer: { option: 1, answeredAt: 't' } })
   await write(store, { ...base, id: 'd2', number: 2, title: 'Second', dependsOn: ['d1'], state: 'ready', answer: { option: 2, answeredAt: 't' } })
   await write(store, { ...base, id: 'd3', number: 3, title: 'Third', dependsOn: ['d1'], state: 'sent', answer: { option: 2, answeredAt: 't' } })
@@ -230,7 +230,7 @@ test('changing a ready answer reopens its ready dependents and says so; the same
 
 test('a first answer reopens nothing', async () => {
   const store = fakeStore()
-  const base = { version: 1, section: 'needs-you', kind: 'choice', scenario: 's', options: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }], sources: [], thread: [], revisions: [], createdAt: 't', updatedAt: 't' } as unknown as Decision
+  const base = { version: 1, section: 'needs-you', kind: 'choice', scenario: 's', options: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }], sources: [], thread: [], revisions: [], createdAt: 't', updatedAt: 't', session: 'session-1' } as unknown as Decision
   await write(store, { ...base, id: 'd1', number: 1, title: 'First', dependsOn: [], state: 'open' })
   await write(store, { ...base, id: 'd2', number: 2, title: 'Second', dependsOn: ['d1'], state: 'ready', answer: { option: 2, answeredAt: 't' } })
   expect((await chooseAndReopen(store, (await readOne(store, 'd1'))!, 1))?.notice).toBeUndefined()

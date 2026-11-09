@@ -15,13 +15,16 @@ type Seen = {
   tools: string[]
   commands: string[]
   focused: string[]
+  /** The id `$.session.id()` answers; a test changes it to be another session. */
+  session: string
 }
 
 /** Answers everything the plugin asks of the engine, from memory. */
 function engine(on: On, options: { failSubmit?: boolean } = {}): Seen {
-  const seen: Seen = { files: new Map(), statuses: [], opened: [], closed: [], submitted: [], tools: [], commands: [], focused: [] }
+  const seen: Seen = { files: new Map(), statuses: [], opened: [], closed: [], submitted: [], tools: [], commands: [], focused: [], session: 'session-1' }
   on('env.get', () => ({ value: '/home/test' }))
   on('session.cwd', () => ({ value: '/work/pantry' }))
+  on('session.id', () => ({ value: seen.session }))
   on('process.run', () => ({
     value: { exitCode: 0, stdout: '/work/pantry/.git\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   }))
@@ -764,4 +767,59 @@ test('Claude adding a decision while the person is not in the pane moves the lis
   const after = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await after.find({ key: 'row:d3' })).toBeDefined()
   await after.unmount()
+})
+
+test("another session sees none of this session's decisions: not in the pane, the status line, the list or an update", async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  expect(seen.statuses.at(-1)).toBe('1 open')
+  const stored = JSON.parse([...seen.files.values()][0]!)
+  expect(stored.session).toBe('session-1')
+  seen.session = 'session-2'
+  await start($)
+  expect(seen.statuses.at(-1)).toBeUndefined()
+  expect(JSON.stringify(await $.tool.call({ tool: LIST_TOOL }))).toContain('No open decisions in the pane.')
+  expect(JSON.stringify(await $.tool.call({ tool: UPDATE_TOOL, id: 'd1', summary: 'Changed', title: 'New title' }))).toMatch(/d1/)
+  expect(JSON.parse([...seen.files.values()][0]!).title).toBe(GOOD.title)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /No decisions yet/ })).toBeDefined()
+  await ui.unmount()
+  const answer = await $.tool.call({ tool: ADD_TOOL, ...GOOD, title: 'Second session' })
+  expect(JSON.stringify(answer)).toContain('Added d2 to the pane. 1 open.')
+  seen.session = 'session-1'
+  expect(JSON.stringify(await $.tool.call({ tool: LIST_TOOL }))).not.toContain('Second session')
+})
+
+test('a decision stored before sessions were stamped is not shown', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const path = [...seen.files.keys()].find(p => p.endsWith('/d1.json'))!
+  const { session: _gone, ...old } = JSON.parse(seen.files.get(path)!)
+  seen.files.set(path, JSON.stringify(old))
+  expect(JSON.stringify(await $.tool.call({ tool: LIST_TOOL }))).toContain('No open decisions in the pane.')
+})
+
+test("sending answers only this session's ready decisions", async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  await answer($, ui, 1)
+  await ui.unmount()
+  seen.session = 'session-2'
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD, title: 'Second session' })
+  const other = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await other.press({ key: 'row:d2' })
+  await answer($, other, 2)
+  await other.press({ key: 's' })
+  expect(await other.find({ key: 'tick:d1' })).toBeUndefined()
+  await other.press({ key: 'confirm' })
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(seen.submitted[0]).toContain('Decision d2')
+  expect(seen.submitted[0]).not.toContain('Decision d1')
+  await other.unmount()
 })

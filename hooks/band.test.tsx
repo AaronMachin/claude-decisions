@@ -15,6 +15,7 @@ function engine(on: On, panes: { list: Pane[] }, options: { unreadable?: boolean
   const opened: any[] = []
   on('env.get', () => ({ value: '/home/test' }))
   on('session.cwd', () => ({ value: '/work/pantry' }))
+  on('session.id', () => ({ value: 'session-1' }))
   on('process.run', () => ({
     value: { exitCode: 0, stdout: '/work/pantry/.git\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   }))

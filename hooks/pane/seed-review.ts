@@ -17,7 +17,8 @@ import { REVIEW_47 } from './review-47'
 
 export const store: StoreCtx = {
   env: { get: async () => process.env.HOME },
-  session: { cwd: async () => process.cwd() },
+  // The session the decisions are stamped with: DECISIONS_SESSION, the id `claude --session-id` is then started with.
+  session: { cwd: async () => process.cwd(), id: async () => process.env.DECISIONS_SESSION ?? '' },
   process: {
     run: async argv => {
       try {

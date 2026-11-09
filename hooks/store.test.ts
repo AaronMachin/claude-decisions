@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { create, readAll, readOne, repoKey, storeDir, write } from './store'
+import { create, isThisSession, readAll, readOne, repoKey, storeDir, write } from './store'
 import type { StoreCtx } from './store'
 
 type Fake = { files: Map<string, string>; ctx: StoreCtx }
@@ -9,7 +9,7 @@ function fake(options: { common?: string; cwd?: string; gitFails?: boolean; file
   const files = options.files ?? new Map<string, string>()
   const ctx: StoreCtx = {
     env: { get: async () => '/home/test' },
-    session: { cwd: async () => options.cwd ?? '/work/pantry' },
+    session: { cwd: async () => options.cwd ?? '/work/pantry', id: async () => 'session-1' },
     process: {
       run: async () =>
         options.gitFails
@@ -135,7 +135,7 @@ test('a thread entry keeps its revision index through a write and read', async (
   const files = new Map<string, string>()
   const store: any = {
     env: { get: async () => '/home/t' },
-    session: { cwd: async () => '/w/p' },
+    session: { cwd: async () => '/w/p', id: async () => 'session-1' },
     process: { run: async () => ({ exitCode: 0, stdout: '/w/p/.git\n' }) },
     fs: {
       read: async (p: string) => files.get(p) ?? '',
@@ -154,7 +154,7 @@ test('the store folder is worked out with git once per working folder, so a redr
   const files = new Map<string, string>()
   const $: StoreCtx = {
     env: { get: async () => '/home/cache' },
-    session: { cwd: async () => '/work/cache-once' },
+    session: { cwd: async () => '/work/cache-once', id: async () => 'session-1' },
     process: {
       run: async () => {
         gitRuns += 1
@@ -178,7 +178,7 @@ test('a git call that fails first is not remembered, so the next call finds the 
   let calls = 0
   const $: StoreCtx = {
     env: { get: async () => '/home/cache' },
-    session: { cwd: async () => '/work/cache-retry' },
+    session: { cwd: async () => '/work/cache-retry', id: async () => 'session-1' },
     process: {
       run: async () => {
         calls += 1
@@ -195,4 +195,34 @@ test('a git call that fails first is not remembered, so the next call finds the 
   expect(dir).toBe(`/home/cache/.claude/decisions/${await repoKey('/work/cache-retry/.git')}`)
   expect(await storeDir($)).toBe(dir)
   expect(calls).toBe(2)
+})
+
+test('a decision is stamped with the session that added it, and only that session reads it', async () => {
+  const files = new Map<string, string>()
+  let session = 'session-a'
+  const ctx = {
+    env: { get: async () => '/home/test' },
+    session: { cwd: async () => '/work/pantry', id: async () => session },
+    process: { run: async () => ({ exitCode: 0, stdout: '/work/pantry/.git\n' }) },
+    fs: {
+      read: async (path: string) => files.get(path) ?? Promise.reject(new Error('ENOENT')),
+      write: async (path: string, text: string) => void files.set(path, text),
+      exists: async (path: string) => files.has(path),
+      list: async (dir: string) => [...files.keys()].filter(p => p.startsWith(dir + '/')).map(p => ({ name: p.slice(dir.length + 1) })),
+    },
+  }
+  const made = await create(ctx, { kind: 'choice', title: 't', scenario: 's', options: [], sources: [], dependsOn: [] })
+  expect(made.session).toBe('session-a')
+  expect((await readAll(ctx)).decisions.map(d => d.id)).toEqual([made.id])
+  session = 'session-b'
+  expect((await readAll(ctx)).decisions).toEqual([])
+  expect(await readOne(ctx, made.id)).toBeUndefined()
+  const second = await create(ctx, { kind: 'choice', title: 't', scenario: 's', options: [], sources: [], dependsOn: [] })
+  expect(second.id).not.toBe(made.id)
+})
+
+test('isThisSession refuses a decision with no session or an empty one', () => {
+  expect(isThisSession({ session: 'a' }, 'a')).toBe(true)
+  expect(isThisSession({}, 'a')).toBe(false)
+  expect(isThisSession({ session: '' }, '')).toBe(false)
 })

@@ -80,6 +80,19 @@ export const register: Register = (on, options) => {
 
   on('session.compact', (_$, e, next) => onCompact(e, next))
 
+  // After /clear the process goes on under a new session id, which has no decisions of its own yet,
+  // and no session.start fires: redraw once the new id is in place so the pane and status line follow.
+  on('session.end', async ($, e, next) => {
+    const done = await next(e)
+    if (e.reason === 'clear') {
+      $.clock.after(250, () => {
+        void changed($).catch(() => undefined)
+      })
+    }
+
+    return done
+  })
+
   on('turn.start', ($, e, next) => onTurnStart($, e, next))
 
   on('turn.complete', async ($, e, next) => {

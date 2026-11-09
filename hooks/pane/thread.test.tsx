@@ -24,6 +24,7 @@ function engine(on: On, options: { failSubmit?: boolean } = {}): Seen {
   const seen: Seen = { files: new Map(), statuses: [], opened: [], closed: [], submitted: [], tools: [], commands: [], focused: [] }
   on('env.get', () => ({ value: '/home/test' }))
   on('session.cwd', () => ({ value: '/work/pantry' }))
+  on('session.id', () => ({ value: 'session-1' }))
   on('process.run', () => ({
     value: { exitCode: 0, stdout: '/work/pantry/.git\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   }))

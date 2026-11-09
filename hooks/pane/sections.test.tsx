@@ -124,7 +124,7 @@ test('the 47-finding fixture passes the tool and seeds as 12 needing the person,
   const files = new Map<string, string>()
   const store = {
     env: { get: async () => '/home/test' },
-    session: { cwd: async () => '/work/pantry' },
+    session: { cwd: async () => '/work/pantry', id: async () => 'session-1' },
     process: { run: async () => ({ exitCode: 0, stdout: '/work/pantry/.git\n' }) },
     fs: {
       read: async (p: string) => {
