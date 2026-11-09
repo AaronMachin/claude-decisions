@@ -165,3 +165,24 @@ test('the pane keys-off line names the focus key', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: new RegExp(focusKeyName().replace('+', '\\+')) })).toBeDefined()
   await ui.unmount()
 })
+
+test('with the Focus key setting the band and the keys-off line name that key', { options: { focusKey: 'ctrl+q' } }, async ($, on) => {
+  engine(on, { list: [placed(false)] })
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...DECISION })
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Text', text: /^1 decision waiting · ctrl\+q to answer, your draft stays/ })).toBeDefined()
+  await band.unmount()
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await pane.find({ type: 'Text', text: /Press the pane focus key \(ctrl\+q unless/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('an empty Focus key setting falls back to ctrl+x tab', { options: { focusKey: '  ' } }, async ($, on) => {
+  engine(on, { list: [placed(false)] })
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...DECISION })
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Text', text: /ctrl\+x tab to answer/ })).toBeDefined()
+  await band.unmount()
+})

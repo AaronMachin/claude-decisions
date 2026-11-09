@@ -66,7 +66,7 @@ Nothing reaches Claude until you send. Answers, parked decisions and the `d` fro
 
 ### Moving the focus key
 
-If `ctrl+x tab` clashes with something, bind `abovePrompt:focus` to another key in `~/.claude/keybindings.json`. For example, to use `ctrl+g` instead:
+If `ctrl+x tab` clashes with something, bind `abovePrompt:focus` to another key in `~/.claude/keybindings.json`, then set Focus key in `/config` to the same key so the pane names it. For example, to use `ctrl+g` instead:
 
 ```json
 {
@@ -91,12 +91,13 @@ In `/config`:
 | Setting | Values | Default |
 | --- | --- | --- |
 | Discussion replies | main session, fork, quick model | main session |
-
-Only Discussion replies exists in 0.1.0.
+| Focus key | the key you bound to `abovePrompt:focus` | ctrl+x tab |
 
 - **main session**: the question goes to the main conversation, marked with the decision it's about ("On decision 3 · Where share links live: ..."), and the reply shows in the chat as well as the thread. Full context and tools. If Claude is mid-task, the question waits for the turn to end, and the thread says so.
 - **fork**: a copy of the conversation answers straight away, without touching the main one. It can't read project files.
 - **quick model**: a single call that only sees the decision. Fastest, with no conversation and no files.
+
+Focus key only changes what the pane and the line above the prompt tell you to press. The mod can't read your key bindings, so if you move the focus key (below), set this to match.
 
 ## How decisions are stored
 

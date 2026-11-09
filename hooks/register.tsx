@@ -1,6 +1,7 @@
 import type { Register } from 'claude-code'
 
 import { renderBand } from './band'
+import { configureFocusKey } from './focus-key'
 import { changed, followFocus, isTabKey, openFocused, openForNewDecision, refreshStatus, renderPane } from './pane/render'
 import { configure, onTurnComplete, onTurnStart } from './discuss'
 import { addContextBlock, addRulesSection, answerAskUserQuestion, noteAtSessionStart, noteOnSubmit, nudgeAfterTurn, onCompact, refuseSubagent } from './integrate'
@@ -9,6 +10,7 @@ import { ADD_TOOL, LIST_TOOL, UPDATE_TOOL, addDecision, listDecisions, registerT
 
 export const register: Register = (on, options) => {
   configure(options)
+  configureFocusKey((options as { focusKey?: unknown } | undefined)?.focusKey)
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'decisions', description: 'Open the decisions pane' })

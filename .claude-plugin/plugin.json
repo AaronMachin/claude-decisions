@@ -17,6 +17,12 @@
         "fork",
         "quick model"
       ]
+    },
+    "focusKey": {
+      "type": "string",
+      "title": "Focus key",
+      "description": "The key you bound to abovePrompt:focus, shown in the band and the pane.",
+      "default": "ctrl+x tab"
     }
   }
 }
