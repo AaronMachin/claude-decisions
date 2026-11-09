@@ -175,13 +175,13 @@ export function secondLine(d: Decision, isParkedTab: boolean): string | undefine
   return undefined
 }
 
-/** One row, padded so the meta sits at the right edge. */
+/** One row, padded so the meta sits at the right edge. The meta is left out when the title wouldn't fit whole beside it (row 168). */
 export function rowText(d: Decision, width: number): string {
   const meta = rowMeta(d, width)
   const left = `${d.id}  ${d.title}`
-  const room = Math.max(1, width - 2 - (meta === '' ? 0 : meta.length + 2))
+  const room = width - 2 - (meta === '' ? 0 : meta.length + 2)
 
-  return meta === '' ? truncate(left, width - 2) : `${truncate(left, room).padEnd(room)}  ${meta}`
+  return meta === '' || left.length > room ? truncate(left, width - 2) : `${left.padEnd(room)}  ${meta}`
 }
 
 type ListProps = {
@@ -316,7 +316,7 @@ export function ListView($: any, props: ListProps): any {
             focusLater($, `batch:${batch[0]!.id}`)
           }}
         >
-          {`${mark('batch')}Check ${batch.length} assumptions together`}
+          {`${mark('batch')}Check ${batch.length} assumptions together (enter)`}
         </Button>
       ) : null}
       {needsShown.map(row)}

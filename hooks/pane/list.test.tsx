@@ -273,7 +273,7 @@ test('two or more open assumptions add a batch row at the top of Needs you', asy
   const ui = await drawList($, on, [make({ kind: 'assumption' }), make({ kind: 'assumption' }), make({ kind: 'finding' })])
   const keys = await keysOf(ui)
   expect(keys.slice(0, 2)).toEqual(['batch', 'row:d1'])
-  expect((await ui.find({ key: 'batch' }))?.text).toBe('  Check 2 assumptions together')
+  expect((await ui.find({ key: 'batch' }))?.text).toBe('  Check 2 assumptions together (enter)')
   await ui.unmount()
 })
 
@@ -346,4 +346,16 @@ test('ringMark marks only the ringed key, and only while the pane has the keys',
   expect(ringMark('row:d1', 'row:d1', false)).toBe(' ')
   expect(ringMark('row:d1', 'row:d2', true)).toBe(' ')
   expect(ringMark('row:d1', undefined, true)).toBe(' ')
+})
+
+test('a list row drops its meta before cutting the title', () => {
+  const ready = make({ title: 'What a recipe card shows when shared', state: 'ready', answer: { option: 1, answeredAt: 't' } })
+  const row = rowText(ready, 49)
+  expect(row).toContain('What a recipe card shows when shared')
+  expect(row).not.toContain('ready')
+})
+
+test('a list row keeps its meta when the title fits beside it', () => {
+  const short = make({ title: 'Units' })
+  expect(rowText(short, 80)).toContain('2 options · open')
 })

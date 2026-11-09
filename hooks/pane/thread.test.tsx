@@ -200,7 +200,9 @@ test('Mark answered makes the decision ready and returns to the list; it is not 
   await ui.press({ key: 'mark' })
   expect(await ui.find({ key: 'row:d1' })).toBeDefined()
   expect(seen.statuses.at(-1)).toBe('Decisions: 0 open · 1 ready')
-  expect((await ui.find({ key: 'row:d1' }))?.text).toContain('✓ discussed')
+  // At 49 columns the title doesn't fit beside "✓ discussed  ready", so the meta gives way (row 168) and the heading says it's answered.
+  expect(await ui.find({ type: 'Text', text: 'Answered (1)' })).toBeDefined()
+  expect((await ui.find({ key: 'row:d1' }))?.text).toContain('Where the config file lives')
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'discuss' })
   expect(await ui.find({ key: 'mark' })).toBeUndefined()
