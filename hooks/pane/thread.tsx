@@ -1,7 +1,7 @@
 import type { PaneView, PendingQuestion } from '../../types'
 import { RUN, askMain, askQuestion, currentMode, markAnswered, resendToFork } from '../discuss'
 import type { Decision, ThreadEntry } from '../store'
-import { PANE_ID, focusLater, setView } from './decision'
+import { PANE_ID, focusLater, focusTo, setView } from './decision'
 import { truncate } from './list'
 
 const WHO: Record<ThreadEntry['who'], string> = { person: 'you', claude: 'Claude', fork: 'Fork', quick: 'Quick model' }
@@ -100,7 +100,7 @@ export function visibleEntries(
 
 /** `d`: the ring goes to Mark answered, and `enter` then presses it. */
 export async function focusMark($: { ui: { focus: (a: { requestId: string; key: string }) => Promise<unknown> } }): Promise<void> {
-  await $.ui.focus({ requestId: PANE_ID, key: 'mark' })
+  await focusTo($, 'mark')
 }
 
 /** The view after `b` on the thread, taken from the view as it is now so a reply that landed meanwhile isn't undone. */
@@ -141,7 +141,7 @@ async function goBack($: any, view: PaneView): Promise<void> {
   const next = backFromThread(view)
   await setView($, leaveThread)
   if (next.focusAsk) {
-    await $.ui.focus({ requestId: PANE_ID, key: 'ask' }).catch(() => undefined)
+    await focusTo($, 'ask')
   } else if (next.view.screen === 'decision') {
     focusLater($, 'discuss')
   }

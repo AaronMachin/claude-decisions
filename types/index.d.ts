@@ -45,6 +45,10 @@ export type PaneView = {
   marks: Record<string, number>
   /** Batch screen: the decision id the ring is on. */
   batchRow?: string
+  /** The key of the element the engine last said holds the ring (from `ui.focus`), for the `›` marker. */
+  ring?: string
+  /** 0-based page of a compact screen's rows (options, assumptions, ticks). */
+  compactPage: number
 }
 
 declare module 'claude-code' {

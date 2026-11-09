@@ -1,6 +1,6 @@
 import type { PaneView } from '../../types'
 import type { Decision, StoreCtx } from '../store'
-import { chooseAndReopen, focusLater, readView, setView } from './decision'
+import { chooseAndReopen, focusLater, readView, ringMark, setView } from './decision'
 import { truncate } from './list'
 
 export { FIXED_OPTIONS, fixedOptionsFor } from '../kind-options'
@@ -102,6 +102,8 @@ type BatchProps = {
   width: number
   onChanged: () => void
   onLeave: () => void
+  /** The pane has the keys, so the ring (and its `›`) is shown. */
+  isFocused?: boolean
 }
 
 async function goToList($: any, notice: string | undefined, onChanged: () => void, onLeave: () => void): Promise<void> {
@@ -173,7 +175,8 @@ export function BatchView($: any, props: BatchProps): any {
             }
           }}
         >
-          {d.state === 'ready' ? <Text dimColor>{batchRowText(d, undefined, width)}</Text> : batchRowText(d, marks[d.id], width)}
+          {`${ringMark(`batch:${d.id}`, view.ring, props.isFocused === true)} `}
+          {d.state === 'ready' ? <Text dimColor>{batchRowText(d, undefined, width - 2)}</Text> : batchRowText(d, marks[d.id], width - 2)}
         </Button>
       ))}
       <Text dimColor>{'-'.repeat(Math.max(1, width))}</Text>

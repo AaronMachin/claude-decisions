@@ -1,6 +1,6 @@
 import type { PaneView } from '../../types'
 import type { Decision } from '../store'
-import { focusLater, setView } from './decision'
+import { focusLater, ringMark, setView } from './decision'
 import { FOLDED, answeredRoom, assumptionsIn, foldAll, foldedRows, isWaiting, movePage, pageOf, pageSize, sectionsFor, toggleSection } from './sections'
 
 export type Tab = { key: string; label: string; decisions: Decision[] }
@@ -193,6 +193,8 @@ type ListProps = {
   unreadable: number
   /** The pane's rows (`scroll.bodyRows`), so an open section can be paged to fit. */
   rows?: number
+  /** The pane has the keys, so the ring (and its `›`) is shown. */
+  isFocused?: boolean
   onSend: () => void
   onHide: () => void
 }
@@ -214,6 +216,7 @@ export function ListView($: any, props: ListProps): any {
   const isParkedTab = tab?.key === 'parked'
   const batch = tab && !isParkedTab ? assumptionsIn(tab) : []
   const tabRow = visibleTabs(tabs, tab?.key, width)
+  const mark = (key: string) => `${ringMark(key, view.ring, props.isFocused === true)} `
 
   const row = (d: Decision) => {
     const second = secondLine(d, isParkedTab)
@@ -221,7 +224,8 @@ export function ListView($: any, props: ListProps): any {
     return (
       <Box key={`box:${d.id}`} flexDirection="column">
         <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d.id)}>
-          {d.state === 'sent' ? <Text dimColor>{rowText(d, width)}</Text> : rowText(d, width)}
+          {mark(`row:${d.id}`)}
+          {d.state === 'sent' ? <Text dimColor>{rowText(d, width - 2)}</Text> : rowText(d, width - 2)}
         </Button>
         {second !== undefined ? <Text dimColor>{truncate(`     ${second}`, width - 2)}</Text> : null}
       </Box>
@@ -253,6 +257,7 @@ export function ListView($: any, props: ListProps): any {
           autoFocus={first === undefined && f === FOLDED.find(x => tab && foldedRows(tab, x.section).length > 0) ? true : undefined}
           onPress={() => setView($, v => toggleSection(v, f.section))}
         >
+          {mark(`section:${f.section}`)}
           <Text bold>{`${isOpen ? '▾' : '▸'} ${f.name} (${all.length})`}</Text>
         </Button>
         {isOpen ? page.rows.map(row) : null}
@@ -311,7 +316,7 @@ export function ListView($: any, props: ListProps): any {
             focusLater($, `batch:${batch[0]!.id}`)
           }}
         >
-          {`Check ${batch.length} assumptions together`}
+          {`${mark('batch')}Check ${batch.length} assumptions together`}
         </Button>
       ) : null}
       {needsShown.map(row)}
@@ -366,6 +371,8 @@ type ReviewProps = {
   onConfirm: (ids: string[]) => void
   /** Called when the screen goes back to the list. */
   onLeave: () => void
+  /** The pane has the keys, so the ring (and its `›`) is shown. */
+  isFocused?: boolean
 }
 
 /** The answers ready to send, each ticked; Confirm is last in the ring. Returns an element tree. */
@@ -386,7 +393,7 @@ export function ReviewView($: any, props: ReviewProps): any {
             autoFocus={index === 0 ? true : undefined}
             onPress={() => setView($, v => ({ ...v, ticked: toggleTick(v.ticked, d.id) }))}
           >
-            {truncate(`${ticked.includes(d.id) ? '[x]' : '[ ]'} ${d.id}  ${d.title}`, width - 2)}
+            {`${ringMark(`tick:${d.id}`, view.ring, props.isFocused === true)} ` + truncate(`${ticked.includes(d.id) ? '[x]' : '[ ]'} ${d.id}  ${d.title}`, width - 4)}
           </Button>
           <Text dimColor>{truncate(`      ${chosenText(d).replace('✓ ', '')}`, width - 2)}</Text>
         </Box>

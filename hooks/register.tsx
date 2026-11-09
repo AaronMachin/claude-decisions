@@ -1,7 +1,7 @@
 import type { Register } from 'claude-code'
 
 import { renderBand } from './band'
-import { changed, followFocus, openFocused, openForNewDecision, refreshStatus, renderPane } from './pane/render'
+import { changed, followFocus, isTabKey, openFocused, openForNewDecision, refreshStatus, renderPane } from './pane/render'
 import { configure, onTurnComplete, onTurnStart } from './discuss'
 import { addContextBlock, addRulesSection, answerAskUserQuestion, noteAtSessionStart, noteOnSubmit, nudgeAfterTurn, onCompact, refuseSubagent } from './integrate'
 import { PANE_ID } from './pane/decision'
@@ -88,11 +88,18 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.focus', async ($, e, next) => {
-    if (e.requestId === PANE_ID) {
+    if (e.requestId !== PANE_ID) {
+      return next(e)
+    }
+    if (e.origin.kind === 'person' && isTabKey(e.element)) {
+      return {}
+    }
+    const moved = await next(e)
+    if (moved.deny === undefined) {
       await followFocus($, e.element)
     }
 
-    return next(e)
+    return moved
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, ($, e) => renderPane($, e))

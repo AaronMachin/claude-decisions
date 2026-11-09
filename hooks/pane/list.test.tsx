@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import type { Decision } from '../store'
 import { REVIEW_47 } from './review-47'
 import { movePage, pageSize } from './sections'
-import { INITIAL_VIEW } from './decision'
+import { INITIAL_VIEW, ringMark } from './decision'
 import { ListView, ReviewView, counts, visibleTabs, nextTab, openReview, rowMeta, rowText, secondLine, sectionsFor, statusText, tabsFor, toggleTick, truncate } from './list'
 
 let counter = 0
@@ -159,14 +159,14 @@ test('review: ready rows start ticked, Confirm is last with hotkey c, and confir
   expect(buttons.map(b => b.props.key)).toEqual(['tick:d1', 'tick:d2', 'b', 'confirm'])
   expect(buttons[3]!.props.hotkey).toBe('c')
   expect(await ui.find({ type: 'Text', text: /Enter ticks or unticks a row, c sends/ })).toBeDefined()
-  expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/^\[x\] d1/)
+  expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/^ {2}\[x\] d1/)
   await ui.press({ key: 'confirm', plugin: 'test' })
   expect(confirmed).toEqual([['d1', 'd2']])
   await ui.unmount()
 
   view = { ...view, ticked: [] }
   ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/^\[ \] d1/)
+  expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/^ {2}\[ \] d1/)
   await ui.press({ key: 'confirm', plugin: 'test' })
   expect(confirmed).toHaveLength(1)
   await ui.unmount()
@@ -273,7 +273,7 @@ test('two or more open assumptions add a batch row at the top of Needs you', asy
   const ui = await drawList($, on, [make({ kind: 'assumption' }), make({ kind: 'assumption' }), make({ kind: 'finding' })])
   const keys = await keysOf(ui)
   expect(keys.slice(0, 2)).toEqual(['batch', 'row:d1'])
-  expect((await ui.find({ key: 'batch' }))?.text).toBe('Check 2 assumptions together')
+  expect((await ui.find({ key: 'batch' }))?.text).toBe('  Check 2 assumptions together')
   await ui.unmount()
 })
 
@@ -339,4 +339,11 @@ test('an open folded section leaves a paged Needs you on its first page, with a 
   expect(keys).not.toContain('n')
   expect(await ui.find({ type: 'Text', text: /more need you/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('ringMark marks only the ringed key, and only while the pane has the keys', () => {
+  expect(ringMark('row:d1', 'row:d1', true)).toBe('›')
+  expect(ringMark('row:d1', 'row:d1', false)).toBe(' ')
+  expect(ringMark('row:d1', 'row:d2', true)).toBe(' ')
+  expect(ringMark('row:d1', undefined, true)).toBe(' ')
 })

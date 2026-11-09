@@ -3,7 +3,7 @@ import { notePaneFocus } from '../band'
 import { focusKeyName } from '../focus-key'
 import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
-import { DecisionView, INITIAL_VIEW, PANE_ID, readView, setView } from './decision'
+import { DecisionView, INITIAL_VIEW, PANE_ID, focusTo, readView, setView } from './decision'
 import { ThreadView } from './thread'
 import { ListView, ReviewView, activeTab, openReview, statusText, tabsFor, truncate } from './list'
 import { BatchView, batchRows } from './kinds'
@@ -43,8 +43,14 @@ export async function hidePane($: any): Promise<void> {
   await $.ui.close({ id: PANE_ID })
 }
 
-/** The `ui.focus` hook: the person's up and down arrive here, so the highlight follows the ring. */
+/** The person's moves onto the tab strip are kept off, so up from the first row stays on the list (row 167). */
+export function isTabKey(element: string | undefined): boolean {
+  return /^tab:/.test(element ?? '')
+}
+
+/** The `ui.focus` hook, once the ring has moved: records where it is for the `›`, and the highlight follows it. */
 export async function followFocus($: any, element: string | undefined): Promise<void> {
+  await setView($, v => ({ ...v, ring: element }))
   const batch = /^batch:(.+)$/.exec(element ?? '')
   const match = /^opt:(\d+)$/.exec(element ?? '')
   if (batch) {
@@ -74,7 +80,7 @@ async function focusFirstRow($: any): Promise<void> {
   const { decisions } = await readAll($)
   const key = firstKey(activeTab(tabsFor(decisions), await readView($)))
   if (key) {
-    await $.ui.focus({ requestId: PANE_ID, key })
+    await focusTo($, key)
   }
 }
 
@@ -122,6 +128,7 @@ export async function renderPane($: any, e: any): Promise<any> {
   const common = {
     ui,
     width,
+    isFocused: e.props.isFocused === true,
     onSend: () => void setView($, v => openReview(v, ready.map(d => d.id))),
     onHide: () => void hidePane($),
   }

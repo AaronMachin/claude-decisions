@@ -21,10 +21,11 @@ export const INITIAL_VIEW: PaneView = {
   threadSkip: 0,
   sectionPage: 0,
   marks: {},
+  compactPage: 0,
 }
 
 // Change the tag when PaneView's fields change: it declines what an earlier version stored.
-const viewAtom = atom({ plugin: 'decisions', key: 'view' } as const, INITIAL_VIEW, { shape: 'view-3' })
+const viewAtom = atom({ plugin: 'decisions', key: 'view' } as const, INITIAL_VIEW, { shape: 'view-4' })
 
 export type Typed = { digit: string; at: number } | undefined
 export type Typing = { typed: Typed; option: number | undefined }
@@ -106,7 +107,7 @@ export async function back(
   if (view.highlight !== undefined) {
     await $.ui.focus({ requestId: PANE_ID, key: 'discuss' })
 
-    return { ...view, highlight: undefined }
+    return { ...view, highlight: undefined, ring: 'discuss' }
   }
 
   return { ...view, screen: 'list', decisionId: undefined, isParking: false, notice: undefined }
@@ -222,6 +223,8 @@ type Props = {
   onLeave: () => void
   onSend: () => void
   onHide: () => void
+  /** The pane has the keys, so the ring (and its `›`) is shown. */
+  isFocused?: boolean
 }
 
 /** The only places the pane's state is read and written: the scan follows `$` into function declarations, and a state reference only where it's written. */
@@ -229,11 +232,27 @@ export function setView($: any, change: (v: PaneView) => PaneView): Promise<unkn
   return update($, viewAtom, change)
 }
 
+/** Moves the ring to a key and, once the engine says it moved, records it for the `›`. Returns whether it moved. */
+export async function focusTo($: any, key: string): Promise<boolean> {
+  const moved = await $.ui.focus({ requestId: PANE_ID, key }).catch(() => ({ deny: 'failed' }))
+  if (moved?.deny !== undefined) {
+    return false
+  }
+  await setView($, v => ({ ...v, ring: key }))
+
+  return true
+}
+
 /** Moves the ring to a key once the next draw has put it on screen. */
 export function focusLater($: any, key: string): void {
   $.clock.after(80, () => {
-    void $.ui.focus({ requestId: PANE_ID, key }).catch(() => undefined)
+    void focusTo($, key)
   })
+}
+
+/** The first column of a row: `›` on the ringed element while the pane has the keys, else a space. */
+export function ringMark(key: string, ring: string | undefined, isFocused: boolean): '›' | ' ' {
+  return isFocused && ring === key ? '›' : ' '
 }
 
 export function readView($: any): Promise<PaneView> {
@@ -276,7 +295,7 @@ export function DecisionView($: any, props: Props): any {
       {d.options.map(o => {
         const isChosen = chosen === o.id
         const isRecommended = d.recommendation?.option === o.id
-        const label = `${isChosen ? '✓' : ' '} ${o.id}  ${o.label}`
+        const label = `${ringMark(`opt:${o.id}`, view.ring, props.isFocused === true)}${isChosen ? '✓' : ' '} ${o.id}  ${o.label}`
 
         return (
           <Box key={`box:${o.id}`} flexDirection="column">
@@ -293,6 +312,8 @@ export function DecisionView($: any, props: Props): any {
           </Box>
         )
       })}
+      <Box>
+      <Text>{ringMark('discuss', view.ring, props.isFocused === true)}</Text>
       <Button
         key="discuss"
         autoFocus
@@ -311,6 +332,7 @@ export function DecisionView($: any, props: Props): any {
       >
         Discuss
       </Button>
+      </Box>
       {view.notice ? <Text dimColor>{view.notice}</Text> : null}
       {d.recommendation ? (
         <Text>{`Why ${d.recommendation.option}: ${d.recommendation.reason}`}</Text>
@@ -354,7 +376,7 @@ export function DecisionView($: any, props: Props): any {
                 onPress={async () => {
                   const option = await pressDigit($, k, Date.now(), d.options.length)
                   if (option !== undefined) {
-                    await setView($, v => ({ ...v, highlight: option }))
+                    await setView($, v => ({ ...v, highlight: option, ring: `opt:${option}` }))
                   }
                 }}
               >
@@ -374,7 +396,7 @@ export function DecisionView($: any, props: Props): any {
             onPress={async () => {
               const option = await highlightRecommendation($, d)
               if (option !== undefined) {
-                await setView($, v => ({ ...v, highlight: option }))
+                await setView($, v => ({ ...v, highlight: option, ring: `opt:${option}` }))
               }
             }}
           >
