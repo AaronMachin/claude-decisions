@@ -1,4 +1,6 @@
 import type { PaneView } from '../../types'
+import { notePaneFocus } from '../band'
+import { focusKeyName } from '../focus-key'
 import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
 import { DecisionView, INITIAL_VIEW, PANE_ID, readView, setView } from './decision'
@@ -101,7 +103,7 @@ function header(ui: any, width: number, isFocused: boolean, crumb?: string): any
         <Text>{' '.repeat(pad)}</Text>
         {isFocused ? <Text bold>{state}</Text> : <Text dimColor>{state}</Text>}
       </Box>
-      {isFocused ? null : <Text dimColor>Press the pane focus key (ctrl+x tab unless you moved it) to use it with a draft kept, or run /decisions with an empty prompt.</Text>}
+      {isFocused ? null : <Text dimColor>{`Press the pane focus key (${focusKeyName()} unless you moved it) to use it with a draft kept, or run /decisions with an empty prompt.`}</Text>}
       {crumb ? <Text dimColor>{truncate(crumb, width)}</Text> : null}
     </Box>
   )
@@ -109,6 +111,7 @@ function header(ui: any, width: number, isFocused: boolean, crumb?: string): any
 
 /** The `ui.render` hook for the pane: reads the files and the view, then draws the screen the view names. */
 export async function renderPane($: any, e: any): Promise<any> {
+  notePaneFocus($, e.props.isFocused === true)
   const ui = $.ui.resolve(e)
   const { Box, Text } = ui
   const width: number = e.props.bodyColumns

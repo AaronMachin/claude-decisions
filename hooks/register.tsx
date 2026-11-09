@@ -1,5 +1,6 @@
 import type { Register } from 'claude-code'
 
+import { renderBand } from './band'
 import { changed, followFocus, openFocused, openForNewDecision, refreshStatus, renderPane } from './pane/render'
 import { configure, onTurnComplete, onTurnStart } from './discuss'
 import { addContextBlock, addRulesSection, answerAskUserQuestion, noteAtSessionStart, noteOnSubmit, nudgeAfterTurn, onCompact, refuseSubagent } from './integrate'
@@ -95,4 +96,6 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, ($, e) => renderPane($, e))
+
+  on('ui.render', { component: 'AbovePrompt' }, ($, e, next) => renderBand($, e, next))
 }
