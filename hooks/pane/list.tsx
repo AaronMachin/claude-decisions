@@ -3,7 +3,7 @@ import type { Decision } from '../store'
 import { focusLater, ringMark, setView } from './decision'
 import { Card, KeyHints, Rule, cardFrame, cardInset, isCompact } from './look'
 import type { Hint } from './look'
-import { FOLDED, answeredRoom, assumptionsIn, foldAll, foldedRows, isWaiting, movePage, pageOf, pageSize, sectionsFor, toggleSection } from './sections'
+import { FOLDED, answeredRoom, assumptionsIn, firstKey, foldAll, foldedRows, isWaiting, movePage, pageOf, pageSize, sectionsFor, toggleSection } from './sections'
 
 export type Tab = { key: string; label: string; decisions: Decision[] }
 
@@ -250,6 +250,16 @@ async function openDecision($: any, id: string, tab: string | undefined): Promis
   focusLater($, 'discuss')
 }
 
+/** Changes tab and, once it is drawn, puts the ring on its first row, so the ring is never left on a row that went. */
+async function showTab($: any, tabs: Tab[], key: string | undefined): Promise<void> {
+  await setView($, v => ({ ...foldAll(v), tab: key }))
+  const target = tabs.find(t => t.key === key)
+  const first = waitingElsewhere(tabs, target) ? 'goto-waiting' : firstKey(target)
+  if (first) {
+    focusLater($, first)
+  }
+}
+
 /** The tab row and the open tab's decisions. Returns an element tree. */
 export function ListView($: any, props: ListProps): any {
   const { ui, tabs, view, width, readyCount, unreadable, onSend, onHide } = props
@@ -346,7 +356,7 @@ export function ListView($: any, props: ListProps): any {
   }
 
   const hints: Hint[] = [
-    { id: 't', keyText: 't', label: 'next tab', hotkey: 't', onPress: () => void setView($, v => ({ ...foldAll(v), tab: nextTab(tabs, tab?.key) })) },
+    { id: 't', keyText: 't', label: 'next tab', hotkey: 't', onPress: () => void showTab($, tabs, nextTab(tabs, tab?.key)) },
     ...(readyCount > 0 ? [{ id: 's', keyText: 's', label: `send ${readyCount}`, hotkey: 's', onPress: onSend }] : []),
     { id: 'h', keyText: 'h', label: 'hide', hotkey: 'h', onPress: onHide },
   ]
@@ -369,7 +379,7 @@ export function ListView($: any, props: ListProps): any {
           <Button
             key={`tab:${t.key}`}
             plain
-            onPress={() => setView($, v => ({ ...foldAll(v), tab: t.key }))}
+            onPress={() => void showTab($, tabs, t.key)}
           >
             {t.key === tab?.key ? (
               <Text backgroundColor="claude" color="inverseText" bold>
@@ -388,7 +398,7 @@ export function ListView($: any, props: ListProps): any {
       {compact ? null : Rule(ui, width, 'rule:sections')}
       {isParkedTab ? null : heading('Needs you', sections.needsYou.length)}
       {elsewhere ? (
-        <Button key="goto-waiting" plain autoFocus onPress={() => setView($, v => ({ ...foldAll(v), tab: elsewhere.tab.key }))}>
+        <Button key="goto-waiting" plain autoFocus onPress={() => void showTab($, tabs, elsewhere.tab.key)}>
           {mark('goto-waiting')}
           <Text color="claude">{truncate(`${elsewhere.count} waiting in ${elsewhere.tab.label} · enter`, width - 2)}</Text>
         </Button>
