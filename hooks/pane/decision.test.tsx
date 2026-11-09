@@ -346,7 +346,7 @@ test('a question shows the hint and no digit row', async ($, on) => {
   const ui = await drawDecision($, on, (await readAll(store)).decisions[0]!)
   const keys = (await ui.findAll({ type: 'Button' })).map((b: any) => b.props.key)
   expect(keys.some((k: string) => k.startsWith('digit:') || k.startsWith('opt:') || k === 'a')).toBe(false)
-  expect(await ui.find({ type: 'Text', text: 'Type your answer in the discussion, then d and enter.' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Type your answer in the discussion/ })).toBeDefined()
   await ui.unmount()
 })
 

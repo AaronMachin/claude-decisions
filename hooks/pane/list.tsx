@@ -483,13 +483,20 @@ export function ReviewView($: any, props: ReviewProps): any {
   const tick = (d: Decision) => () => setView($, v => ({ ...v, ticked: toggleTick(v.ticked, d.id) }))
 
   if (compact) {
-    const size = Math.max(1, (props.rows ?? 30) - REVIEW_COMPACT_FIXED)
+    const size = Math.max(1, (props.rows ?? 30) - REVIEW_COMPACT_FIXED - (isFocused ? 0 : 1))
     const pages = Math.max(1, Math.ceil(ready.length / size))
     const page = Math.min(Math.max(0, view.compactPage), pages - 1)
     const shown = ready.slice(page * size, (page + 1) * size)
     const hints: Hint[] = [
       { id: 'enter-tick', keyText: 'enter', label: 'tick' },
-      ...(pages > 1 ? [{ id: 'o', keyText: 'o', label: 'more', hotkey: 'o', onPress: () => void setView($, v => ({ ...v, compactPage: (page + 1) % pages })) }] : []),
+      ...(pages > 1 ? [{ id: 'o', keyText: 'o', label: 'more', hotkey: 'o', onPress: () => {
+        const next = (page + 1) % pages
+        const target = ready[next * size]
+        void setView($, v => ({ ...v, compactPage: next, ring: undefined }))
+        if (target) {
+          focusLater($, `tick:${target.id}`)
+        }
+      } }] : []),
       { id: 'b', keyText: 'b', label: 'back', hotkey: 'b', onPress: back },
       { id: 'confirm', keyText: 'c', label: `send ${ticked.length}`, hotkey: 'c', onPress: send },
     ]

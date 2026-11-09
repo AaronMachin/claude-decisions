@@ -896,3 +896,48 @@ test('the Send and assumptions screens open with › on the row the ring starts 
   expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/^› \[x\] d1/)
   await ui.unmount()
 })
+
+test('compact assumptions screen fits 9 rows with the pane header and a notice, keys on or off', async ($, on) => {
+  engine(on)
+  await start($)
+  for (let i = 1; i <= 12; i++) {
+    await $.tool.call({ tool: ADD_TOOL, group: 'Config file plan', kind: 'assumption', title: `Assumption ${i}`, scenario: 's' })
+  }
+  const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
+  await ui.press({ key: 'batch' })
+  await ringOn($, 'batch:d1')
+  await ui.press({ key: '1' })
+  await ui.press({ key: 'batch:d1' })
+  expect(await ui.find({ type: 'Text', text: /Answered 1 assumption/ })).toBeDefined()
+  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  await ui.unmount()
+  const off = await $.ui.mount({ ...SHORT(9), props: { ...SHORT(9).props, isFocused: false }, surface: 'terminal' })
+  expect(lineCount(await off.drawn())).toBeLessThanOrEqual(9)
+  await off.unmount()
+})
+
+test('a sent 12-option decision on a 9-row pane shows the page holding its answer', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...TWELVE })
+  const path = [...seen.files.keys()].find(p => p.endsWith('/d1.json'))!
+  seen.files.set(path, JSON.stringify({ ...JSON.parse(seen.files.get(path)!), state: 'sent', answer: { option: 9, answeredAt: 't' } }))
+  const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'line:9' }))?.text).toMatch(/✓/)
+  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  await ui.unmount()
+})
+
+test('compact with m open and an option highlighted still fits 9 rows', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...TWELVE, scenario: 'A long scenario. '.repeat(20), sources: [{ label: 'a.ts', path: 'src/a.ts' }] })
+  const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'm' })
+  await ui.press({ key: 'opt:1' })
+  expect(await ui.find({ type: 'Text', text: /what place 1 costs/ })).toBeDefined()
+  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  await ui.unmount()
+})

@@ -165,15 +165,15 @@ test('compact batch screen puts 1, 2, r and b under its heading and pages the ro
   const all = await seedAssumptions(store)
   expect(all).toHaveLength(12)
   let view = INITIAL_VIEW
-  on('ui.render', ($$, e) => BatchView($$, { ui: $$.ui.resolve(e), rows: all, view, width: 90, paneRows: 9, onChanged: () => {}, onLeave: () => {} }))
+  on('ui.render', ($$, e) => BatchView($$, { ui: $$.ui.resolve(e), rows: all, view, width: 90, paneRows: 9, isFocused: true, onChanged: () => {}, onLeave: () => {} }))
   let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const keys = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.key))
   expect(keys.slice(0, 5)).toEqual(['1', '2', 'r', 'o', 'b'])
-  expect(keys.filter(k => k.startsWith('batch:'))).toEqual(['batch:d1', 'batch:d2', 'batch:d3', 'batch:d4', 'batch:d5'])
+  expect(keys.filter(k => k.startsWith('batch:'))).toEqual(['batch:d1', 'batch:d2', 'batch:d3', 'batch:d4'])
   await ui.unmount()
-  view = { ...INITIAL_VIEW, batchRow: 'd6' }
+  view = { ...INITIAL_VIEW, batchRow: 'd5' }
   ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await ui.findAll({ type: 'Button' })).map(b => String(b.props.key)).filter(k => k.startsWith('batch:'))[0]).toBe('batch:d6')
+  expect((await ui.findAll({ type: 'Button' })).map(b => String(b.props.key)).filter(k => k.startsWith('batch:'))[0]).toBe('batch:d5')
   await ui.unmount()
 })
 

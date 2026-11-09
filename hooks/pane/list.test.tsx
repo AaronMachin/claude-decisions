@@ -455,7 +455,7 @@ test('compact Send screen puts its key hints under the heading and pages the tic
   counter = 0
   const ready = Array.from({ length: 9 }, () => make({ state: 'ready', answer: { option: 1, answeredAt: 't' } }))
   let view = openReview({ ...INITIAL_VIEW }, ready.map(d => d.id))
-  on('ui.render', ($$, e) => ReviewView($$, { ui: $$.ui.resolve(e), ready, view, width: 90, rows: 9, onConfirm: () => {}, onLeave: () => {} }))
+  on('ui.render', ($$, e) => ReviewView($$, { ui: $$.ui.resolve(e), ready, view, width: 90, rows: 9, isFocused: true, onConfirm: () => {}, onLeave: () => {} }))
   let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const keys = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.key))
   expect(keys.slice(0, 3)).toEqual(['o', 'b', 'confirm'])

@@ -437,7 +437,8 @@ export function decisionLayout(d: Decision, view: PaneView, width: number, rows:
     : [{ rules: true, contextCap: 3 }, { rules: false, contextCap: 3 }, { rules: false, contextCap: 1 }]
   const fit = (step: { rules: boolean; contextCap: number }, hintLines: number) => {
     const ruleRows = step.rules ? (compact ? 1 : 3) : 0
-    const without = fixedBase + hintLines + ruleRows + reserveCard
+    // Compact with `m` open, the highlighted option's line is kept as well as the context.
+    const without = fixedBase + hintLines + ruleRows + reserveCard + (compact && view.isContextOpen && view.highlight !== undefined ? 1 : 0)
     const contextRows = view.isContextOpen
       ? Math.min(fullContext.length, Math.max(step.contextCap, rows - without - 1))
       : compact
@@ -446,6 +447,8 @@ export function decisionLayout(d: Decision, view: PaneView, width: number, rows:
 
     return { room: rows - without - contextRows, contextRows, ruleRows }
   }
+  // A sent decision has no `o`: its page is the one holding the answer, so the ✓ is always drawn.
+  const anchored = d.state === 'sent' && view.highlight === undefined ? { ...view, highlight: d.answer?.option } : view
   const unpagedHints = hintsFor(false, [])
   const unpagedLines = hintLineCount(unpagedHints, width, 2)
   let chosen = steps.find(step => fit(step, unpagedLines).room >= count)
@@ -460,16 +463,16 @@ export function decisionLayout(d: Decision, view: PaneView, width: number, rows:
         true,
         d.options.filter(o => digitOf(o.id) !== undefined && Math.floor((o.id - 1) / size) !== page).map(o => o.id),
       )
-    const firstPage = pageFor(view, guess, count)
+    const firstPage = pageFor(anchored, guess, count)
     hints = pagedHints(guess, firstPage)
     hintLines = hintLineCount(hints, width, 2)
     pageSize = Math.max(1, fit(chosen, hintLines).room)
-    hints = pagedHints(pageSize, pageFor(view, pageSize, count))
+    hints = pagedHints(pageSize, pageFor(anchored, pageSize, count))
     hintLines = hintLineCount(hints, width, 2)
     pageSize = Math.max(1, fit(chosen, hintLines).room)
   }
   const pages = Math.max(1, Math.ceil(count / pageSize))
-  const page = pageFor(view, pageSize, count)
+  const page = pageFor(anchored, pageSize, count)
   const { contextRows } = fit(chosen, hintLines)
   const context = view.isContextOpen
     ? fullContext.slice(0, contextRows)
@@ -672,7 +675,7 @@ export function DecisionView($: any, props: Props): any {
       {compact && layout.rules ? Rule(ui, width, 'rule:top') : null}
       {!compact && layout.rules ? Rule(ui, width, 'rule:header') : null}
       {contextBlock}
-      {d.kind === 'question' && !d.isTask && !isSent ? <Text dimColor>Type your answer in the discussion, then d and enter.</Text> : null}
+      {d.kind === 'question' && !d.isTask && !isSent ? <Text dimColor>{truncateLine('Type your answer in the discussion, then d and enter.', width)}</Text> : null}
       {!compact && layout.rules ? Rule(ui, width, 'rule:context') : null}
       {layout.shown.map(optionRow)}
       {view.isParking ? (

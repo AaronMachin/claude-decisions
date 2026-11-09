@@ -110,8 +110,8 @@ type BatchProps = {
   isFocused?: boolean
 }
 
-/** Rows the compact batch screen keeps for itself: the pane's header, the heading, the key line and the notice. */
-const BATCH_COMPACT_FIXED = 4
+/** Rows the compact batch screen keeps for itself: the pane's title and crumb, the heading, the key line and the notice (one more while the keys are off). */
+const BATCH_COMPACT_FIXED = 5
 
 /** The page of batch rows drawn: the one holding the ringed row, else the one `o` moved to. */
 export function batchPage(rows: Decision[], ringed: string | undefined, size: number, compactPage: number): number {
@@ -179,7 +179,7 @@ export function BatchView($: any, props: BatchProps): any {
   const first = rows.find(isUnanswered)
   const paneRows = props.paneRows ?? 30
   const compact = isCompact(paneRows)
-  const size = compact ? Math.max(1, paneRows - BATCH_COMPACT_FIXED) : Math.max(1, rows.length)
+  const size = compact ? Math.max(1, paneRows - BATCH_COMPACT_FIXED - (props.isFocused === true ? 0 : 1)) : Math.max(1, rows.length)
   const pages = Math.max(1, Math.ceil(rows.length / size))
   const page = batchPage(rows, view.batchRow, size, view.compactPage)
   const shown = rows.slice(page * size, (page + 1) * size)
