@@ -154,14 +154,16 @@ export async function renderPane($: any, e: any): Promise<any> {
     )
   }
   if (decision) {
-    const crumb = `${decision.group ?? 'Other'} > ${decision.id}`
-
-    return (
-      <Box flexDirection="column">
-        {header(ui, width, e.props.isFocused === true, crumb)}
-        {DecisionView($, { ...common, d: decision, all: decisions, view, readyCount: ready.length, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
-      </Box>
-    )
+    return DecisionView($, {
+      ...common,
+      d: decision,
+      all: decisions,
+      view,
+      rows: e.props.scroll?.bodyRows ?? 30,
+      readyCount: ready.length,
+      onChanged: () => void changed($),
+      onLeave: () => leaveToList($),
+    })
   }
   if (view.screen === 'batch') {
     const batchTab = activeTab(tabs, view)

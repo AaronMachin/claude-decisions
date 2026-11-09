@@ -326,7 +326,7 @@ async function drawDecision($: any, on: any, d: Decision) {
   return $.ui.mount({ ...PANE, surface: 'terminal' })
 }
 
-test('a finding shows four options and a digit row to 4; a question shows the hint and no digits', async ($, on) => {
+test('a finding shows four options, each with its own number key, and no digit row', async ($, on) => {
   const store = fakeStore()
   await addDecision(store, KIND_CASES[2]!.input)
   await addDecision(store, { kind: 'question', title: 'Which account', scenario: 's' })
@@ -334,8 +334,9 @@ test('a finding shows four options and a digit row to 4; a question shows the hi
   const ui = await drawDecision($, on, finding!)
   const keys = (await ui.findAll({ type: 'Button' })).map((b: any) => b.props.key)
   expect(keys.filter((k: string) => k.startsWith('opt:'))).toEqual(['opt:1', 'opt:2', 'opt:3', 'opt:4'])
-  expect(keys.filter((k: string) => k.startsWith('digit:'))).toEqual(['digit:1', 'digit:2', 'digit:3', 'digit:4'])
-  expect(await ui.find({ type: 'Text', text: 'finding, open' })).toBeDefined()
+  expect((await ui.findAll({ type: 'Button' })).filter((b: any) => /^opt:/.test(b.props.key)).map((b: any) => b.props.hotkey)).toEqual(['1', '2', '3', '4'])
+  expect(keys.some((k: string) => k.startsWith('digit:'))).toBe(false)
+  expect(await ui.find({ type: 'Text', text: /finding, open/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -353,8 +354,8 @@ test('a task shows Done and Cannot do it', async ($, on) => {
   const store = fakeStore()
   await addDecision(store, { kind: 'go-ahead', isTask: true, title: 'Sign in to staging', scenario: 'Run the login command.' })
   const ui = await drawDecision($, on, (await readAll(store)).decisions[0]!)
-  expect((await ui.find({ key: 'opt:1' }))?.text).toMatch(/1 {2}Done/)
-  expect((await ui.find({ key: 'opt:2' }))?.text).toMatch(/2 {2}Can't do it/)
+  expect((await ui.find({ key: 'opt:1' }))?.text).toMatch(/^Done/)
+  expect((await ui.find({ key: 'opt:2' }))?.text).toMatch(/^Can't do it/)
   expect(await ui.find({ key: 'a' })).toBeUndefined()
   await ui.unmount()
 })
@@ -382,11 +383,12 @@ test('unparking leaves the decision in the section it had', async () => {
   expect((await readOne(store, d.id))!.section).toBe('claudes-call')
 })
 
-test('the option screen says a number then enter confirms, and mentions a only when there is a recommendation', async ($, on) => {
-  const store = fakeStore()
-  await addDecision(store, KIND_CASES[2]!.input)
-  const d = (await readAll(store)).decisions[0]!
-  const ui = await drawDecision($, on, d)
-  expect(await ui.find({ type: 'Text', text: d.recommendation ? 'Type a number or a, then enter to confirm.' : 'Type a number, then enter to confirm.' })).toBeDefined()
-  await ui.unmount()
-})
+for (const hasRecommendation of [true, false]) {
+  test(`the key hints offer a only when there is a recommendation (${hasRecommendation ? 'one' : 'none'})`, async ($, on) => {
+    const store = fakeStore()
+    await addDecision(store, hasRecommendation ? KIND_CASES[2]!.input : { ...KIND_CASES[2]!.input, recommendation: undefined })
+    const ui = await drawDecision($, on, (await readAll(store)).decisions[0]!)
+    expect(!!(await ui.find({ key: 'a' }))).toBe(hasRecommendation)
+    await ui.unmount()
+  })
+}

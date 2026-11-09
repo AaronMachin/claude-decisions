@@ -49,6 +49,8 @@ export type PaneView = {
   ring?: string
   /** 0-based page of a compact screen's rows (options, assumptions, ticks). */
   compactPage: number
+  /** Decision screen: `m` shows the whole context (dependencies, sources) instead of three lines. */
+  isContextOpen: boolean
 }
 
 declare module 'claude-code' {
