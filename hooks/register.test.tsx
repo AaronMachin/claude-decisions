@@ -823,3 +823,58 @@ test("sending answers only this session's ready decisions", async ($, on) => {
   expect(seen.submitted[0]).not.toContain('Decision d1')
   await other.unmount()
 })
+
+/** Columns a drawn element takes on the terminal, the engine's `k: ` in front of a hotkey Button included. */
+function drawnWidth(node: any): number {
+  if (node === null || node === undefined || typeof node === 'boolean') {
+    return 0
+  }
+  if (typeof node === 'string' || typeof node === 'number') {
+    return String(node).length
+  }
+  if (Array.isArray(node)) {
+    return node.reduce((n: number, child: any) => n + drawnWidth(child), 0)
+  }
+  const inner = (node.children ?? []).reduce((n: number, child: any) => n + drawnWidth(child), 0)
+
+  return inner + (node.type === 'Button' && node.props?.hotkey ? node.props.hotkey.length + 2 : 0)
+}
+
+test('compact at 90 columns: every key line fits the width as the engine draws it, highlighted or not', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...TWELVE })
+  const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  const lines = async () => (findBox(await ui.drawn(), props => props.key === 'hints')?.children ?? []).flat().map(drawnWidth)
+  for (const width of await lines()) {
+    expect(width).toBeLessThanOrEqual(89)
+  }
+  await ui.press({ key: 'digit:9' })
+  for (const width of await lines()) {
+    expect(width).toBeLessThanOrEqual(89)
+  }
+  expect(await ui.find({ key: 'opt:12' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('answering the last open decision on a tab leaves the list on that tab', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD, group: 'What to work on' })
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD, group: 'Storage choices' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'row:d2' })
+  await answer($, ui, 1)
+  expect(await ui.find({ key: 'row:d2' })).toBeDefined()
+  expect((await ui.find({ key: 'goto-waiting' }))?.text).toMatch(/1 waiting in What to work on/)
+  await ui.unmount()
+})
+
+test('an empty pane offers only h', async ($, on) => {
+  engine(on)
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.findAll({ type: 'Button' })).map(b => b.props.key)).toEqual(['h'])
+  await ui.unmount()
+})

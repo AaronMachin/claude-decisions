@@ -39,20 +39,32 @@ export type Hint = {
 
 const GAP = 2
 
+/**
+ * Columns a hint takes as drawn: the engine draws a hotkey Button as `k: label` (`k: ` even
+ * with no label), a hint without a hotkey is `k: label` by hand, or the label alone with no key.
+ */
 function hintWidth(hint: Hint, withLabel: boolean): number {
-  const key = hint.keyText === '' ? 0 : hint.keyText.length + 1
-  const label = withLabel && hint.label !== '' ? (key === 0 ? 0 : 1) + hint.label.length : 0
+  const label = withLabel ? hint.label : ''
+  const mark = (hint.mark ?? '').length
+  if (hint.onPress && hint.hotkey) {
+    return mark + hint.keyText.length + 2 + label.length + GAP
+  }
+  if (hint.keyText === '') {
+    return mark + (label === '' ? hint.label : label).length + GAP
+  }
 
-  return (hint.mark ?? '').length + key + label + GAP
+  return mark + hint.keyText.length + 1 + (label === '' ? 0 : 1 + label.length) + GAP
 }
 
 /** The hints split into lines of at most `width` columns. */
 export function hintRows(hints: Hint[], width: number, withLabel: boolean): Hint[][] {
   const rows: Hint[][] = []
+  // One column spare: a line that only just fits is wrapped by the terminal, not cut.
+  const room = width - 1
   let used = 0
   for (const hint of hints) {
     const cost = hintWidth(hint, withLabel)
-    if (rows.length === 0 || used + cost > width) {
+    if (rows.length === 0 || used + cost > room) {
       rows.push([hint])
       used = cost
     } else {

@@ -64,7 +64,7 @@ const BAND = {
   plugin: 'decisions',
   component: 'AbovePrompt',
   requestId: 'above-prompt',
-  props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 9 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 9 }, view: {} },
 } as const
 
 const PANE = {
