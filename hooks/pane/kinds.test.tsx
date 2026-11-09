@@ -4,7 +4,7 @@ import { readAll, readOne, write } from '../store'
 import type { Decision, StoreCtx } from '../store'
 import { addDecision } from '../tool'
 import { INITIAL_VIEW } from './decision'
-import { BatchView, FIXED_OPTIONS, batchRowText, batchRows, confirmMarks, fixedOptionsFor, liveMarks, markRest, markRow, nextUnanswered } from './kinds'
+import { BatchView, FIXED_OPTIONS, batchPage, batchRowText, batchRows, confirmMarks, fixedOptionsFor, liveMarks, markRest, markRow, nextUnanswered } from './kinds'
 
 function fakeStore(): StoreCtx {
   const files = new Map<string, string>()
@@ -157,4 +157,29 @@ test('the batch screen draws every row, the digit keys, r and b, and Confirm onl
   expect((await ui.find({ key: 'confirm' }))?.text).toBe('Confirm 2')
   expect((await ui.find({ key: 'batch:d4' }))?.text).toMatch(/wrong\?$/)
   await ui.unmount()
+})
+
+test('compact batch screen puts 1, 2, r and b under its heading and pages the rows with o', async ($, on) => {
+  const store = fakeStore()
+  await seedAssumptions(store)
+  const all = await seedAssumptions(store)
+  expect(all).toHaveLength(12)
+  let view = INITIAL_VIEW
+  on('ui.render', ($$, e) => BatchView($$, { ui: $$.ui.resolve(e), rows: all, view, width: 90, paneRows: 9, onChanged: () => {}, onLeave: () => {} }))
+  let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const keys = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.key))
+  expect(keys.slice(0, 5)).toEqual(['1', '2', 'r', 'o', 'b'])
+  expect(keys.filter(k => k.startsWith('batch:'))).toEqual(['batch:d1', 'batch:d2', 'batch:d3', 'batch:d4', 'batch:d5'])
+  await ui.unmount()
+  view = { ...INITIAL_VIEW, batchRow: 'd6' }
+  ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.findAll({ type: 'Button' })).map(b => String(b.props.key)).filter(k => k.startsWith('batch:'))[0]).toBe('batch:d6')
+  await ui.unmount()
+})
+
+test('the batch page follows the ringed row, else the page o moved to', () => {
+  const rows = Array.from({ length: 12 }, (_, i) => ({ id: `d${i + 1}` }) as Decision)
+  expect(batchPage(rows, 'd7', 5, 0)).toBe(1)
+  expect(batchPage(rows, undefined, 5, 2)).toBe(2)
+  expect(batchPage(rows, undefined, 5, 9)).toBe(2)
 })

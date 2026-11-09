@@ -124,7 +124,7 @@ test('adding a decision stores it, opens the pane unfocused and updates the stat
   expect(JSON.stringify(answer)).toContain('Added d1 to the pane. 1 open.')
   expect(seen.opened).toHaveLength(1)
   expect(seen.opened[0].focus).toBeUndefined()
-  expect(seen.statuses.at(-1)).toBe('Decisions: 1 open')
+  expect(seen.statuses.at(-1)).toBe('1 open')
 })
 
 test('a hidden pane stays hidden when Claude adds a decision, but the count still goes up', async ($, on) => {
@@ -136,7 +136,7 @@ test('a hidden pane stays hidden when Claude adds a decision, but the count stil
   expect(seen.closed).toHaveLength(1)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
   expect(seen.opened).toHaveLength(0)
-  expect(seen.statuses.at(-1)).toBe('Decisions: 1 open')
+  expect(seen.statuses.at(-1)).toBe('1 open')
 })
 
 test('a malformed add is denied with the reason', async ($, on) => {
@@ -208,8 +208,8 @@ test('enter on the first row opens the decision; a number highlights, the same n
   await ringOn($, 'opt:2')
   await ui.press({ key: 'opt:2' })
   expect(await ui.find({ key: 'row:d1' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'Answered (1)' })).toBeDefined()
-  expect(seen.statuses.at(-1)).toBe('Decisions: 0 open · 1 ready')
+  expect(await ui.find({ type: 'Text', text: 'Answered  1' })).toBeDefined()
+  expect(seen.statuses.at(-1)).toBe('0 open · 1 ready')
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/✓ Per package chosen/)
   expect((await ui.find({ key: 'line:1' }))?.text).not.toMatch(/✓/)
@@ -238,7 +238,7 @@ test('send: nothing is submitted until confirm, and only ticked answers go', asy
   expect(seen.submitted).toHaveLength(1)
   expect(seen.submitted[0]).toContain('Decision d2')
   expect(seen.submitted[0]).not.toContain('Decision d1')
-  expect(seen.statuses.at(-1)).toBe('Decisions: 0 open · 1 ready')
+  expect(seen.statuses.at(-1)).toBe('0 open · 1 ready')
   await ui.unmount()
 })
 
@@ -257,7 +257,7 @@ test('a parked draft survives hiding the pane, and an empty enter cancels', asyn
   expect(await ui.find({ key: 'park' })).toBeUndefined()
   await ui.press({ key: 'p' })
   await ui.input({ key: 'park', text: 'waiting on design' })
-  expect(await ui.find({ type: 'Text', text: 'Parked (1)' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Parked  1' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -284,12 +284,12 @@ test('p on a parked decision puts it back to open, through the pane', async ($, 
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'p' })
   await ui.input({ key: 'park', text: 'later' })
-  expect(seen.statuses.at(-1)).toBe('Decisions: 0 open · 1 parked')
+  expect(seen.statuses.at(-1)).toBe('0 open · 1 parked')
   await ui.press({ key: 't' })
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'p' }))?.text).toMatch(/unpark/)
   await ui.press({ key: 'p' })
-  expect(seen.statuses.at(-1)).toBe('Decisions: 1 open')
+  expect(seen.statuses.at(-1)).toBe('1 open')
   await ui.unmount()
 })
 
@@ -331,7 +331,7 @@ test('a send that fails shows its notice in the pane and the answers are ready a
   for (let i = 0; i < 20; i++) {
     await Promise.resolve()
   }
-  expect(seen.statuses.at(-1)).toBe('Decisions: 0 open · 1 ready')
+  expect(seen.statuses.at(-1)).toBe('0 open · 1 ready')
   expect(await ui.find({ type: 'Text', text: /not sent/ })).toBeDefined()
   await ui.unmount()
 })
@@ -665,7 +665,7 @@ test('compact: a digit for an option on another page draws its page and highligh
   expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
   await ringOn($, 'opt:9')
   await ui.press({ key: 'opt:9' })
-  expect(await ui.find({ type: 'Text', text: 'Answered (1)' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Answered  1' })).toBeDefined()
   await ui.unmount()
 })
 

@@ -1,9 +1,9 @@
 import type { PaneView } from '../../types'
 import { notePaneFocus } from '../band'
-import { focusKeyName } from '../focus-key'
 import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
-import { DecisionView, INITIAL_VIEW, PANE_ID, focusTo, readView, setView } from './decision'
+import { DecisionView, INITIAL_VIEW, PANE_ID, focusTo, keysOffLines, readView, setView } from './decision'
+import { Header, isCompact } from './look'
 import { ThreadView } from './thread'
 import { ListView, ReviewView, activeTab, openReview, statusText, tabsFor, truncate } from './list'
 import { BatchView, batchRows } from './kinds'
@@ -97,20 +97,17 @@ async function confirm($: any, ids: string[]): Promise<void> {
   })
 }
 
-function header(ui: any, width: number, isFocused: boolean, crumb?: string): any {
+function header(ui: any, width: number, isFocused: boolean, crumb: string | undefined, rows: number): any {
   const { Box, Text } = ui
-  const state = isFocused ? 'keys on' : 'keys off'
-  const pad = Math.max(1, width - 'Decisions'.length - state.length)
 
   return (
-    <Box flexDirection="column">
-      <Box>
-        <Text bold>Decisions</Text>
-        <Text>{' '.repeat(pad)}</Text>
-        {isFocused ? <Text bold>{state}</Text> : <Text dimColor>{state}</Text>}
-      </Box>
-      {isFocused ? null : <Text dimColor>{`Press the pane focus key (${focusKeyName()} unless you moved it) to use it with a draft kept, or run /decisions with an empty prompt.`}</Text>}
-      {crumb ? <Text dimColor>{truncate(crumb, width)}</Text> : null}
+    <Box key="top" flexDirection="column">
+      {Header(ui, 'Decisions', isFocused, crumb, width)}
+      {(isFocused ? [] : keysOffLines(width, isCompact(rows))).map((line, index) => (
+        <Text key={`keys-off:${index}`} dimColor>
+          {line}
+        </Text>
+      ))}
     </Box>
   )
 }
@@ -132,15 +129,16 @@ export async function renderPane($: any, e: any): Promise<any> {
     onSend: () => void setView($, v => openReview(v, ready.map(d => d.id))),
     onHide: () => void hidePane($),
   }
-  const top = header(ui, width, e.props.isFocused === true)
+  const rows: number = e.props.scroll?.bodyRows ?? 30
+  const top = header(ui, width, e.props.isFocused === true, undefined, rows)
   const decision = view.screen === 'decision' || view.screen === 'thread' ? decisions.find(d => d.id === view.decisionId) : undefined
 
   if (decision && view.screen === 'thread') {
-    const crumb = `${decision.group ?? 'Other'} > ${decision.id} > ${view.revisionIndex === undefined ? 'discussion' : 'earlier version'}`
+    const crumb = `${decision.group ?? 'Other'} › ${decision.id} › ${view.revisionIndex === undefined ? 'discussion' : 'earlier version'}`
 
     return (
       <Box flexDirection="column">
-        {header(ui, width, e.props.isFocused === true, crumb)}
+        {header(ui, width, e.props.isFocused === true, crumb, rows)}
         {ThreadView($, {
           ...common,
           d: decision,
@@ -167,12 +165,12 @@ export async function renderPane($: any, e: any): Promise<any> {
   }
   if (view.screen === 'batch') {
     const batchTab = activeTab(tabs, view)
-    const rows = batchRows(batchTab?.decisions ?? [])
+    const batchList = batchRows(batchTab?.decisions ?? [])
 
     return (
       <Box flexDirection="column">
-        {header(ui, width, e.props.isFocused === true, `${batchTab?.label ?? 'Other'} > assumptions`)}
-        {BatchView($, { ...common, rows, view, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
+        {header(ui, width, e.props.isFocused === true, `${batchTab?.label ?? 'Other'} › assumptions`, rows)}
+        {BatchView($, { ...common, rows: batchList, paneRows: rows, view, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
       </Box>
     )
   }
@@ -180,7 +178,7 @@ export async function renderPane($: any, e: any): Promise<any> {
     return (
       <Box flexDirection="column">
         {top}
-        {ReviewView($, { ...common, ready, view, onConfirm: ids => void confirm($, ids), onLeave: () => leaveToList($) })}
+        {ReviewView($, { ...common, ready, view, rows, onConfirm: ids => void confirm($, ids), onLeave: () => leaveToList($) })}
       </Box>
     )
   }

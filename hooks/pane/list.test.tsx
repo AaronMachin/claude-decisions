@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import type { PaneView } from '../../types'
 import type { Decision } from '../store'
 import { REVIEW_47 } from './review-47'
 import { movePage, pageSize } from './sections'
@@ -64,8 +65,8 @@ test('the status line counts open and ready, and clears when nothing is left', (
   counter = 0
   expect(statusText([])).toBeUndefined()
   expect(statusText([make({ state: 'sent' })])).toBeUndefined()
-  expect(statusText([make(), make(), make({ state: 'ready' })])).toBe('Decisions: 2 open · 1 ready')
-  expect(statusText([make({ state: 'parked' })])).toBe('Decisions: 0 open · 1 parked')
+  expect(statusText([make(), make(), make({ state: 'ready' })])).toBe('2 open · 1 ready')
+  expect(statusText([make({ state: 'parked' })])).toBe('0 open · 1 parked')
   expect(counts([make(), make({ state: 'live' })]).open).toBe(2)
 })
 
@@ -121,8 +122,8 @@ test('the list draws tabs and rows; the first row is on the ring so enter alone 
     expect(keys).toEqual(['tab:g:Config file plan', 'tab:g:Sharing links', 'row:d1', 'row:d2', 'row:d3', 't', 's', 'h'])
     expect((await ui.find({ key: 'row:d1' }))?.props.autoFocus).toBe(true)
     expect((await ui.find({ key: 'row:d2' }))?.props.autoFocus).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: 'Needs you (2)' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'Answered (1)' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Needs you  2' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Answered  1' })).toBeDefined()
     await ui.unmount()
   }
 })
@@ -210,34 +211,34 @@ test('folded sections show a heading with a count and no rows; Needs you stays o
   const ui = await drawList($, on, bigReview())
   const keys = await keysOf(ui)
   expect(keys).toEqual(['row:d1', 'row:d2', 'section:claudes-call', 'section:already-decided', 't', 'h'])
-  expect(await ui.find({ type: 'Text', text: 'Needs you (2)' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: "▸ Claude's call (9)" })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '▸ Already decided (3)' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Needs you  2' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: "▸ Claude's call  9" })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ Already decided  3' })).toBeDefined()
   await ui.unmount()
 })
 
 test('Needs you shows with a count of 0, and the first heading takes the ring when nothing waits', async ($, on) => {
   counter = 0
   const ui = await drawList($, on, [make({ section: 'claudes-call' })])
-  expect(await ui.find({ type: 'Text', text: 'Needs you (0)' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Needs you  0' })).toBeDefined()
   expect((await ui.find({ key: 'section:claudes-call' }))?.props.autoFocus).toBe(true)
   await ui.unmount()
 })
 
 test('an open section shows one page of rows with n, and o appears on the next page', async ($, on) => {
   const all = bigReview()
-  let ui = await drawList($, on, all, { ...INITIAL_VIEW, openSection: 'claudes-call' }, 16)
+  let ui = await drawList($, on, all, { ...INITIAL_VIEW, openSection: 'claudes-call' }, 19)
   let keys = await keysOf(ui)
   expect(keys.filter((k: string) => k.startsWith('row:'))).toEqual(['row:d1', 'row:d2', 'row:d3', 'row:d4', 'row:d5', 'row:d6', 'row:d7'])
   expect(keys).toContain('n')
   expect(keys).not.toContain('o')
-  expect(await ui.find({ type: 'Text', text: "▾ Claude's call (9)" })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: "▾ Claude's call  9" })).toBeDefined()
   await ui.unmount()
 })
 
 test('the next page has o and, at the end, no n', async ($, on) => {
   const all = bigReview()
-  const ui = await drawList($, on, all, { ...INITIAL_VIEW, openSection: 'claudes-call', sectionPage: 1 }, 16)
+  const ui = await drawList($, on, all, { ...INITIAL_VIEW, openSection: 'claudes-call', sectionPage: 1 }, 19)
   const keys = await keysOf(ui)
   expect(keys.filter((k: string) => k.startsWith('row:'))).toEqual(['row:d1', 'row:d2', 'row:d8', 'row:d9', 'row:d10', 'row:d11'])
   expect(keys).toContain('o')
@@ -263,7 +264,7 @@ test('the Parked tab has no Needs you heading and the second line is drawn', asy
   counter = 0
   const ui = await drawList($, on, [make({ state: 'parked', parkedReason: 'later' })], { ...INITIAL_VIEW, tab: 'parked' })
   expect(await ui.find({ type: 'Text', text: /Needs you/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: 'Parked (1)' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Parked  1' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Config file plan · later/ })).toBeDefined()
   await ui.unmount()
 })
@@ -309,14 +310,14 @@ test('30 findings for the person in a short pane are paged, the key row stays in
   const tabs = tabsFor(thirty)
   let view = INITIAL_VIEW
   on('ui.render', ($$: any, e: any) =>
-    ListView($$, { ui: $$.ui.resolve(e), tabs, view, width: 49, rows: 20, readyCount: 0, unreadable: 0, onSend: () => {}, onHide: () => {} }),
+    ListView($$, { ui: $$.ui.resolve(e), tabs, view, width: 49, rows: 23, readyCount: 0, unreadable: 0, onSend: () => {}, onHide: () => {} }),
   )
   const seen = new Set<string>()
   for (let step = 0; step < 10; step++) {
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
     const keys = await keysOf(ui)
     const rows = keys.filter((k: string) => k.startsWith('row:'))
-    expect(rows.length).toBeLessThanOrEqual(20 - 9)
+    expect(rows.length).toBeLessThanOrEqual(23 - 12)
     expect(keys).toContain('t')
     expect(keys).toContain('h')
     rows.forEach((k: string) => seen.add(k))
@@ -324,7 +325,7 @@ test('30 findings for the person in a short pane are paged, the key row stays in
     if (!keys.includes('n')) {
       break
     }
-    view = movePage(view, 1, 30, pageSize(20, 13))
+    view = movePage(view, 1, 30, pageSize(23, 16))
   }
   expect(seen.size).toBe(30)
   expect(seen.has('row:d30')).toBe(true)
@@ -358,4 +359,112 @@ test('a list row drops its meta before cutting the title', () => {
 test('a list row keeps its meta when the title fits beside it', () => {
   const short = make({ title: 'Units' })
   expect(rowText(short, 80)).toContain('2 options · open')
+})
+
+/** Rows a drawn tree takes on the terminal: a column stacks its children, a row is as tall as its tallest, a border adds two. */
+function lineCount(node: any): number {
+  if (node === null || node === undefined || node === '' || typeof node === 'boolean') {
+    return 0
+  }
+  if (typeof node === 'string' || typeof node === 'number') {
+    return 1
+  }
+  if (Array.isArray(node)) {
+    return node.reduce((n: number, child: any) => n + lineCount(child), 0)
+  }
+  if (node.type !== 'Box') {
+    return 1
+  }
+  const children: any[] = (node.children ?? []).flat()
+  const inner =
+    node.props?.flexDirection === 'column'
+      ? children.reduce((n: number, child: any) => n + lineCount(child), 0)
+      : Math.max(0, ...children.map((child: any) => lineCount(child)))
+
+  return inner + (node.props?.borderStyle ? 2 : 0)
+}
+
+async function drawFocused($: any, on: any, all: Decision[], view: PaneView, rows: number, width = 90) {
+  const tabs = tabsFor(all)
+  on('ui.render', ($$: any, e: any) =>
+    ListView($$, { ui: $$.ui.resolve(e), tabs, view, width, rows, isFocused: true, readyCount: 0, unreadable: 0, onSend: () => {}, onHide: () => {} }),
+  )
+
+  return $.ui.mount({ ...PANE, surface: 'terminal' })
+}
+
+test('tabs are chips, the open one on a claude background', async ($, on) => {
+  counter = 0
+  const ui = await drawList($, on, [make(), make({ group: 'Sharing links' })])
+  const open = (await ui.find({ key: 'tab:g:Config file plan' }))!
+  const other = (await ui.find({ key: 'tab:g:Sharing links' }))!
+  expect(JSON.stringify(open)).toContain('"backgroundColor":"claude"')
+  expect(JSON.stringify(other)).not.toContain('"backgroundColor":"claude"')
+  expect(open.text).toMatch(/^ Config file p… /)
+  await ui.unmount()
+})
+
+test('section headings are bold with a dim count; folded ones are dim with ▸', async ($, on) => {
+  const ui = await drawList($, on, bigReview())
+  const heading = (await ui.find({ type: 'Text', text: 'Needs you  2' }))!
+  expect(JSON.stringify(heading)).toMatch(/"bold":true.*"Needs you"/)
+  expect(JSON.stringify(heading)).toMatch(/"dimColor":true.*"  2"/)
+  expect((await ui.find({ type: 'Text', text: "▸ Claude's call  9" }))?.props.dimColor).toBe(true)
+  await ui.unmount()
+})
+
+test('rules sit between the header and tabs, the tabs and sections, and the sections and keys', async ($, on) => {
+  counter = 0
+  const ui = await drawList($, on, [make()])
+  const rules = (await ui.findAll({ type: 'Text' })).filter((t: any) => /^─+$/.test(t.text))
+  expect(rules).toHaveLength(3)
+  await ui.unmount()
+})
+
+test('the ringed row is a card on a tall pane', async ($, on) => {
+  counter = 0
+  const ui = await drawFocused($, on, [make(), make()], { ...INITIAL_VIEW, ring: 'row:d2' }, 30)
+  const card = await ui.find({ key: 'box:d2' })
+  expect(card?.props.borderStyle).toBe('round')
+  expect(card?.props.borderColor).toBe('claude')
+  expect((await ui.find({ key: 'box:d1' }))?.props.borderStyle).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the ringed row is tinted with › and no border on a 9-row pane', async ($, on) => {
+  counter = 0
+  const ui = await drawFocused($, on, [make(), make()], { ...INITIAL_VIEW, ring: 'row:d2' }, 9)
+  expect((await ui.find({ key: 'box:d2' }))?.props.borderStyle).toBeUndefined()
+  expect((await ui.find({ key: 'row:d2' }))?.text).toMatch(/^› d2/)
+  expect(JSON.stringify(await ui.find({ key: 'row:d2' }))).toContain('"color":"claude"')
+  await ui.unmount()
+})
+
+test('30 findings on a 9-row pane fit, with the key row in', async ($, on) => {
+  counter = 0
+  const thirty = Array.from({ length: 30 }, () => make({ kind: 'finding' }))
+  const ui = await drawFocused($, on, thirty, { ...INITIAL_VIEW, ring: 'row:d1' }, 9)
+  // The pane's own header takes one more row above the list.
+  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(8)
+  expect(await ui.find({ key: 't' })).toBeDefined()
+  expect(await ui.find({ key: 'n' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('compact Send screen puts its key hints under the heading and pages the ticks with o', async ($, on) => {
+  counter = 0
+  const ready = Array.from({ length: 9 }, () => make({ state: 'ready', answer: { option: 1, answeredAt: 't' } }))
+  let view = openReview({ ...INITIAL_VIEW }, ready.map(d => d.id))
+  on('ui.render', ($$, e) => ReviewView($$, { ui: $$.ui.resolve(e), ready, view, width: 90, rows: 9, onConfirm: () => {}, onLeave: () => {} }))
+  let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const keys = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.key))
+  expect(keys.slice(0, 3)).toEqual(['o', 'b', 'confirm'])
+  expect((await ui.find({ key: 'confirm' }))?.props.hotkey).toBe('c')
+  expect(keys.filter(k => k.startsWith('tick:'))).toHaveLength(6)
+  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(8)
+  await ui.unmount()
+  view = { ...view, compactPage: 1 }
+  ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.findAll({ type: 'Button' })).map(b => String(b.props.key)).filter(k => k.startsWith('tick:'))).toEqual(['tick:d7', 'tick:d8', 'tick:d9'])
+  await ui.unmount()
 })

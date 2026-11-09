@@ -3,6 +3,7 @@ import { RUN, askMain, askQuestion, currentMode, markAnswered, resendToFork } fr
 import type { Decision, ThreadEntry } from '../store'
 import { PANE_ID, focusLater, focusTo, setView } from './decision'
 import { truncate } from './list'
+import { Rule } from './look'
 
 const WHO: Record<ThreadEntry['who'], string> = { person: 'you', claude: 'Claude', fork: 'Fork', quick: 'Quick model' }
 const MODE_NAME = { main: 'main session', fork: 'fork', quick: 'quick model' } as const
@@ -161,7 +162,7 @@ function EarlierVersion($: any, props: Props, index: number): any {
     <Box flexDirection="column">
       <Text dimColor>{`Before: ${revision.summary}`}</Text>
       <Text dimColor>{`(${when(revision.at)})`}</Text>
-      <Text dimColor>{'-'.repeat(Math.max(1, width))}</Text>
+      {Rule(ui, width)}
       <Text bold>{before.title}</Text>
       <Text> </Text>
       <Text>{before.scenario}</Text>
@@ -180,7 +181,7 @@ function EarlierVersion($: any, props: Props, index: number): any {
         </Box>
       ))}
       {before.recommendation ? <Text>{`Why ${before.recommendation.option}: ${before.recommendation.reason}`}</Text> : null}
-      <Text dimColor>{'-'.repeat(Math.max(1, width))}</Text>
+      {Rule(ui, width)}
       <Button key="b" hotkey="b" plain onPress={() => goBack($, view)}>
         {'back to the discussion'}
       </Button>
@@ -219,7 +220,7 @@ export function ThreadView($: any, props: Props): any {
     <Box flexDirection="column">
       <Text bold>{d.title}</Text>
       <Text dimColor>{STATE_TEXT[d.state] ?? d.state}</Text>
-      <Text dimColor>{'-'.repeat(Math.max(1, width))}</Text>
+      {Rule(ui, width)}
       {olderHidden > 0 ? <Text dimColor>{`${olderHidden} earlier ${olderHidden === 1 ? 'entry' : 'entries'} · o`}</Text> : null}
       {shown.map(e =>
         e.revision !== undefined ? (
@@ -244,7 +245,7 @@ export function ThreadView($: any, props: Props): any {
       {d.thread.length === 0 ? <Text dimColor>No discussion yet. Ask a question below.</Text> : null}
       {newerHidden > 0 ? <Text dimColor>{`${newerHidden} newer ${newerHidden === 1 ? 'entry' : 'entries'} · n`}</Text> : null}
       {view.notice ? <Text dimColor>{view.notice}</Text> : null}
-      <Text dimColor>{'-'.repeat(Math.max(1, width))}</Text>
+      {Rule(ui, width)}
       <Text dimColor>{`Replies from: ${MODE_NAME[currentMode()]}`}</Text>
       {view.isAsking ? (
         <Input
@@ -284,7 +285,7 @@ export function ThreadView($: any, props: Props): any {
           Mark answered
         </Button>
       ) : null}
-      <Text dimColor>{'-'.repeat(Math.max(1, width))}</Text>
+      {Rule(ui, width)}
       {view.isAsking ? null : (
         <Box flexDirection="column">
           <Box>
