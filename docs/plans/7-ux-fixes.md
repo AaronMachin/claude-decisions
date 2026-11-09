@@ -98,45 +98,50 @@
 - [ ] **Step 4: Run** tests, validate, tsc.
 - [ ] **Step 5: Commit** "Say enter on the assumptions row and drop the meta before cutting a title", push.
 
-## Task 4: the compact decision screen
+## Task 4: the decision screen's new look (row 170), compact below 14 rows
 
-**Files:** Modify `hooks/pane/decision.tsx`, `hooks/pane/render.tsx` (pass `rows: e.props.scroll?.bodyRows ?? 30` and `isFocused` to `DecisionView`); test `hooks/pane/decision.test.tsx`, `hooks/register.test.tsx`.
+Revised after Aaron chose the pane's look (row 170); replaces the first version of tasks 4 and 5.
 
-**Interfaces:**
-- Consumes: `focusTo`, `ringMark`, `compactPage` (task 2), `focusKeyName` (task 1).
-- Produces: `COMPACT_BELOW = 14`; `isCompact(rows: number): boolean`; `optionsPerPage(rows: number, isFocused: boolean): number` (rows minus 5 fixed lines, minus 1 more with the keys off, at least 1); `pageFor(highlight: number | undefined, page: number, perPage: number, count: number): number` (the page holding the highlight when there is one, else `page` wrapped into range); `keyLine(d: Decision, width: number, hasMore: boolean, readyCount: number, page: number, perPage: number): string`-shaped labels for the key Buttons (words dropped to bare letters when the full line is wider than `width`); `pressDigit` gains an optional `onHighlight?: (option: number) => Promise<unknown>` run after the state is written and before `$.ui.focus`.
-
-- [ ] **Step 1: Write the failing tests** (12 options with `changes`, recommendation 10, `rows: 9`, focused, width 90):
-  - `compact draws the key line directly under the title`: the tree's order is header Text, title Text, then the digit Buttons `digit:1`..`digit:0`, then `a`, `o`, `b`, `p`, `h`, then options.
-  - `compact draws 4 options on one line each, and o shows the next 4`: `opt:1`..`opt:4` present, `opt:5` absent, no description Text; press `o`: `opt:5`..`opt:8` present, `opt:1` absent, `ui.focus` asked for `discuss`; press `o` twice more: back to `opt:1`.
-  - `a number key reaches option 9 by moving the page first`: press `digit:9`: `opt:9` drawn and `ui.focus` asked for `opt:9` after it; `changes 9` drawn under it.
-  - `1 then 1 lands on option 11's page` (pressDigit with times 100 ms apart).
-  - `a number past the last option moves nothing`: 4-option decision, `9`: page and highlight unchanged.
-  - `no recommendation, no changes`: key line has no `a`; the line under the title is the scenario; the tree's line count is at most 9.
-  - `keys off adds the keys-off line and one fewer option`: unfocused, `rows: 9`: 3 options, Text `keys off · ctrl+x tab to use, your draft stays`.
-  - `at 30 rows the tall layout is unchanged`: the existing DecisionView tests pass with `rows: 30`.
-- [ ] **Step 2: Run**, see them fail.
-- [ ] **Step 3: Implement** a `CompactDecision` branch in `DecisionView` when `isCompact(rows)`, per the spec's mock-up; the header line joins the crumb (`render.tsx` passes the crumb and skips its own header for this branch). The description under the highlighted option is its `changes`, plus ` · why: <reason>` on the recommended one. Digits, `a` and `o` go through `setView` (highlight or `compactPage`) before `focusTo`.
-- [ ] **Step 4: Run** tests, validate, tsc.
-- [ ] **Step 5: Commit** "Draw a compact decision screen below 14 rows so every number key works", push.
-
-## Task 5: compact Send and batch screens
-
-**Files:** Modify `hooks/pane/list.tsx` (`ReviewView`), `hooks/pane/kinds.tsx` (`BatchView`), `hooks/pane/render.tsx` (pass `rows`); tests `hooks/pane/list.test.tsx`, `hooks/pane/kinds.test.tsx`.
+**Files:** Modify `hooks/pane/decision.tsx`, `hooks/pane/render.tsx` (pass `rows` and the crumb; the decision screen draws its own header), new `hooks/pane/look.tsx` (shared pieces); tests `hooks/pane/decision.test.tsx`, `hooks/pane/look.test.tsx`, `hooks/register.test.tsx`.
 
 **Interfaces:**
-- Consumes: `isCompact`, `compactPage`, `focusTo`, `ringMark`.
-- Produces: `rowsPerPage(rows: number, fixed: number): number`. Send screen compact fixed lines: header, heading, key line (`b`, `c`, and `o more` when the rows don't fit), the hint Text (4); each tick row is one line in compact (the chosen answer's second line is dropped). Batch compact fixed lines: header, heading, key line (`1 2 r b`, and `o more`), Confirm line (4). Both take one more fixed line with the keys off.
+- Consumes: `focusTo`, `ringMark`, `compactPage`, `ring` (task 2), `focusKeyName` (task 1).
+- Produces, in `look.tsx`: `COMPACT_BELOW = 14`; `isCompact(rows: number): boolean`; `Rule(ui, width)` (`─` repeated, `color="subtle"`); `Chip(ui, key: string, label: string)` (children: key in inverse, label dim); `KeyHints(ui, chips: Chip[], width)` (wraps to at most two lines; past that the labels go and the keys stay); `Header(ui, title, state: 'keys on' | 'keys off', crumb, width)` (title bold, cut so the state fits on the same line, crumb dim under it); `Card(ui, isCompact, children)` (rounded border in `claude`; compact: no border, the row tinted and starting `›`); `capLines(text, width, lines): { text, isCut }`.
+- In `decision.tsx`: option Buttons carry `hotkey` (1-9, `0` for 10). Pressing one: when the ring is already on it, it is confirmed (that is also how `enter` arrives); otherwise the digit goes through `highlightFor` (so `1` then `2` is 12), the highlight and `compactPage` are set, then `focusTo`. Options 11 and 12 have no key of their own: `1` then `2` reaches 12, 11 is reached with the arrows (a second `1` lands on the ringed option 1 and confirms it). `m` toggles `isContextOpen` (new `PaneView` field, shape `view-5`).
 
-- [ ] **Step 1: Write the failing tests** (`rows: 9`):
-  - `compact Send screen puts the key line under its heading`: with 6 ready, order is `Send answers`, the "Enter ticks or unticks a row, c sends." Text, then `tick:` rows; at most 5 tick rows; `o` shows the rest.
-  - `compact batch screen puts 1, 2, r, b under its heading`: 8 assumptions: order is heading, `1`, `2`, `r`, `b`, then `batch:` rows, at most 5; `o` shows the next rows and moves the ring to the first unanswered one drawn.
-  - `confirming the last row on a page moves to the page holding the next unanswered row` (via `batchRow` set before `focusTo`).
-  - At `rows: 30` both screens keep their current order (existing tests pass).
+- [ ] **Step 1: Write the failing tests:**
+  - `the header is the title in bold with keys on at the right, then the crumb`: first Text bold is the title, `keys on` on the same Box, the next Text is `Config file plan › d1 · open · Claude recommends 1`.
+  - `options carry their own number keys and there is no digit row`: `opt:1` has `hotkey: '1'`, `opt:10` has `'0'`, `opt:11` none; no `digit:` keys.
+  - `a number highlights, the same number or enter confirms`: press `opt:2` with the ring on Discuss: still on the decision, `ui.focus` asked for `opt:2`; record the ring on `opt:2`, press `opt:2`: answered, back on the list.
+  - `the highlighted option is a card holding its description and why`: ring on `opt:1` (recommended): a Box with `borderStyle: 'round'`, `borderColor: 'claude'` holds `opt:1`, its `changes` and `Why: ...`; `opt:2` has no description Text.
+  - `context is capped at 3 lines with m more; m shows the rest and the sources`.
+  - `rules sit between header, context, options and key hints` (4 rules at 30 rows).
+  - Compact (`rows: 9`, 12 options, width 90): no bordered Box; the ringed option row starts `›`; context one line; the tree's line count is at most 9; `o` pages the options and puts the ring on Discuss; a digit for option 9 moves to its page first.
+  - `Discuss is drawn as a key hint and keeps the ring at the start`.
 - [ ] **Step 2: Run**, see them fail.
-- [ ] **Step 3: Implement** both compact branches; the page follows `batchRow` on the batch screen the way it follows the highlight on the decision screen. Add a decisions row for the batch screen (approved by the controlling session, replaces spec open point 2) in this commit.
+- [ ] **Step 3: Implement.** Compact context is one line (row 171). Under 14 rows the rules are drawn only while the options still fit without paging.
 - [ ] **Step 4: Run** tests, validate, tsc.
-- [ ] **Step 5: Commit** "Make the Send and assumptions screens compact on short panes", push.
+- [ ] **Step 5: Commit** "Give the decision screen Aaron's chosen look, compact below 14 rows", push.
+
+## Task 5: the list's new look, compact Send and batch screens, the status line
+
+**Files:** Modify `hooks/pane/list.tsx`, `hooks/pane/kinds.tsx`, `hooks/pane/render.tsx`, `hooks/pane/sections.tsx` (row budgets); tests beside them and `hooks/register.test.tsx`.
+
+**Interfaces:**
+- Consumes: everything in `look.tsx` (task 4).
+- Produces: `statusText` returns `1 open · 1 ready` (the engine already puts the mod's name in front, so "decisions: Decisions: 1 open" loses its second name).
+
+- [ ] **Step 1: Write the failing tests:**
+  - `tabs are chips, the open one on a claude background`.
+  - `section headings are bold with a dim count; folded ones are dim with ▸`.
+  - `the ringed row is a card` (tall) and `a tinted row with ›` (rows 9).
+  - `rules between header and tabs, sections and keys`, and the 47-finding and 30-finding paging tests still keep the key row in view at their row counts.
+  - `compact Send screen puts its key hints under the heading and pages the ticks with o`; `compact batch screen puts 1, 2, r, b under its heading and pages with o; the ring follows to the next unanswered row's page`.
+  - `the status line does not repeat the name`: `1 open`.
+- [ ] **Step 2: Run**, see them fail.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run** tests, validate, tsc.
+- [ ] **Step 5: Commit** "Give the list Aaron's chosen look and make the Send and assumptions screens compact", push.
 
 ## Task 6: README and design
 
@@ -150,8 +155,9 @@
 
 Pantry scratch project from `demo/make-pantry.sh --seed` in a `mktemp -d` folder, tmux, `claude --plugin-dir <repo> --model sonnet`. At most 3 sessions, each ended once its question is answered.
 
+- [ ] **Session 0** (done, 120x40, probe mod): a Button's own digit key presses it without moving the ring.
 - [ ] **Session 1** (90x35, `CLAUDE_CODE_NO_FLICKER=1`): `/decisions` on an empty prompt, `esc`, type a draft, check the band; `ctrl+x tab`: does the pane get the keys and is the draft intact? Then `bodyRows` (a temporary `$.ui.log` is not committed; read it from the pane's line count instead), `›` against the reverse video, Up from the first row, a mouse click on a tab (tmux `send-keys -M` is unreliable; if it can't be done, say so), and a number key on the 12-option decision. If the band takes the focus key: change both band wordings to "then enter", give the placed case the Button too, add a row, and log a `question` (decision 157's text). If a tab click stops working: tabs become Text, row added.
-- [ ] **Session 2** (150x40, `CLAUDE_CODE_NO_FLICKER=0`): `bodyRows`; `9` then enter on the 12-option decision answers it; `o`; the batch screen and the Send screen keep their key lines in view. If either session's `bodyRows` is 12 or more, a new row moves the threshold.
+- [ ] **Session 2** (130x40 fullscreen, docked, then 150x40 `CLAUDE_CODE_NO_FLICKER=0`): the look at 120+ columns, described in the report;: `bodyRows`; `9` then enter on the 12-option decision answers it; `o`; the batch screen and the Send screen keep their key lines in view. If either session's `bodyRows` is 12 or more, a new row moves the threshold.
 - [ ] **Session 3:** only for what 1 or 2 changed.
 - [ ] Each fix found is its own commit with a test, pushed. Record what was sent, what was seen, how long and how many turns in the status entry.
 
