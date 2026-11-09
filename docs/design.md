@@ -25,7 +25,7 @@ Evidence from 147 of my own Claude Code sessions (15 Sep to 6 Nov 2026, counts r
 - Every decision has the same structure, so reading the tenth is as easy as reading the first.
 - Each decision has its own live discussion. A question on decision 1 gets an answer on decision 1 straight away, and the discussion can change the decision (add an option, move the recommendation), not just end in yes or no.
 - Claude keeps working on whatever doesn't depend on an open decision.
-- Decisions are never lost: they survive compaction, `/clear` and new sessions.
+- Decisions are never lost: they survive compaction, `/clear` and new sessions (kept on disk; since 10 November the pane shows only the current session's, decision 192).
 - It looks and behaves like part of Claude Code, and never takes window focus.
 - The user experience is tested for whether it's intuitive, not just whether it works.
 - Released as a public repository on Aaron's GitHub (AaronMachin) with quick install steps and GIFs.
@@ -75,7 +75,7 @@ Choosing is two steps (Aaron, 6 November). Typing a number highlights that optio
 
 Every kind can be parked with a reason (`p`). A message in the discussion only discusses; it never answers the decision. Once the discussion has settled it, `d` (done) marks the decision answered, and Claude gets the answer together with the whole discussion. On the assumptions batch, `r` marks the rest right. Both are confirmed with `enter`.
 
-To check first in the build: the mod API presses a Button the moment its one-digit hotkey is pressed, so the digits have to move a highlight (`$.ui.focus`) rather than choose, with `enter` pressing the highlighted option. The API reads as allowing this; it hasn't been tried in a real session. Things the person has to do themselves (sign in, run a command) are not decisions and sit in a separate "For you to do" group.
+Since 10 November (decision 170) each option row carries its own number key: pressed with the ring elsewhere it highlights that option, pressed again (or `enter`) on the highlighted option it answers. Options that don't all fit are paged with `o`, and the numbers of options on other pages stay in the key line, so every number works on a 9-row pane (decisions 172, 179). Things the person has to do themselves (sign in, run a command) are not decisions and sit in a separate "For you to do" group.
 
 ### States
 
@@ -100,6 +100,8 @@ One record per decision, grouped by the piece of work it belongs to (a ticket, a
 - `revisions`: what changed and when
 
 Decisions belong to the project, not the session. **(my call)** The project is the repository, shared by all its git worktrees, so a decision made in a worktree shows from the main checkout too. They are stored as files outside the repository, under `~/.claude/decisions/<project>/`, one JSON file per decision, so they're readable by any tool and never committed by accident. The mod's tool definition defines the schema.
+
+Since 10 November each decision also records the session that added it, and the pane shows only the current session's (Aaron, decision 192). The files still live per repository; a decision from before `/clear` is reached by resuming that session.
 
 ### What Claude does (taught by the mod's instructions and tool)
 
@@ -138,6 +140,12 @@ This gets tested like the rest of the experience: replay sessions that produced 
 - **(my call)** A pane the person hid (`h` or `ctrl+x x`) stays hidden when Claude adds decisions. The status line count goes up, and `ctrl+q` / `/decisions` brings it back.
 - **One row of tabs, sections inside (Aaron, 6 November, after the prototype test).** Each tab is where decisions came from (a ticket's work, a PR review, Parked). Inside a tab, "Needs you" is open at the top, with "Claude's call" and "Already decided" as folded headings with counts beneath. Nothing needing the person is hidden behind a filter. In the prototype test the old two rows of tabs weren't seen as tabs, and their purpose wasn't clear.
 - Screens: the list, one decision with its discussion, assumptions batch, findings triage with "needs you" open at the top, and the main-screen layout. All prototyped privately, in their pre-findings form.
+- **The band (Aaron, 10 November, decision 157).** While decisions wait and the prompt has the keys, one line above the prompt names how many and the focus key: "3 decisions waiting · ctrl+x tab to answer, your draft stays". It names the key from the Focus key setting (decision 190), since the mod can't read a rebound key.
+- **The look (Aaron, 10 November, decision 170).** The title in bold with keys on/off at the right, a dim crumb under it, thin rules between header, context, options and keys, the highlighted option or row as a card bordered in the `claude` colour, key hints as `k: label`, tabs as chips with the open one on the `claude` colour.
+- **Short panes (decisions 158, 161, 170 to 183).** Below 14 rows the pane is compact: no card borders (the ringed row is tinted and starts `›`), rules only where they fit, the keys under the title, and every screen paged with `o` so nothing scrolls and every number key stays armed. Taller panes page a decision's options too when they don't all fit.
+- **The ring (decision 159, 166, 167).** The row the ring is on starts with `›`, taken from the engine's `ui.focus` event. Up and down don't reach the tab strip; `t` changes tab.
+- **Tabs (Aaron, 10 November, decision 186).** The pane opens on the tab with the newest decision waiting, each tab shows its count, and a tab with nothing waiting says which tab has some.
+- **This session only (Aaron, 10 November, decision 192).** The pane, the status line, `decisions_list`, sending and the session note show only the decisions the current session added.
 
 ### Keyboard
 
