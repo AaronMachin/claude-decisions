@@ -25,7 +25,7 @@ When Claude has something for you to decide, it adds it to the pane and writes o
 
 ### Keys
 
-The pane's keys work once the pane has focus. Its header says `keys on` when it has them and `keys off` when the prompt does. While decisions are waiting and the prompt has the keys, a line above the prompt says how many and which key reaches them, for example "3 decisions waiting · ctrl+x tab to answer, your draft stays". The row the ring is on starts with `›`.
+The pane's keys work once the pane has focus. Its header says `keys on` when it has them and `keys off` when the prompt does. While decisions are waiting and the prompt has the keys, a line above the prompt says how many and which key reaches them, for example "3 decisions waiting · ctrl+x tab to answer, your draft stays" (with the pane drawn right above the prompt in a narrow fullscreen terminal, the pane's own top line says it instead). The row the ring is on starts with `›`.
 
 The pane opens on the tab with the newest decision waiting for you, and each tab shows how many wait in it. When the tab you're on has nothing to answer, the list says which tab has ("2 waiting in Sharing links · enter").
 
