@@ -111,13 +111,48 @@ export function visibleTabs(tabs: Tab[], activeKey: string | undefined, width: n
   return { shown: tabs.slice(from, to + 1), hasLeft: from > 0, hasRight: to < tabs.length - 1 }
 }
 
-/** A tab as a chip: its name, cut at 14 columns, with a space either side. */
-export function tabChipText(t: Tab): string {
-  return ` ${truncate(t.label, 14)} `
+/** The decisions in a tab that wait for the person: open or live, in Needs you. */
+export function openCount(t: Tab): number {
+  return t.decisions.filter(d => isWaiting(d) && d.section === 'needs-you').length
 }
 
+/** The tab holding the newest decision that waits for the person, or none. */
+export function newestOpenTab(tabs: Tab[]): Tab | undefined {
+  let best: { tab: Tab; number: number } | undefined
+  for (const tab of tabs) {
+    for (const d of tab.decisions) {
+      if (isWaiting(d) && d.section === 'needs-you' && (best === undefined || d.number > best.number)) {
+        best = { tab, number: d.number }
+      }
+    }
+  }
+
+  return best?.tab
+}
+
+/** The longest a tab's name is drawn before it is cut. */
+export const TAB_LABEL_MAX = 24
+
+/** A tab as a chip: its name, cut at 24 columns, and how many wait for the person when any do, with a space either side. */
+export function tabChipText(t: Tab): string {
+  const open = openCount(t)
+
+  return ` ${truncate(t.label, TAB_LABEL_MAX)}${open > 0 ? ` ${open}` : ''} `
+}
+
+/** The open tab: the one the view names, else the one holding the newest decision that waits, else the first. */
 export function activeTab(tabs: Tab[], view: PaneView): Tab | undefined {
-  return tabs.find(t => t.key === view.tab) ?? tabs[0]
+  return tabs.find(t => t.key === view.tab) ?? newestOpenTab(tabs) ?? tabs[0]
+}
+
+/** When the open tab has nothing waiting but another has: that tab and its count, for "2 waiting in <tab>". */
+export function waitingElsewhere(tabs: Tab[], current: Tab | undefined): { tab: Tab; count: number } | undefined {
+  if (current !== undefined && openCount(current) > 0) {
+    return undefined
+  }
+  const tab = newestOpenTab(tabs)
+
+  return tab === undefined || tab.key === current?.key ? undefined : { tab, count: openCount(tab) }
 }
 
 export function truncate(text: string, width: number): string {
@@ -219,7 +254,10 @@ export function ListView($: any, props: ListProps): any {
   const { Box, Text, Button } = ui
   const tab = activeTab(tabs, view)
   const sections = tab ? sectionsFor(tab) : { needsYou: [], claudesCall: [], alreadyDecided: [], answered: [], parked: [] }
-  const first = sections.needsYou[0] ?? sections.parked[0] ?? (sections.claudesCall.length + sections.alreadyDecided.length > 0 ? undefined : sections.answered[0])
+  const elsewhere = waitingElsewhere(tabs, tab)
+  const first = elsewhere
+    ? undefined
+    : (sections.needsYou[0] ?? sections.parked[0] ?? (sections.claudesCall.length + sections.alreadyDecided.length > 0 ? undefined : sections.answered[0]))
   const isParkedTab = tab?.key === 'parked'
   const batch = tab && !isParkedTab ? assumptionsIn(tab) : []
   const tabRow = visibleTabs(tabs, tab?.key, width)
@@ -255,7 +293,8 @@ export function ListView($: any, props: ListProps): any {
       <Text dimColor>{`  ${count}`}</Text>
     </Text>
   )
-  const needsReserve = 13 + lookRows + (view.openSection !== undefined ? 5 : 0)
+  const elsewhereRows = elsewhere ? 1 : 0
+  const needsReserve = 13 + lookRows + elsewhereRows + (view.openSection !== undefined ? 5 : 0)
   const needsSize = pageSize(rows, needsReserve)
   const needsPaged = sections.needsYou.length > needsSize
   const needsPage = pageOf(sections.needsYou, view.openSection === undefined ? view.sectionPage : 0, needsSize)
@@ -263,7 +302,7 @@ export function ListView($: any, props: ListProps): any {
   const needsYouLines = needsShown.reduce((n, d) => n + (secondLine(d, isParkedTab) === undefined ? 1 : 2), 0)
   const answeredShown = sections.answered.slice(0, answeredRoom(rows, needsYouLines, view.openSection !== undefined))
   const answeredHidden = sections.answered.length - answeredShown.length
-  const fixedRows = 9 + lookRows + needsYouLines + (answeredShown.length === 0 ? 0 : answeredShown.length + 1 + (answeredHidden > 0 ? 1 : 0)) + (batch.length >= 2 ? 1 : 0)
+  const fixedRows = 9 + lookRows + elsewhereRows + needsYouLines + (answeredShown.length === 0 ? 0 : answeredShown.length + 1 + (answeredHidden > 0 ? 1 : 0)) + (batch.length >= 2 ? 1 : 0)
   const size = pageSize(rows, fixedRows)
   const foldedHeading = (f: (typeof FOLDED)[number]) => {
     const all = tab ? foldedRows(tab, f.section) : []
@@ -278,7 +317,7 @@ export function ListView($: any, props: ListProps): any {
         <Button
           key={`section:${f.section}`}
           plain
-          autoFocus={first === undefined && f === FOLDED.find(x => tab && foldedRows(tab, x.section).length > 0) ? true : undefined}
+          autoFocus={first === undefined && !elsewhere && f === FOLDED.find(x => tab && foldedRows(tab, x.section).length > 0) ? true : undefined}
           onPress={() => setView($, v => toggleSection(v, f.section))}
         >
           {mark(`section:${f.section}`)}
@@ -345,6 +384,12 @@ export function ListView($: any, props: ListProps): any {
       </Box>
       {compact ? null : Rule(ui, width, 'rule:sections')}
       {isParkedTab ? null : heading('Needs you', sections.needsYou.length)}
+      {elsewhere ? (
+        <Button key="goto-waiting" plain autoFocus onPress={() => setView($, v => ({ ...foldAll(v), tab: elsewhere.tab.key }))}>
+          {mark('goto-waiting')}
+          <Text color="claude">{truncate(`${elsewhere.count} waiting in ${elsewhere.tab.label} · enter`, width - 2)}</Text>
+        </Button>
+      ) : null}
       {batch.length >= 2 ? (
         <Button
           key="batch"

@@ -5,7 +5,8 @@ import { readAll } from '../store'
 import { DecisionView, INITIAL_VIEW, PANE_ID, focusTo, keysOffLines, readView, setView } from './decision'
 import { Header, isCompact } from './look'
 import { ThreadView } from './thread'
-import { ListView, ReviewView, activeTab, openReview, statusText, tabsFor, truncate } from './list'
+import { ListView, ReviewView, activeTab, newestOpenTab, openReview, statusText, tabsFor, waitingElsewhere } from './list'
+import { foldAll } from './sections'
 import { BatchView, batchRows } from './kinds'
 import { firstKey } from './sections'
 
@@ -21,16 +22,37 @@ export async function changed($: any): Promise<void> {
   $.ui.invalidate('ui.render')
 }
 
-/** `/decisions`: open the pane, focused, and stop treating it as hidden. */
+/** Puts the list on the tab holding the newest decision that waits for the person; `onlyIfIdle` leaves a tab that has some of its own. */
+async function showNewestOpenTab($: any, onlyIfIdle: boolean): Promise<void> {
+  const tabs = tabsFor((await readAll($)).decisions)
+  const target = newestOpenTab(tabs)
+  if (target === undefined) {
+    return
+  }
+  await setView($, v => (onlyIfIdle && waitingElsewhere(tabs, activeTab(tabs, v)) === undefined ? v : { ...foldAll(v), tab: target.key }))
+}
+
+/** Whether the pane has the keys now; false when the engine can't say. */
+async function isPaneFocused($: any): Promise<boolean> {
+  const panes: { id: string; isFocused?: boolean }[] = await $.ui.panes().catch(() => [])
+
+  return panes.some(p => p.id === PANE_ID && p.isFocused === true)
+}
+
+/** `/decisions`: open the pane, focused, on a tab with something to answer, and stop treating it as hidden. */
 export async function openFocused($: any): Promise<{ text: string }> {
   await setView($, v => ({ ...v, isHidden: false }))
+  await showNewestOpenTab($, true).catch(() => undefined)
   const opened = await $.ui.open({ id: PANE_ID, title: 'Decisions', focus: true })
 
   return { text: opened.isPlaced ? 'Decisions pane opened.' : `Decisions pane not placed: ${opened.reason}` }
 }
 
-/** Claude added a decision: open the pane without the keys, unless the person hid it. */
+/** Claude added a decision: open the pane without the keys, on the new decision's tab while the person isn't using the pane, unless they hid it. */
 export async function openForNewDecision($: any): Promise<void> {
+  if (!(await isPaneFocused($))) {
+    await showNewestOpenTab($, false).catch(() => undefined)
+  }
   const view = await readView($)
   if (!view.isHidden) {
     await $.ui.open({ id: PANE_ID, title: 'Decisions' })
@@ -77,8 +99,9 @@ export function leaveToList($: any): void {
 }
 
 async function focusFirstRow($: any): Promise<void> {
-  const { decisions } = await readAll($)
-  const key = firstKey(activeTab(tabsFor(decisions), await readView($)))
+  const tabs = tabsFor((await readAll($)).decisions)
+  const current = activeTab(tabs, await readView($))
+  const key = waitingElsewhere(tabs, current) ? 'goto-waiting' : firstKey(current)
   if (key) {
     await focusTo($, key)
   }

@@ -114,7 +114,7 @@ test('the list draws tabs and rows; the first row is on the ring so enter alone 
   const all = [make(), make(), make({ state: 'ready', answer: { option: 2, answeredAt: 't' } }), make({ group: 'Sharing links' })]
   const tabs = tabsFor(all)
   on('ui.render', ($$, e) =>
-    ListView($$, { ui: $$.ui.resolve(e), tabs, view: INITIAL_VIEW, width: 49, readyCount: 1, unreadable: 0, onSend: () => {}, onHide: () => {} }),
+    ListView($$, { ui: $$.ui.resolve(e), tabs, view: { ...INITIAL_VIEW, tab: 'g:Config file plan' }, width: 49, readyCount: 1, unreadable: 0, onSend: () => {}, onHide: () => {} }),
   )
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
@@ -395,12 +395,12 @@ async function drawFocused($: any, on: any, all: Decision[], view: PaneView, row
 
 test('tabs are chips, the open one on a claude background', async ($, on) => {
   counter = 0
-  const ui = await drawList($, on, [make(), make({ group: 'Sharing links' })])
+  const ui = await drawList($, on, [make(), make({ group: 'Sharing links' })], { ...INITIAL_VIEW, tab: 'g:Config file plan' })
   const open = (await ui.find({ key: 'tab:g:Config file plan' }))!
   const other = (await ui.find({ key: 'tab:g:Sharing links' }))!
   expect(JSON.stringify(open)).toContain('"backgroundColor":"claude"')
   expect(JSON.stringify(other)).not.toContain('"backgroundColor":"claude"')
-  expect(open.text).toMatch(/^ Config file p… /)
+  expect(open.text).toMatch(/^ Config file plan 1 /)
   await ui.unmount()
 })
 
