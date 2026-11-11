@@ -7,8 +7,11 @@ import type { Decision, StoreCtx } from '../store'
 import {
   INITIAL_VIEW,
   back,
+  answerWithCondition,
+  answerWithText,
   chooseAndReopen,
   DecisionView,
+  somethingElseNumber,
   chooseOption,
   dependencyLines,
   reopenedLine,
@@ -226,6 +229,82 @@ test('changing a ready answer reopens its ready dependents and says so; the same
   expect(result?.notice).toBe('d1 changed. Reopened d2. d3 was already sent.')
   expect((await readOne(store, 'd2'))!.state).toBe('open')
   expect((await readOne(store, 'd2'))!.reopenedBy?.id).toBe('d1')
+})
+
+test('answerWithText saves { text } and makes the decision ready', async () => {
+  const store = fakeStore()
+  const d = await make(store)
+  const result = await answerWithText(store, d, '  yes, after CI is green  ')
+  const saved = (await readOne(store, d.id))!
+  expect(result?.decision.state).toBe('ready')
+  expect(saved.state).toBe('ready')
+  expect(saved.answer?.text).toBe('yes, after CI is green')
+  expect(saved.answer?.option).toBeUndefined()
+  expect(saved.answer?.answeredAt).toBeTruthy()
+})
+
+test('answerWithCondition saves { option, condition }', async () => {
+  const store = fakeStore()
+  const d = await make(store)
+  await answerWithCondition(store, d, 2, ' as PR comments ')
+  const saved = (await readOne(store, d.id))!
+  expect(saved.state).toBe('ready')
+  expect(saved.answer?.option).toBe(2)
+  expect(saved.answer?.condition).toBe('as PR comments')
+})
+
+test('a typed answer replaces a chosen option, no option left', async () => {
+  const store = fakeStore()
+  const d = await make(store)
+  const chosen = await chooseOption(store, d, 1)
+  await answerWithText(store, chosen!, 'neither')
+  const saved = (await readOne(store, d.id))!
+  expect(saved.answer?.option).toBeUndefined()
+  expect(saved.answer?.text).toBe('neither')
+})
+
+test('a condition on an already chosen option keeps the option', async () => {
+  const store = fakeStore()
+  const d = await make(store)
+  const chosen = await chooseOption(store, d, 3)
+  await answerWithCondition(store, chosen!, 3, 'only on staging')
+  const saved = (await readOne(store, d.id))!
+  expect(saved.answer?.option).toBe(3)
+  expect(saved.answer?.condition).toBe('only on staging')
+  expect(saved.answer?.text).toBeUndefined()
+})
+
+test('a typed answer or a condition changing a ready answer reopens a dependent once', async () => {
+  const store = fakeStore()
+  const base = { version: 1, section: 'needs-you', kind: 'choice', scenario: 's', options: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }], sources: [], thread: [], revisions: [], createdAt: 't', updatedAt: 't', session: 'session-1' } as unknown as Decision
+  await write(store, { ...base, id: 'd1', number: 1, title: 'First', dependsOn: [], state: 'ready', answer: { option: 1, answeredAt: 't' } })
+  await write(store, { ...base, id: 'd2', number: 2, title: 'Second', dependsOn: ['d1'], state: 'ready', answer: { option: 2, answeredAt: 't' } })
+  const result = await answerWithCondition(store, (await readOne(store, 'd1'))!, 1, 'later')
+  expect(result?.notice).toBe('d1 changed. Reopened d2.')
+  expect((await readOne(store, 'd2'))!.state).toBe('open')
+  await write(store, { ...(await readOne(store, 'd2'))!, state: 'ready', answer: { option: 2, answeredAt: 't' } })
+  const again = await answerWithCondition(store, (await readOne(store, 'd1'))!, 1, 'later')
+  expect(again?.notice).toBeUndefined()
+  expect((await readOne(store, 'd2'))!.state).toBe('ready')
+  const typed = await answerWithText(store, (await readOne(store, 'd1'))!, 'something different')
+  expect(typed?.notice).toBe('d1 changed. Reopened d2.')
+})
+
+test('an empty typed answer or condition is refused, and so is a sent decision', async () => {
+  const store = fakeStore()
+  const d = await make(store)
+  expect(await answerWithText(store, d, '   ')).toBeUndefined()
+  expect(await answerWithCondition(store, d, 1, '')).toBeUndefined()
+  expect(await answerWithCondition(store, d, 9, 'no such option')).toBeUndefined()
+  expect((await readOne(store, d.id))?.answer).toBeUndefined()
+  await write(store, { ...d, state: 'sent' })
+  expect(await answerWithText(store, { ...d, state: 'sent' }, 'too late')).toBeUndefined()
+})
+
+test('Something else is numbered after the last option', async () => {
+  const store = fakeStore()
+  expect(somethingElseNumber(await make(store, 3))).toBe(4)
+  expect(somethingElseNumber(await make(store, 12))).toBe(13)
 })
 
 test('a first answer reopens nothing', async () => {

@@ -4,7 +4,7 @@ import type { PaneView } from '../../types'
 import { reopenDependents, reopenNotice } from '../dependents'
 import { focusKeyName } from '../focus-key'
 import { readOne, write } from '../store'
-import type { Decision, StoreCtx } from '../store'
+import type { Answer, Decision, StoreCtx } from '../store'
 import { Card, Header, KeyHints, Rule, capLines, cardFrame, cardInset, hintLineCount, isCompact, wrapLines } from './look'
 import type { Hint } from './look'
 
@@ -147,6 +147,56 @@ export async function chooseAndReopen(store: StoreCtx, d: Decision, option: numb
   }
 
   return { decision, notice: reopenNotice(d.id, await reopenDependents(store, decision, previous)) }
+}
+
+/** The number of the "Something else" row the pane draws after a decision's last option. */
+export function somethingElseNumber(d: Decision): number {
+  return d.options.reduce((most, o) => Math.max(most, o.id), 0) + 1
+}
+
+function isSameAnswer(a: Answer | undefined, b: Omit<Answer, 'answeredAt'>): boolean {
+  return a !== undefined && a.option === b.option && a.text === b.text && a.condition === b.condition
+}
+
+/**
+ * Saves a typed answer or an option with a condition, makes the decision ready and,
+ * when it replaces a different earlier answer, reopens the decisions that depend on it.
+ */
+async function saveAnswer(store: StoreCtx, d: Decision, answer: Omit<Answer, 'answeredAt'>): Promise<{ decision: Decision; notice?: string } | undefined> {
+  const current = (await readOne(store, d.id)) ?? d
+  if (current.state === 'sent' || d.state === 'sent') {
+    return undefined
+  }
+  const previous = current.answer
+  const decision: Decision = { ...current, state: 'ready', answer: { ...answer, answeredAt: new Date().toISOString() } }
+  await write(store, decision)
+  if (previous === undefined || isSameAnswer(previous, answer)) {
+    return { decision }
+  }
+
+  return { decision, notice: reopenNotice(d.id, await reopenDependents(store, decision, previous)) }
+}
+
+/** "Something else": the person's own words as the answer. Refused when empty or once sent. */
+export async function answerWithText(store: StoreCtx, d: Decision, text: string): Promise<{ decision: Decision; notice?: string } | undefined> {
+  const trimmed = text.trim()
+
+  return trimmed === '' ? undefined : saveAnswer(store, d, { text: trimmed })
+}
+
+/** An option with a condition the person typed (`c`). Refused when empty, for an option that isn't there, or once sent. */
+export async function answerWithCondition(
+  store: StoreCtx,
+  d: Decision,
+  option: number,
+  condition: string,
+): Promise<{ decision: Decision; notice?: string } | undefined> {
+  const trimmed = condition.trim()
+  if (trimmed === '' || !d.options.some(o => o.id === option)) {
+    return undefined
+  }
+
+  return saveAnswer(store, d, { option, condition: trimmed })
 }
 
 export async function parkDecision(store: StoreCtx, d: Decision, reason: string): Promise<boolean> {

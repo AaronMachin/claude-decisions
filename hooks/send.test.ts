@@ -109,6 +109,15 @@ test('several answers, with a condition and a discussion', async () => {
   )
 })
 
+test('a typed answer is sent as Something else, and a condition on an option as its own line', async () => {
+  const { ctx } = fake(ok)
+  const made = await create(ctx, { ...BASE, title: 'Push the fix' })
+  const typed: Decision = { ...made, state: 'ready', answer: { text: 'yes, after CI is green', answeredAt: 't' } }
+  expect(buildAnswerPrompt([typed])).toContain('Chosen: Something else: yes, after CI is green\nCondition: none')
+  const conditioned: Decision = { ...made, state: 'ready', answer: { option: 1, condition: 'as PR comments', answeredAt: 't' } }
+  expect(buildAnswerPrompt([conditioned])).toContain('Chosen: 1. Project root\nCondition: as PR comments')
+})
+
 test('readyDecisions keeps only ready ones', () => {
   const d = (state: Decision['state']) => ({ state }) as Decision
   expect(readyDecisions([d('open'), d('ready'), d('sent'), d('parked')]).map(x => x.state)).toEqual(['ready'])
