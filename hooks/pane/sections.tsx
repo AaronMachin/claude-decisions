@@ -100,11 +100,11 @@ export function assumptionsIn(tab: Tab): Decision[] {
 }
 
 /** Where the ring starts on the list: the first waiting decision, else a folded heading, else the first answered row. */
-export function firstKey(tab: Tab | undefined): string | undefined {
+export function firstKey(tab: Tab | undefined, seen: Seen = {}, frozen?: string[]): string | undefined {
   if (!tab) {
     return undefined
   }
-  const groups = sectionsFor(tab)
+  const groups = sectionsFor(tab, seen, frozen)
   const first = groups.needsYou[0] ?? groups.parked[0]
   if (first) {
     return `row:${first.id}`

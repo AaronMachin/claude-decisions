@@ -377,3 +377,9 @@ A fresh reviewer checked 205 to 218 against 1 to 204 and the mod API. Aaron acce
 | # | Decision | Why |
 | --- | --- | --- |
 | 233 | Left and right move between things drawn side by side in the pane (key hints, tab chips) and never take the keys out of the pane | Aaron: "when I press left/right arrows, it loses focus even though there are \"buttons\" that appear side-by-side". Cause not yet found: the mod API says only that the person's arrows move the ring and raise `ui.focus`, so it is reproduced first |
+
+## 12 November 2026: building workstream 8
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 234 | Left and right are not handled by the mod; 233 waits on Aaron **(Claude's call)** | In a real session neither arrow raised `ui.focus`: right did nothing and left opened Claude Code's background agents view. The pane never sees them, so it has nothing to refuse (`docs/findings/spikes.md`) |

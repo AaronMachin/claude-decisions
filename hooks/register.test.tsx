@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import { PANE_ID, INITIAL_VIEW } from './pane/decision'
+import { tabsFor } from './pane/list'
+import { ringTarget } from './pane/render'
 import { NUDGE } from './integrate'
 import { ADD_TOOL, LIST_TOOL, UPDATE_TOOL } from './tool'
 
@@ -940,4 +942,17 @@ test('compact with m open and an option highlighted still fits 9 rows', async ($
   expect(await ui.find({ type: 'Text', text: /what place 1 costs/ })).toBeDefined()
   expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
   await ui.unmount()
+})
+
+test('when the pane gets the keys the ring goes where the pane means it, not to a row that went', () => {
+  const at = (n: number) => `2026-11-12T10:0${n}:00.000Z`
+  const d = (id: string, group: string, over: Record<string, unknown> = {}) =>
+    ({ version: 1, id, number: Number(id.slice(1)), group, section: 'needs-you', kind: 'choice', title: id, scenario: 's', options: [{ id: 1, label: 'A' }], sources: [], dependsOn: [], state: 'open', thread: [], revisions: [], createdAt: at(1), updatedAt: at(1), ...over }) as any
+  const tabs = tabsFor([d('d1', 'Old'), d('d2', 'New'), d('d3', 'New', { thread: [{ who: 'claude', text: 'hi', at: at(5) }] })])
+  // The prompt had the keys while a new decision switched the list to "New": the stored ring is a row on the old tab.
+  expect(ringTarget({ ...INITIAL_VIEW, screen: 'list', tab: 'g:New', ring: 'row:d1' }, tabs)).toBe('row:d3')
+  expect(ringTarget({ ...INITIAL_VIEW, screen: 'list', tab: 'g:New', ring: 'row:d2' }, tabs)).toBe('row:d2')
+  expect(ringTarget({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd2', highlight: 1 }, tabs)).toBe('opt:1')
+  expect(ringTarget({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd2' }, tabs)).toBe('discuss')
+  expect(ringTarget({ ...INITIAL_VIEW, screen: 'review' }, tabs)).toBeUndefined()
 })

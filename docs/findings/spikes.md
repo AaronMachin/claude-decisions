@@ -224,3 +224,15 @@ Run in tmux at 150x40 with `claude --model sonnet --plugin-dir spikes/prompt-dro
 - **Next prompt unaffected:** a normal prompt typed after it reached Claude and was answered.
 
 **So:** answering from the prompt can be built. The open part is clearing the prompt after a drop. Nothing in workstream 8 depends on it.
+
+## Left and right in the pane (12 November 2026, decision 233)
+
+Question: why do left and right take the keys out of the pane?
+
+Run in tmux at 150x40 with `claude --model sonnet --plugin-dir .` from the `ws/pane-inbox` branch, with the pane's `ui.focus` hook writing every event it got to the status line.
+
+- **Right** on a list row and on a decision's option raised no `ui.focus` event and did nothing.
+- **Left** raised no `ui.focus` event either. Claude Code took it as its own key and opened the background agents view (the `← 2 agents` hint in the status bar), which hid the pane's keys behind "describe a task for a new session".
+- So neither arrow reaches the mod. The pane can't refuse the move, because there is no move to refuse.
+
+**So:** decision 233 can't be built inside the mod. What's left is the person's own key settings (whatever Claude Code binds left to while the prompt is empty) or a request to Claude Code that a focused pane keeps its arrows.

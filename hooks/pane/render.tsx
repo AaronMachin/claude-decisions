@@ -2,12 +2,14 @@ import type { PaneView } from '../../types'
 import { notePaneFocus } from '../band'
 import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
-import { DecisionView, INITIAL_VIEW, PANE_ID, focusTo, keysOffLines, readView, setView } from './decision'
+import { DecisionView, INITIAL_VIEW, PANE_ID, focusLater, focusTo, keysOffLines, readView, setView } from './decision'
 import { Header, isCompact } from './look'
 import { ThreadView } from './thread'
+import type { Tab } from './list'
 import { ListView, ReviewView, activeTab, newestOpenTab, openReview, statusText, tabsFor, waitingElsewhere } from './list'
 import { foldAll, sectionsFor } from './sections'
 import { freezeOrder, frozenOrder, readSeen, thawOrder } from './seen'
+import type { Seen } from './seen'
 import { BatchView, batchRows } from './kinds'
 import { firstKey } from './sections'
 
@@ -99,6 +101,27 @@ export function leaveToList($: any): void {
   })
 }
 
+/**
+ * Where the ring belongs when the pane gets the keys (decision 224): the highlighted option on a decision, the
+ * list's own ring while its row is still drawn, else the first row of the open tab. A tab change while the prompt
+ * had the keys can't move the ring (the engine refuses focus calls then), so without this it is left on a row that went.
+ */
+export function ringTarget(view: PaneView, tabs: Tab[], seen: Seen = {}, frozen?: string[]): string | undefined {
+  if (view.screen === 'decision') {
+    return view.highlight !== undefined ? `opt:${view.highlight}` : 'discuss'
+  }
+  if (view.screen !== 'list') {
+    return undefined
+  }
+  const current = activeTab(tabs, view)
+  const ringed = /^row:(.+)$/.exec(view.ring ?? '')?.[1]
+  if (ringed !== undefined && current?.decisions.some(d => d.id === ringed)) {
+    return view.ring
+  }
+
+  return waitingElsewhere(tabs, current) ? 'goto-waiting' : firstKey(current, seen, frozen)
+}
+
 async function focusFirstRow($: any): Promise<void> {
   const tabs = tabsFor((await readAll($)).decisions)
   const current = activeTab(tabs, await readView($))
@@ -148,6 +171,10 @@ export async function renderPane($: any, e: any): Promise<any> {
   const tabs = tabsFor(decisions, seen)
   if (keys === 'gained') {
     freezeOrder(tabs.flatMap(t => sectionsFor(t, seen).needsYou.map(d => d.id)))
+    const target = ringTarget(view, tabs, seen, frozenOrder())
+    if (target !== undefined) {
+      focusLater($, target)
+    }
   } else if (keys === 'lost') {
     thawOrder()
   }
