@@ -79,3 +79,18 @@ export function thawOrder(): void {
 export function frozenOrder(): string[] | undefined {
   return frozen
 }
+
+let visit: { id: string; seenAt: string | undefined } | undefined
+
+/**
+ * Opening a decision marks it seen at once, so the decision screen keeps the time from before this visit:
+ * the reply that brought the person here still counts as new while they read it. Held in memory: a reload counts from the open.
+ */
+export function noteVisit(id: string, seenAt: string | undefined): void {
+  visit = { id, seenAt }
+}
+
+/** When the person had last seen this decision before the visit they are on, else the stored time. */
+export function visitSeenAt(id: string, seen: Seen): string | undefined {
+  return visit?.id === id ? visit.seenAt : seen[id]
+}

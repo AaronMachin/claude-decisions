@@ -1,9 +1,9 @@
 import type { PaneView } from '../../types'
 import type { Decision } from '../store'
-import { focusLater, ringMark, setView } from './decision'
+import { focusLater, openDecision, ringMark, setView } from './decision'
 import { Card, KeyHints, Rule, cardFrame, cardInset, isCompact } from './look'
 import type { Hint } from './look'
-import { ago, hasUnread, markSeen, unreadReplies } from './seen'
+import { ago, hasUnread, unreadReplies } from './seen'
 import type { Seen } from './seen'
 import { FOLDED, answeredRoom, assumptionsIn, firstKey, foldAll, foldedRows, isWaiting, movePage, pageOf, pageSize, sectionsFor, toggleSection } from './sections'
 
@@ -258,16 +258,6 @@ type ListProps = {
   onHide: () => void
 }
 
-/**
- * Opens a decision with the ring on Discuss, so `enter` alone opens the discussion (D3) and never picks an option the ring
- * happened to land on. The tab it was opened from is kept, so answering the last decision there doesn't move the list.
- */
-async function openDecision($: any, id: string, tab: string | undefined): Promise<void> {
-  await markSeen($, id)
-  await setView($, v => ({ ...v, screen: 'decision', decisionId: id, tab: tab ?? v.tab, highlight: undefined, ring: 'discuss', compactPage: 0, isParking: false, notice: undefined }))
-  focusLater($, 'discuss')
-}
-
 /** Changes tab and, once it is drawn, puts the ring on its first row, so the ring is never left on a row that went. */
 async function showTab($: any, tabs: Tab[], key: string | undefined): Promise<void> {
   await setView($, v => ({ ...foldAll(v), tab: key }))
@@ -309,7 +299,7 @@ export function ListView($: any, props: ListProps): any {
     const room = width - 2 - (isRinged ? cardInset(compact) : 0)
     const tint = isRinged && compact ? 'claude' : undefined
     const body = [
-      <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d.id, tab?.key)}>
+      <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d, tab?.key)}>
         {mark(`row:${d.id}`)}
         {isUnread ? <Text color="claude">● </Text> : ''}
         {d.state === 'sent' ? <Text dimColor>{rowText(d, room - (isUnread ? 2 : 0))}</Text> : <Text color={tint} bold={isUnread || undefined}>{rowText(d, room - (isUnread ? 2 : 0))}</Text>}

@@ -102,11 +102,13 @@ async function ringOn($: any, key: string): Promise<void> {
   await $.ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: key, origin: { kind: 'plugin' } })
 }
 
-/** A number key, then enter on the option it highlighted. */
+/** A number key, then enter on the option it highlighted; one press when the ring already starts there (decision 219). */
 async function answer($: any, ui: any, option: number): Promise<void> {
   await ui.press({ key: `opt:${option}` })
-  await ringOn($, `opt:${option}`)
-  await ui.press({ key: `opt:${option}` })
+  if (await ui.find({ key: `opt:${option}` })) {
+    await ringOn($, `opt:${option}`)
+    await ui.press({ key: `opt:${option}` })
+  }
 }
 
 async function start($: any): Promise<void> {
@@ -170,7 +172,7 @@ test('/decisions opens the pane with the keys and clears hidden', async ($, on) 
   await ui.unmount()
 })
 
-test('a ring move onto an option or Discuss is taken by the pane without error', async ($, on) => {
+test('a ring move onto an option or the ask box is taken by the pane without error', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
@@ -178,7 +180,7 @@ test('a ring move onto an option or Discuss is taken by the pane without error',
   await ui.press({ key: 'row:d1' })
   await $.ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'opt:2', origin: { kind: 'person' } })
   // The highlight itself is state the kit can't read back and `b` then needs $.ui.focus, which the kit refuses; the real session covers both.
-  await $.ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'discuss', origin: { kind: 'person' } })
+  await $.ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'ask-inline', origin: { kind: 'person' } })
   expect(await ui.find({ key: 'opt:2' })).toBeDefined()
   await ui.unmount()
 })
@@ -206,7 +208,7 @@ test('enter on the first row opens the decision; a number highlights, the same n
   expect((await ui.find({ key: 'row:d1' }))?.props.autoFocus).toBe(true)
   await ui.press({ key: 'row:d1' })
   expect(await ui.find({ key: 'opt:2' })).toBeDefined()
-  expect((await ui.find({ key: 'discuss' }))?.props.autoFocus).toBe(true)
+  expect((await ui.find({ key: 'opt:1' }))?.props.autoFocus).toBe(true)
   await ui.press({ key: 'opt:2' })
   expect(await ui.find({ key: 'card:2' })).toBeDefined()
   expect(await ui.find({ key: 'row:d1' })).toBeUndefined()
@@ -216,7 +218,7 @@ test('enter on the first row opens the decision; a number highlights, the same n
   expect(await ui.find({ type: 'Text', text: 'Answered  1' })).toBeDefined()
   expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 ready')
   await ui.press({ key: 'row:d1' })
-  expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/✓ Per package chosen/)
+  expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/Per package {2}✓ your answer/)
   expect((await ui.find({ key: 'line:1' }))?.text).not.toMatch(/✓/)
   await ui.unmount()
 })
@@ -553,7 +555,8 @@ test('the header is the title in bold with keys on at the right, then the crumb'
   const header = await ui.find({ key: 'header' })
   expect(header?.text).toMatch(/^Where the config file lives +keys on/)
   expect((await ui.find({ type: 'Text', text: 'Where the config file lives' }))?.props.bold).toBe(true)
-  expect(await ui.find({ type: 'Text', text: /^Config file plan › d1 · open · Claude recommends/ })).toBeDefined()
+  // At 49 columns the crumb is cut at the edge.
+  expect(await ui.find({ type: 'Text', text: /^CHOICE · d1 · Config file plan · ○ 0 of 1 answer/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -570,12 +573,15 @@ test('options 1 to 10 carry their own keys (0 for 10), 11 and 12 none', async ($
   await ui.unmount()
 })
 
-test('the highlighted option is a card holding its description and why; the others show the label only', async ($, on) => {
+test('the highlighted option is a card holding its description and why; with the detail hidden the others show the label only', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'm' })
+  await ui.press({ key: 'opt:2' })
+  await ringOn($, 'opt:2')
   expect(await ui.find({ type: 'Text', text: /one file, shared/ })).toBeUndefined()
   await ui.press({ key: 'opt:1' })
   const card = findBox(await ui.drawn(), props => props.borderStyle === 'round')
@@ -584,51 +590,53 @@ test('the highlighted option is a card holding its description and why; the othe
   expect(JSON.stringify(card)).toContain('Why: Every other tool reads from the root.')
   expect(JSON.stringify(card)).toContain('opt:1')
   expect(JSON.stringify(card)).not.toContain('opt:2')
-  expect((await ui.find({ key: 'line:1' }))?.text).toMatch(/recommended/)
+  expect((await ui.find({ key: 'line:1' }))?.text).toMatch(/★ recommended/)
   await ui.unmount()
 })
 
-test('the context is capped at 3 lines with m more; m shows the rest and the sources', async ($, on) => {
+test('the whole scenario and the sources show by default; m hides them down to 3 lines and shows them again', async ($, on) => {
   engine(on)
   await start($)
   const long = Array.from({ length: 12 }, (_, i) => `Sentence ${i + 1} of the scenario.`).join(' ')
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, scenario: long, sources: [{ label: 'config.ts', path: 'src/config.ts' }] })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 40 } }, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   const context = async () => (await ui.findAll({ type: 'Text' })).filter(t => /Sentence|Sources/.test(t.text))
-  expect(await context()).toHaveLength(3)
-  expect((await context()).at(-1)?.text).toMatch(/…$/)
-  expect((await ui.find({ key: 'm' }))?.text).toMatch(/more/)
-  await ui.press({ key: 'm' })
   expect((await context()).length).toBeGreaterThan(3)
   expect(await ui.find({ type: 'Text', text: /Sources: config.ts \(src\/config.ts\)/ })).toBeDefined()
-  expect((await ui.find({ key: 'm' }))?.text).toMatch(/less/)
+  expect((await ui.find({ key: 'm' }))?.text).toMatch(/hide detail/)
+  await ui.press({ key: 'm' })
+  expect(await context()).toHaveLength(3)
+  expect((await context()).at(-1)?.text).toMatch(/…$/)
+  expect((await ui.find({ key: 'm' }))?.text).toMatch(/show detail/)
+  await ui.press({ key: 'm' })
+  expect((await context()).length).toBeGreaterThan(3)
   await ui.unmount()
 })
 
-test('thin rules sit between the header, context, options and key hints', async ($, on) => {
+test('thin rules sit between the header, context, options, conversation and key hints', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   const rules = (await ui.findAll({ type: 'Text' })).filter(t => /^─+$/.test(t.text))
-  expect(rules).toHaveLength(3)
+  expect(rules).toHaveLength(4)
   expect(rules[0]?.props.color).toBe('subtle')
   expect((await ui.findAll({ type: 'Text' })).some(t => /^-+$/.test(t.text))).toBe(false)
   await ui.unmount()
 })
 
-test('Discuss is drawn as a key hint and keeps the ring at the start', async ($, on) => {
+test('the ring starts on the recommended option, enter is shown choosing it, and there is no Discuss hint', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
-  const discuss = await ui.find({ key: 'discuss' })
-  expect(discuss?.props.autoFocus).toBe(true)
-  expect(discuss?.text).toMatch(/^enter: discuss/)
-  expect(JSON.stringify(await ui.find({ key: 'hints' }))).toContain('"discuss"')
+  expect((await ui.find({ key: 'opt:1' }))?.props.autoFocus).toBe(true)
+  expect((await ui.find({ key: 'line:1' }))?.text).toMatch(/^›/)
+  expect(await ui.find({ type: 'Text', text: /^enter: choose 1/ })).toBeDefined()
+  expect(await ui.find({ key: 'discuss' })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -695,8 +703,8 @@ test('a number past the options does nothing: 4 options have no 9 key anywhere',
   await ui.press({ key: 'row:d1' })
   const hotkeys = (await ui.findAll({ type: 'Button' })).map(b => b.props.hotkey).filter(Boolean)
   expect(hotkeys).not.toContain('9')
-  expect(hotkeys).toEqual(expect.arrayContaining(['1', '2', '3', '4']))
-  expect(await ui.find({ key: 'o' })).toBeUndefined()
+  expect(hotkeys).toEqual(expect.arrayContaining(['1', '2', '3', '4', '5']))
+  expect((await ui.find({ key: 'opt:5' }))?.text ?? (await ui.find({ key: 'digit:5' }))?.text).toBeDefined()
   await ui.unmount()
 })
 
@@ -856,7 +864,7 @@ test('compact at 90 columns: every key line fits the width as the engine draws i
   for (const width of await lines()) {
     expect(width).toBeLessThanOrEqual(89)
   }
-  expect(await ui.find({ key: 'opt:12' })).toBeDefined()
+  expect(await ui.find({ key: 'card:9' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -953,6 +961,7 @@ test('when the pane gets the keys the ring goes where the pane means it, not to 
   expect(ringTarget({ ...INITIAL_VIEW, screen: 'list', tab: 'g:New', ring: 'row:d1' }, tabs)).toBe('row:d3')
   expect(ringTarget({ ...INITIAL_VIEW, screen: 'list', tab: 'g:New', ring: 'row:d2' }, tabs)).toBe('row:d2')
   expect(ringTarget({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd2', highlight: 1 }, tabs)).toBe('opt:1')
-  expect(ringTarget({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd2' }, tabs)).toBe('discuss')
+  expect(ringTarget({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd2' }, tabs)).toBe('opt:1')
+  expect(ringTarget({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd2', highlight: 1, answerBox: { kind: 'text', option: 2 } }, tabs)).toBe('answer')
   expect(ringTarget({ ...INITIAL_VIEW, screen: 'review' }, tabs)).toBeUndefined()
 })

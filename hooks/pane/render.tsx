@@ -2,13 +2,13 @@ import type { PaneView } from '../../types'
 import { notePaneFocus } from '../band'
 import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
-import { DecisionView, INITIAL_VIEW, PANE_ID, focusLater, focusTo, keysOffLines, readView, setView } from './decision'
+import { DecisionView, INITIAL_VIEW, PANE_ID, focusLater, focusTo, keysOffLines, openingOption, readView, setView } from './decision'
 import { Header, isCompact } from './look'
 import { ThreadView } from './thread'
 import type { Tab } from './list'
 import { ListView, ReviewView, activeTab, newestOpenTab, openReview, statusText, tabsFor, waitingElsewhere } from './list'
 import { foldAll, sectionsFor } from './sections'
-import { freezeOrder, frozenOrder, readSeen, thawOrder } from './seen'
+import { freezeOrder, frozenOrder, readSeen, thawOrder, visitSeenAt } from './seen'
 import type { Seen } from './seen'
 import { BatchView, batchRows } from './kinds'
 import { firstKey } from './sections'
@@ -82,12 +82,6 @@ export async function followFocus($: any, element: string | undefined): Promise<
     await setView($, v => ({ ...v, batchRow: batch[1] }))
   } else if (match) {
     await setView($, v => ({ ...v, highlight: Number(match[1]) }))
-  } else if (element === 'discuss') {
-    await setView($, v => ({ ...v, highlight: undefined }))
-  } else if (element === 'mark') {
-    await setView($, v => ({ ...v, isMarking: true }))
-  } else if (element === 'ask' || element === 'ask-input') {
-    await setView($, v => ({ ...v, isMarking: false }))
   }
 }
 
@@ -102,13 +96,18 @@ export function leaveToList($: any): void {
 }
 
 /**
- * Where the ring belongs when the pane gets the keys (decision 224): the highlighted option on a decision, the
+ * Where the ring belongs when the pane gets the keys (decision 224): the answer box or the highlighted option on a decision, the
  * list's own ring while its row is still drawn, else the first row of the open tab. A tab change while the prompt
  * had the keys can't move the ring (the engine refuses focus calls then), so without this it is left on a row that went.
  */
 export function ringTarget(view: PaneView, tabs: Tab[], seen: Seen = {}, frozen?: string[]): string | undefined {
   if (view.screen === 'decision') {
-    return view.highlight !== undefined ? `opt:${view.highlight}` : 'discuss'
+    if (view.answerBox !== undefined) {
+      return 'answer'
+    }
+    const d = tabs.flatMap(t => t.decisions).find(x => x.id === view.decisionId)
+
+    return `opt:${view.highlight ?? (d ? openingOption(d) : 1)}`
   }
   if (view.screen !== 'list') {
     return undefined
@@ -213,6 +212,7 @@ export async function renderPane($: any, e: any): Promise<any> {
       ...common,
       d: decision,
       all: decisions,
+      seenAt: visitSeenAt(decision.id, seen),
       view,
       rows: e.props.scroll?.bodyRows ?? 30,
       readyCount: ready.length,

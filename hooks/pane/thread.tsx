@@ -1,7 +1,7 @@
 import type { PaneView, PendingQuestion } from '../../types'
-import { RUN, askMain, askQuestion, currentMode, markAnswered, resendToFork } from '../discuss'
+import { RUN, askQuestion, currentMode, resendToFork } from '../discuss'
 import type { Decision, ThreadEntry } from '../store'
-import { PANE_ID, focusLater, focusTo, setView } from './decision'
+import { focusLater, focusTo, openingOption, setView } from './decision'
 import { truncate } from './list'
 import { Rule } from './look'
 
@@ -99,21 +99,13 @@ export function visibleEntries(
   return { shown: thread.slice(start, end), olderHidden: start, newerHidden: thread.length - end }
 }
 
-/** `d`: the ring goes to Mark answered, and `enter` then presses it. */
-export async function focusMark($: { ui: { focus: (a: { requestId: string; key: string }) => Promise<unknown> } }): Promise<void> {
-  await focusTo($, 'mark')
-}
-
 /** The view after `b` on the thread, taken from the view as it is now so a reply that landed meanwhile isn't undone. */
 export function leaveThread(view: PaneView): PaneView {
   return backFromThread(view).view
 }
 
-/** `b` on the thread: off Mark answered the ring returns to Ask; otherwise back to the decision. */
+/** `b` on the thread: off an earlier version back to the thread; otherwise back to the decision. */
 export function backFromThread(view: PaneView): { view: PaneView; focusAsk: boolean } {
-  if (view.isMarking) {
-    return { view: { ...view, isMarking: false }, focusAsk: true }
-  }
   if (view.revisionIndex !== undefined) {
     return { view: { ...view, revisionIndex: undefined }, focusAsk: false }
   }
@@ -138,13 +130,13 @@ type Props = {
   onHide: () => void
 }
 
-async function goBack($: any, view: PaneView): Promise<void> {
+async function goBack($: any, view: PaneView, d: Decision): Promise<void> {
   const next = backFromThread(view)
   await setView($, leaveThread)
   if (next.focusAsk) {
     await focusTo($, 'ask')
   } else if (next.view.screen === 'decision') {
-    focusLater($, 'discuss')
+    focusLater($, `opt:${view.highlight ?? openingOption(d)}`)
   }
 }
 
@@ -182,7 +174,7 @@ function EarlierVersion($: any, props: Props, index: number): any {
       ))}
       {before.recommendation ? <Text>{`Why ${before.recommendation.option}: ${before.recommendation.reason}`}</Text> : null}
       {Rule(ui, width)}
-      <Button key="b" hotkey="b" plain onPress={() => goBack($, view)}>
+      <Button key="b" hotkey="b" plain onPress={() => goBack($, view, d)}>
         {'back to the discussion'}
       </Button>
     </Box>
@@ -203,18 +195,7 @@ export function ThreadView($: any, props: Props): any {
   const visible = visibleEntries(d.thread, view.threadSkip, budget, width, e => pendingFor(e).length * 2)
   const { olderHidden, newerHidden } = visible
   const shown = visible.shown.length === 1 ? [clipToBudget(visible.shown[0]!, budget, width)] : visible.shown
-  const lastReply = d.thread.findLast(e => e.who !== 'person' && e.revision === undefined)
-  const canAskMain = lastReply?.who === 'fork' || lastReply?.who === 'quick'
-  const canMark = ['open', 'live', 'parked'].includes(d.state)
   const draft = view.drafts[d.id] ?? ''
-
-  const mark = async () => {
-    if (await markAnswered($, d.id)) {
-      await setView($, v => ({ ...v, screen: 'list', decisionId: undefined, isMarking: false, isAsking: false, threadSkip: 0, notice: undefined }))
-      onChanged()
-      onLeave()
-    }
-  }
 
   return (
     <Box flexDirection="column">
@@ -280,36 +261,13 @@ export function ThreadView($: any, props: Props): any {
           Ask a question
         </Button>
       )}
-      {canMark && !view.isAsking ? (
-        <Button key="mark" onPress={mark}>
-          Mark answered
-        </Button>
-      ) : null}
       {Rule(ui, width)}
       {view.isAsking ? null : (
         <Box flexDirection="column">
           <Box>
-            {canMark ? (
-              <Button
-                key="d"
-                hotkey="d"
-                plain
-                onPress={async () => {
-                  await setView($, v => ({ ...v, isMarking: true }))
-                  await focusMark($)
-                }}
-              >
-                {'done  '}
-              </Button>
-            ) : null}
             {resendable ? (
               <Button key="f" hotkey="f" plain onPress={() => resendToFork($)}>
                 {'fork instead  '}
-              </Button>
-            ) : null}
-            {canAskMain ? (
-              <Button key="m" hotkey="m" plain onPress={() => askMain($)}>
-                {'ask main session  '}
               </Button>
             ) : null}
           </Box>
@@ -324,7 +282,7 @@ export function ThreadView($: any, props: Props): any {
                 {'newer  '}
               </Button>
             ) : null}
-            <Button key="b" hotkey="b" plain onPress={() => goBack($, view)}>
+            <Button key="b" hotkey="b" plain onPress={() => goBack($, view, d)}>
               {'back  '}
             </Button>
             {readyCount > 0 ? (

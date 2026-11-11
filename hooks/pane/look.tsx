@@ -21,7 +21,7 @@ export function Rule(ui: { Text: any }, width: number, key?: string): any {
 /**
  * One key hint. With a `hotkey` and `onPress` it is a plain Button, which the engine
  * draws as `k: label` with the key in its accent colour; without a hotkey but with
- * `onPress` (Discuss), a Button drawn the same way by hand; without `onPress`, text.
+ * `onPress`, a Button drawn the same way by hand; without `onPress`, text.
  */
 export type Hint = {
   /** The element key. */
