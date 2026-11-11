@@ -211,3 +211,16 @@ Everything the spike wrote under `~/.claude/decisions/` (one folder, two files) 
 - The test kit gives "no implementation for ui.focus" when a Button's `onPress` calls `$.ui.focus` inside `$.ui.mount`, even with `on('ui.focus')` registered (answers `{}` and `{ value: {} }` both tried), so the focus logic is a plain function (`pressDigit` in `hooks/logic.ts`) tested with a fake `$`.
 - A hook for `ui.focus` of the mod's own `$.ui.focus` calls is skipped ("re-entry (the plugin's own code raised it; origin keys-spike)"); a person's moves do reach it.
 - Not answered: the desktop surface, Opus, more than twelve options, scrolling panes.
+
+## prompt-drop (12 November 2026, decisions 214 and 231)
+
+Question: can a `prompt.submit` hook keep a line like `d1 2` from Claude, so an answer could be typed in the prompt?
+
+Run in tmux at 150x40 with `claude --model sonnet --plugin-dir spikes/prompt-drop`, Claude Code 2.1.322, on a machine with a managed security plugin. The hook returns `{ drop: 'saved d1 2 as an answer' }` for a line matching `d<n> <n>` and `next(e)` for anything else.
+
+- **Dropped:** typing `d1 2` started no turn. Claude never saw it.
+- **What shows:** one line in the transcript, `⏺ Prompt dropped by a hook: saved d1 2 as an answer` (the drop reason, so it can read as a confirmation). The security plugin did not skip `prompt.submit`.
+- **The prompt keeps the text.** `d1 2` stayed in the prompt box after the drop, and had to be cleared by hand (`ctrl+u`). A real build would need `$.prompt.fill` or similar to clear it, not checked.
+- **Next prompt unaffected:** a normal prompt typed after it reached Claude and was answered.
+
+**So:** answering from the prompt can be built. The open part is clearing the prompt after a drop. Nothing in workstream 8 depends on it.
