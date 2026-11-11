@@ -371,3 +371,9 @@ A fresh reviewer checked 205 to 218 against 1 to 204 and the mod API. Aaron acce
 | 230 | On the assumptions batch, Something else is opened from the row's own screen, not with `3` **(Claude's call)** | `1` and `2` already mark each row there (100, 112) |
 | 231 | The prompt spike (214) shrinks to an hour: confirm that returning `{ drop }` from the existing `prompt.submit` hook stops a prompt **(Claude's call)** | The mod API types already say it does; a second `prompt.submit` hook is refused (126) |
 | 232 | When each decision was last looked at is stored apart from the decision file **(Claude's call)** | Writing it into the decision would move `updatedAt` and a parked decision's date (148) |
+
+## 12 November 2026: Aaron, arrows across a row
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 233 | Left and right move between things drawn side by side in the pane (key hints, tab chips) and never take the keys out of the pane | Aaron: "when I press left/right arrows, it loses focus even though there are \"buttons\" that appear side-by-side". Cause not yet found: the mod API says only that the person's arrows move the ring and raise `ui.focus`, so it is reproduced first |

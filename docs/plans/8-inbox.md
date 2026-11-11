@@ -77,7 +77,7 @@
   - band: `bandText(2, true, 'ctrl+q', { count: 1, id: 'd43' })` is `'● 1 new reply on d43 · 2 decisions waiting · ctrl+q to answer, your draft stays'`; with `waiting` 0 it is `'● 1 new reply on d43 · ctrl+q to read it'`; the band shows an unread reply while the view is `isHidden` (223), and still shows nothing for waiting-only while hidden.
 - [ ] **Step 2:** Run, fail. **Step 3:** Implement. In `renderPane`, compare `e.props.isFocused` with `view.hasKeys`: on gaining the keys set `frozenOrder` from the current order; on losing them clear it; save `hasKeys`. **Step 4:** Pass. Commit.
 
-## Task 5: `enter` on first switching in (212, 224)
+## Task 5: `enter` on first switching in, and left/right (212, 224, 233)
 
 **Files:** Modify `hooks/pane/render.tsx` (`renderPane`, `focusFirstRow`), `hooks/pane/decision.tsx` (`focusLater` use); test `hooks/register.test.tsx`.
 
@@ -85,6 +85,9 @@
 
 - [ ] **Step 1: Failing test** `the ring lands on a drawn row when the pane gets the keys after a tab change`: with the pane unfocused, add a decision in a new group (`openForNewDecision` switches tab), then render with `isFocused: true`; the engine fake records `ui.focus` with the new tab's first row key, and pressing `enter` opens that decision. A second test: same on the decision screen, `enter` answers the ringed option.
 - [ ] **Step 2:** Run, fail. **Step 3:** On the gain-the-keys transition from task 4, `focusLater($, ringTarget(...))`. **Step 4:** Pass. Commit.
+- [ ] **Step 5: Reproduce left/right (233)** in a real session in tmux: on the list and on a decision, press `←` and `→`, and log every `ui.focus` event the pane's hook gets (`element`, `origin`). Write down where the ring goes and whether the pane loses the keys.
+- [ ] **Step 6:** If the engine raises `ui.focus` with no `element` (one of its own stops) for a person's move, refuse it in the `register.tsx` `ui.focus` hook (return `{}` without `next`) so the ring stays in the pane, the same way moves onto the tab strip are kept off today (`isTabKey`). If the arrows never reach the hook, record that in `docs/findings/spikes.md` and in a new decisions row, and tell Aaron before going further.
+- [ ] **Step 7:** Test `a person's left or right move to an engine stop is refused`: `ui.focus` with `origin.kind 'person'` and no `element` returns without moving the ring. Pass. Commit.
 
 ## Task 6: the decision screen
 
