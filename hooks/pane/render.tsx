@@ -132,7 +132,7 @@ async function focusFirstRow($: any): Promise<void> {
 
 async function confirm($: any, ids: string[]): Promise<void> {
   const result = await sendTicked($, ids)
-  await setView($, v => ({ ...v, screen: 'list', ticked: [] }))
+  await setView($, v => ({ ...v, screen: 'list', decisionId: undefined, ticked: [] }))
   await changed($)
   leaveToList($)
   void result.settled.then(async notice => {
@@ -213,6 +213,7 @@ export async function renderPane($: any, e: any): Promise<any> {
       d: decision,
       all: decisions,
       seenAt: visitSeenAt(decision.id, seen),
+      onSendThis: () => void setView($, v => openReview(v, ready.map(d => d.id), decision.id)),
       view,
       rows: e.props.scroll?.bodyRows ?? 30,
       readyCount: ready.length,

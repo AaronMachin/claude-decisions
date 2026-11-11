@@ -525,7 +525,7 @@ export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
     hints.push({ id: 'p', keyText: 'p', label: d.state === 'parked' ? 'unpark' : 'park', hotkey: 'p', onPress: on.park })
   }
   if (c.readyCount > 0 && !isSent) {
-    hints.push({ id: 's', keyText: 's', label: `send ${c.readyCount}`, hotkey: 's', onPress: on.send })
+    hints.push({ id: 's', keyText: 's', label: d.state === 'ready' ? 'send this' : `send ${c.readyCount}`, hotkey: 's', onPress: on.send })
   }
   if (!isSent) {
     hints.push({ id: 'h', keyText: 'h', label: 'hide', hotkey: 'h', onPress: on.hide })
@@ -857,6 +857,8 @@ type Props = {
   /** Called when the pane has gone back to the list, so the ring can be put on its first row. */
   onLeave: () => void
   onSend: () => void
+  /** `s` on an answered decision: the preview for this one alone (221). */
+  onSendThis?: () => void
   onHide: () => void
   /** The pane has the keys, so the ring (and its `›`) is shown. */
   isFocused?: boolean
@@ -996,7 +998,7 @@ export function DecisionView($: any, props: Props): any {
         focusLater($, 'park')
       }
     },
-    send: onSend,
+    send: d.state === 'ready' && props.onSendThis ? props.onSendThis : onSend,
     hide: onHide,
   }
   const hints = decisionHints(

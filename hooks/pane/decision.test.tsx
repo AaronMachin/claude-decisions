@@ -834,3 +834,112 @@ test('an option from a discussion in the last two minutes is marked ↻ new, and
   expect((await ui.find({ key: 'line:3' }))?.text).not.toMatch(/↻ new/)
   await ui.unmount()
 })
+
+// Send this one (decision 221).
+
+/** Answers d1 with option 2 and d2 with option 1, then reopens d1. */
+async function twoReady($: any, on: On, rows = 40): Promise<{ seen: Engine; ui: any }> {
+  const seen = await begin($, on)
+  await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: 'Second one', recommendation: { option: 1, reason: 'r' } })
+  const ui = await $.ui.mount(rowsOf(rows))
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'opt:2' })
+  await ui.press({ key: 'row:d2' })
+  await ui.press({ key: 'opt:1' })
+  await ui.press({ key: 'row:d1' })
+
+  return { seen, ui }
+}
+
+test('s on an answered decision previews exactly what Claude gets for it, and says what stays behind', async ($, on) => {
+  const { ui } = await twoReady($, on)
+  expect((await ui.find({ key: 's' }))?.text).toMatch(/send this/)
+  await ui.press({ key: 's' })
+  const all = await texts(ui)
+  expect(all).toContain('Send this decision to Claude')
+  expect(all).toContain('Exactly what Claude gets:')
+  // Wrapped at the pane's 49 columns.
+  expect(all.join(' ')).toContain('Decision d1 · Where the review comments go (Code review)')
+  expect(all).toContain('Chosen: 2. As PR comments')
+  expect(all).toContain('Condition: none')
+  expect(all).toContain("1 other answer stays ready and isn't sent.")
+  expect(await ui.find({ key: 'tick:d2' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('enter on the preview sends only that decision; the other stays ready', async ($, on) => {
+  const { seen, ui } = await twoReady($, on)
+  await ui.press({ key: 's' })
+  await ui.press({ key: 'confirm' })
+  for (let i = 0; i < 20; i++) {
+    await Promise.resolve()
+  }
+  expect(seen.submitted).toHaveLength(1)
+  expect(seen.submitted[0]).toContain('Decision d1')
+  expect(seen.submitted[0]).not.toContain('Decision d2')
+  const d2 = JSON.parse([...seen.files.entries()].find(([k]) => k.endsWith('/d2.json'))![1])
+  expect(d2.state).toBe('ready')
+  await ui.unmount()
+})
+
+test('b on the preview goes back to the decision, not the list, and nothing is sent', async ($, on) => {
+  const { seen, ui } = await twoReady($, on)
+  await ui.press({ key: 's' })
+  await ui.press({ key: 'b' })
+  expect(await ui.find({ key: 'opt:2' })).toBeDefined()
+  expect(await ui.find({ key: 'row:d1' })).toBeUndefined()
+  expect(seen.submitted).toEqual([])
+  await ui.unmount()
+})
+
+test('the preview of a lone answer has no line about others, shows a condition, and fits a 9-row pane', async ($, on) => {
+  await begin($, on, { ...CHOICE, scenario: 's' })
+  const ui = await $.ui.mount(rowsOf(9))
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'c' })
+  await ui.input({ key: 'answer', text: 'after CI is green' })
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 's' })
+  const all = await texts(ui)
+  expect(all.some((t: string) => /^Send this decision/.test(t))).toBe(true)
+  expect(all.join('|')).not.toMatch(/stays? ready/)
+  expect(lineTotal(await ui.drawn())).toBeLessThanOrEqual(9)
+  await ui.unmount()
+  const tall = await $.ui.mount(rowsOf(40))
+  expect(await texts(tall)).toContain('Condition: after CI is green')
+  await tall.unmount()
+})
+
+test('s on an unanswered decision still opens the Send screen for everything ready', async ($, on) => {
+  const seen = await begin($, on)
+  await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: 'Second one' })
+  const ui = await $.ui.mount(rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'opt:2' })
+  await ui.press({ key: 'row:d2' })
+  expect((await ui.find({ key: 's' }))?.text).toMatch(/send 1/)
+  await ui.press({ key: 's' })
+  expect(await ui.find({ key: 'tick:d1' })).toBeDefined()
+  expect(seen.submitted).toEqual([])
+  await ui.unmount()
+})
+
+/** Rows a drawn tree takes: a column stacks its children, a row is as tall as its tallest, a border adds two. */
+function lineTotal(node: any): number {
+  if (node === null || node === undefined || node === '' || typeof node === 'boolean') {
+    return 0
+  }
+  if (typeof node === 'string' || typeof node === 'number') {
+    return 1
+  }
+  if (Array.isArray(node)) {
+    return node.reduce((n: number, child: any) => n + lineTotal(child), 0)
+  }
+  if (node.type !== 'Box') {
+    return 1
+  }
+  const children: any[] = (node.children ?? []).flat()
+  const inner = node.props?.flexDirection === 'column' ? children.reduce((n: number, c: any) => n + lineTotal(c), 0) : Math.max(0, ...children.map((c: any) => lineTotal(c)))
+
+  return inner + (node.props?.borderStyle ? 2 : 0)
+}

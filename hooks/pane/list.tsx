@@ -1,7 +1,8 @@
 import type { PaneView } from '../../types'
 import type { Decision } from '../store'
-import { focusLater, openDecision, ringMark, setView } from './decision'
-import { Card, KeyHints, Rule, cardFrame, cardInset, isCompact } from './look'
+import { focusLater, openDecision, readView, ringMark, setView } from './decision'
+import { previewLines } from '../send'
+import { Card, KeyHints, Rule, cardFrame, cardInset, isCompact, wrapLines } from './look'
 import type { Hint } from './look'
 import { ago, hasUnread, unreadReplies } from './seen'
 import type { Seen } from './seen'
@@ -167,9 +168,16 @@ export function toggleTick(ticked: string[], id: string): string[] {
   return ticked.includes(id) ? ticked.filter(t => t !== id) : [...ticked, id]
 }
 
-/** The review screen opens with every ready decision ticked, the ring on the first (its autoFocus) and on the first page. */
-export function openReview(view: PaneView, readyIds: string[]): PaneView {
-  return { ...view, screen: 'review', ticked: readyIds, notice: undefined, compactPage: 0, ring: readyIds[0] === undefined ? undefined : `tick:${readyIds[0]}` }
+/**
+ * The review screen opens with every ready decision ticked, the ring on the first (its autoFocus) and on the first page.
+ * With `only`, it is the preview for that one decision (221): only it is ticked, `decisionId` keeps which, and the ring is on send.
+ */
+export function openReview(view: PaneView, readyIds: string[], only?: string): PaneView {
+  if (only !== undefined) {
+    return { ...view, screen: 'review', decisionId: only, ticked: [only], answerBox: undefined, notice: undefined, compactPage: 0, ring: 'confirm' }
+  }
+
+  return { ...view, screen: 'review', decisionId: undefined, ticked: readyIds, notice: undefined, compactPage: 0, ring: readyIds[0] === undefined ? undefined : `tick:${readyIds[0]}` }
 }
 
 function chosenText(d: Decision): string {
@@ -482,9 +490,73 @@ type ReviewProps = {
 /** Rows the compact Send screen keeps for itself: the pane's header, its heading and the key line. */
 const REVIEW_COMPACT_FIXED = 3
 
+/** "1 other answer stays ready and isn't sent.", or nothing when no other is ready. */
+export function othersLine(others: number): string | undefined {
+  if (others === 0) {
+    return undefined
+  }
+
+  return others === 1 ? "1 other answer stays ready and isn't sent." : `${others} other answers stay ready and aren't sent.`
+}
+
+/**
+ * The Send screen for one answered decision (221): exactly the block Claude gets, what stays behind, and
+ * send or back. The block is cut with `…` to fit the pane.
+ */
+function SendOneView($: any, props: ReviewProps, d: Decision): any {
+  const { ui, ready, view, width, onConfirm } = props
+  const { Box, Text, Button } = ui
+  const isFocused = props.isFocused === true
+  const rows = props.rows ?? 30
+  const compact = isCompact(rows)
+  const others = othersLine(ready.filter(x => x.id !== d.id).length)
+  const otherLines = others ? wrapLines(others, width) : []
+  // Pane header, title, "Exactly what" and the keys; tall adds two rules and the keys' own line.
+  const fixed = (compact ? 4 : 7) + (isFocused ? 0 : 1) + otherLines.length
+  const lines = previewLines(d).flatMap(line => wrapLines(line, width))
+  const room = Math.max(1, rows - fixed)
+  const shown = lines.length <= room ? lines : [...lines.slice(0, room - 1), `${truncate(lines[room - 1] ?? '', width - 1)}…`]
+  const back = async () => {
+    await setView($, v => ({ ...v, screen: 'decision', ticked: [], compactPage: 0, ring: v.highlight === undefined ? undefined : `opt:${v.highlight}` }))
+    const v = await readView($)
+    if (v.highlight !== undefined) {
+      focusLater($, `opt:${v.highlight}`)
+    }
+  }
+
+  return (
+    <Box flexDirection="column">
+      <Text bold>{truncate('Send this decision to Claude', width)}</Text>
+      {compact ? null : Rule(ui, width, 'rule:send')}
+      <Text>Exactly what Claude gets:</Text>
+      {shown.map((line, index) => (
+        <Text key={`preview:${index}`} dimColor>
+          {line}
+        </Text>
+      ))}
+      {otherLines.map((line, index) => (
+        <Text key={`others:${index}`}>{line}</Text>
+      ))}
+      {compact ? null : Rule(ui, width, 'rule:send-keys')}
+      <Box>
+        <Button key="b" hotkey="b" plain onPress={() => void back()}>
+          {'back  '}
+        </Button>
+        <Button key="confirm" hotkey="c" variant="primary" autoFocus onPress={() => onConfirm([d.id])}>
+          {`${ringMark('confirm', view.ring, isFocused)}send it`}
+        </Button>
+      </Box>
+    </Box>
+  )
+}
+
 /** The answers ready to send, each ticked; Confirm is last in the ring. Compact: keys under the heading, one line per tick, paged with `o`. Returns an element tree. */
 export function ReviewView($: any, props: ReviewProps): any {
   const { ui, ready, view, width, onConfirm, onLeave } = props
+  const one = view.decisionId === undefined ? undefined : ready.find(d => d.id === view.decisionId)
+  if (one) {
+    return SendOneView($, props, one)
+  }
   const { Box, Text, Button } = ui
   const ticked = ready.filter(d => view.ticked.includes(d.id)).map(d => d.id)
   const isFocused = props.isFocused === true

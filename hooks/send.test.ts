@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { buildAnswerPrompt, readyDecisions, sendTicked } from './send'
+import { buildAnswerPrompt, previewLines, readyDecisions, sendTicked } from './send'
 import type { SendCtx } from './send'
 import { create, readAll, write } from './store'
 import type { Decision } from './store'
@@ -182,4 +182,10 @@ test('a failed submit keeps a thread entry written while it was waiting', async 
   const d = (await readAll(ctx)).decisions[0]!
   expect(d.state).toBe('ready')
   expect(d.thread.map(e => e.text)).toEqual(['asked while sending'])
+})
+
+test('previewLines is the decision block buildAnswerPrompt sends, line for line', () => {
+  const d = { id: 'd1', title: 'T', group: 'G', options: [{ id: 1, label: 'A' }], answer: { option: 1, condition: 'later', answeredAt: 't' }, thread: [] } as any
+  expect(previewLines(d)).toEqual(['Decision d1 · T (G)', 'Chosen: 1. A', 'Condition: later', 'Discussion: none'])
+  expect(buildAnswerPrompt([d])).toContain(previewLines(d).join('\n'))
 })

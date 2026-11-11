@@ -33,6 +33,11 @@ function block(d: Decision): string {
   return lines.join('\n')
 }
 
+/** One decision's block as the prompt carries it, line by line, for the preview before sending it alone (decision 221). */
+export function previewLines(d: Decision): string[] {
+  return block(d).split('\n')
+}
+
 /** The one prompt that carries the answers to Claude. */
 export function buildAnswerPrompt(decisions: Decision[]): string {
   const intro =

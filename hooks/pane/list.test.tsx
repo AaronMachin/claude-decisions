@@ -549,3 +549,11 @@ test('ago reads as minutes and hours, then falls back to the clock time', () => 
   expect(ago(new Date('2026-11-12T09:00:00').toISOString(), now)).toBe('3h ago')
   expect(ago(new Date('2026-11-10T09:05:00').toISOString(), now)).toBe('10 Nov 09:05')
 })
+
+test('review for one decision ticks only it and keeps which one, with the ring on send', () => {
+  const view = openReview({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd3' }, ['d1', 'd3'], 'd3')
+  expect(view.ticked).toEqual(['d3'])
+  expect(view.decisionId).toBe('d3')
+  expect(view.ring).toBe('confirm')
+  expect(openReview({ ...INITIAL_VIEW, decisionId: 'd3' }, ['d1', 'd3']).decisionId).toBeUndefined()
+})
