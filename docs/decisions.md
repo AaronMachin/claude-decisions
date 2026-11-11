@@ -324,3 +324,21 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 202 | When no tab has anything waiting for the person, the list shows "✓ Nothing needs you" (with "· N ready to send (s)" when answers are ready) in the success colour, in place of "Needs you  0". A tab with nothing waiting still shows "Needs you  0" while another tab has something **(Claude's call)** | Aaron, on a pane with one answered decision: "it's not clear here that nothing is pending my input". |
 | 203 | The status line leads with "nothing needs you" instead of "0 open" when only ready or parked decisions are left **(Claude's call)** | Same reason, for the line under the prompt. |
 | 204 | The header's "keys on/off" stops 3 columns short of the pane's right edge **(Claude's call)** | The engine draws the pane's close mark over the last columns, which cut it to "keys o" at Aaron's width. |
+
+## 12 November 2026: Aaron, typed answers and the inbox
+
+Aaron accepted Claude's recommendations on pane decisions d11 to d13, d30, d31 and d38 ("happy with your recommendations"), after using the pane on real work. The reasons are Claude's, as put to Aaron with each decision.
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 205 | Every decision ends with a numbered "Something else" row. Choosing it opens a one-line box; `enter` saves the text as the answer and marks the decision ready. No agent turn starts | The only place to type was the discussion, and every message there starts a turn. On a review decision Aaron typed "I agree, but...", Claude acted on it, then `d` sent the same text and Claude acted again. Answers in the pane are given by number (6 November), so this is a row, not a letter key |
+| 206 | A highlighted option takes a condition from a key: type it, `enter`, and it is sent as the option plus a `Condition:` line, with no agent turn | About 30% of Aaron's answers pick an option and add a condition, and the send format already has a Condition line that nothing filled without the agent |
+| 207 | Every kind gets "Something else", and a question's answer is typed in it instead of in the discussion | "Yes, but" comes up on go-aheads and findings as often as on choices, and one rule everywhere is easier to remember |
+| 208 | The list becomes an inbox: decisions with something new first, then open ones, then the rest, with the last line of each discussion under its title. Opening one goes to the new part of its thread | Coming back after a while, nothing showed that Claude had replied, so every decision had to be opened to find out |
+| 209 | The list keeps its order while the pane has the keys, and re-sorts when they leave **(Claude's call)** | A row moving under the ring mid-answer would send a number key to the wrong decision |
+| 210 | The pane records when each decision was last looked at; a row with anything newer gets a dot, and the band leads with "1 new reply · d12" | Same reason as 208, for when the pane is closed or hidden |
+| 211 | `m` also shows the highlighted option's text and reason in full, paging the other options with `o` when it doesn't fit | Each was cut at 2 lines and nothing showed the rest |
+| 212 | When the pane gets the keys, the real focus moves to wherever the `›` is drawn | `enter` did nothing on first switching in until an arrow key was pressed; most likely the pane drew a remembered `›` while the engine's focus was elsewhere (not yet reproduced) |
+| 213 | `s` on an answered decision sends only that decision, straight away; `s` on the list still opens the Send screen for everything ready | Looking at one decision, you mean that one; sending everything is one key away on the list |
+| 214 | Half a day on a spike: can a `prompt.submit` hook keep a line like `d11 1` from Claude and save it as an answer | If it can, answering needs no switch into the pane at all. Known: the hook runs on Aaron's machine; not known: whether it can stop a prompt |
+| 215 | The new screens are mocked up and tried before any of 205 to 213 is built | Aaron, 12 November: "mock it up first though" |
