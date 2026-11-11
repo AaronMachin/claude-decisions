@@ -6,7 +6,8 @@ import { DecisionView, INITIAL_VIEW, PANE_ID, focusTo, keysOffLines, readView, s
 import { Header, isCompact } from './look'
 import { ThreadView } from './thread'
 import { ListView, ReviewView, activeTab, newestOpenTab, openReview, statusText, tabsFor, waitingElsewhere } from './list'
-import { foldAll } from './sections'
+import { foldAll, sectionsFor } from './sections'
+import { freezeOrder, frozenOrder, readSeen, thawOrder } from './seen'
 import { BatchView, batchRows } from './kinds'
 import { firstKey } from './sections'
 
@@ -137,13 +138,19 @@ function header(ui: any, width: number, isFocused: boolean, crumb: string | unde
 
 /** The `ui.render` hook for the pane: reads the files and the view, then draws the screen the view names. */
 export async function renderPane($: any, e: any): Promise<any> {
-  notePaneFocus($, e.props.isFocused === true)
+  const keys = notePaneFocus($, e.props.isFocused === true)
   const ui = $.ui.resolve(e)
   const { Box, Text } = ui
   const width: number = e.props.bodyColumns
   const view: PaneView = await readView($)
   const { decisions, unreadable } = await readAll($)
-  const tabs = tabsFor(decisions)
+  const seen = await readSeen($)
+  const tabs = tabsFor(decisions, seen)
+  if (keys === 'gained') {
+    freezeOrder(tabs.flatMap(t => sectionsFor(t, seen).needsYou.map(d => d.id)))
+  } else if (keys === 'lost') {
+    thawOrder()
+  }
   const ready = readyDecisions(decisions)
   const common = {
     ui,
@@ -210,7 +217,7 @@ export async function renderPane($: any, e: any): Promise<any> {
   return (
     <Box flexDirection="column">
       {top}
-      {ListView($, { ...common, tabs, view: { ...INITIAL_VIEW, ...view, tab: tab?.key }, readyCount: ready.length, unreadable, rows: e.props.scroll?.bodyRows })}
+      {ListView($, { ...common, tabs, view: { ...INITIAL_VIEW, ...view, tab: tab?.key }, readyCount: ready.length, unreadable, rows: e.props.scroll?.bodyRows, seen, frozen: frozenOrder() })}
       {view.notice ? <Text dimColor>{view.notice}</Text> : null}
     </Box>
   )

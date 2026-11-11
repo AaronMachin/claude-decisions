@@ -51,14 +51,10 @@ export type PaneView = {
   compactPage: number
   /** Decision screen: `m` shows the whole context (dependencies, sources) instead of three lines. */
   isContextOpen: boolean
-  /** The list's row order while the pane has the keys, so rows don't move under the ring (decision 209). */
-  frozenOrder?: string[]
   /** Decision screen: the answer or condition box open under an option. */
   answerBox?: { kind: 'text' | 'condition'; option: number }
   /** Half-typed answers and conditions by decision id; survive hiding the pane. */
   answerDrafts: Record<string, string>
-  /** Whether the pane had the keys at the last draw, to see them arrive and leave. */
-  hasKeys: boolean
   /** Decision screen: `m` hides every option's detail but the highlighted one's (decision 217). */
   isDetailHidden: boolean
 }

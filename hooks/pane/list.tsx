@@ -3,9 +3,12 @@ import type { Decision } from '../store'
 import { focusLater, ringMark, setView } from './decision'
 import { Card, KeyHints, Rule, cardFrame, cardInset, isCompact } from './look'
 import type { Hint } from './look'
+import { ago, hasUnread, markSeen, unreadReplies } from './seen'
+import type { Seen } from './seen'
 import { FOLDED, answeredRoom, assumptionsIn, firstKey, foldAll, foldedRows, isWaiting, movePage, pageOf, pageSize, sectionsFor, toggleSection } from './sections'
 
-export type Tab = { key: string; label: string; decisions: Decision[] }
+/** `hasUnread`: a decision in it has a reply from Claude the person hasn't opened (its chip ends ●). */
+export type Tab = { key: string; label: string; decisions: Decision[]; hasUnread?: boolean }
 
 const HIDDEN: Decision['state'][] = ['superseded', 'withdrawn']
 
@@ -14,7 +17,7 @@ const HIDDEN: Decision['state'][] = ['superseded', 'withdrawn']
  * then "For you to do" (tasks, wherever they came from), then "Parked". A parked
  * decision shows only in "Parked".
  */
-export function tabsFor(all: Decision[]): Tab[] {
+export function tabsFor(all: Decision[], seen: Seen = {}): Tab[] {
   const groups = new Map<string, Tab>()
   const other: Decision[] = []
   const parked: Decision[] = []
@@ -47,7 +50,7 @@ export function tabsFor(all: Decision[]): Tab[] {
     tabs.push({ key: 'parked', label: 'Parked', decisions: parked })
   }
 
-  return tabs
+  return tabs.map(t => ({ ...t, hasUnread: t.decisions.some(d => isWaiting(d) && hasUnread(d, seen)) }))
 }
 
 export { sectionsFor }
@@ -137,7 +140,7 @@ export const TAB_LABEL_MAX = 24
 export function tabChipText(t: Tab): string {
   const open = openCount(t)
 
-  return ` ${truncate(t.label, TAB_LABEL_MAX)}${open > 0 ? ` ${open}` : ''} `
+  return ` ${truncate(t.label, TAB_LABEL_MAX)}${open > 0 ? ` ${open}` : ''}${t.hasUnread ? ' ●' : ''} `
 }
 
 /** The open tab: the one the view names, else the one holding the newest decision that waits, else the first. */
@@ -217,6 +220,16 @@ export function secondLine(d: Decision, isParkedTab: boolean): string | undefine
   return undefined
 }
 
+/** The line under a row with an unread reply: who, how long ago, and the first line of the newest one. */
+export function unreadLine(d: Decision, seen: Seen, now: Date = new Date()): string | undefined {
+  const last = unreadReplies(d, seen[d.id]).at(-1)
+  if (last === undefined) {
+    return undefined
+  }
+
+  return `${last.who} · ${ago(last.at, now)}: ${last.text.split('\n')[0]}`
+}
+
 /** One row, padded so the meta sits at the right edge. The meta is left out when the title wouldn't fit whole beside it (row 168). */
 export function rowText(d: Decision, width: number): string {
   const meta = rowMeta(d, width)
@@ -237,6 +250,10 @@ type ListProps = {
   rows?: number
   /** The pane has the keys, so the ring (and its `›`) is shown. */
   isFocused?: boolean
+  /** When each decision was last opened, for the ● and the reply line. */
+  seen?: Seen
+  /** The order to keep while the pane has the keys. */
+  frozen?: string[]
   onSend: () => void
   onHide: () => void
 }
@@ -246,6 +263,7 @@ type ListProps = {
  * happened to land on. The tab it was opened from is kept, so answering the last decision there doesn't move the list.
  */
 async function openDecision($: any, id: string, tab: string | undefined): Promise<void> {
+  await markSeen($, id)
   await setView($, v => ({ ...v, screen: 'decision', decisionId: id, tab: tab ?? v.tab, highlight: undefined, ring: 'discuss', compactPage: 0, isParking: false, notice: undefined }))
   focusLater($, 'discuss')
 }
@@ -266,7 +284,8 @@ export function ListView($: any, props: ListProps): any {
   const rows = props.rows ?? 30
   const { Box, Text, Button } = ui
   const tab = activeTab(tabs, view)
-  const sections = tab ? sectionsFor(tab) : { needsYou: [], claudesCall: [], alreadyDecided: [], answered: [], parked: [] }
+  const seen = props.seen ?? {}
+  const sections = tab ? sectionsFor(tab, seen, props.frozen) : { needsYou: [], claudesCall: [], alreadyDecided: [], answered: [], parked: [] }
   const elsewhere = waitingElsewhere(tabs, tab)
   const isIdle = newestOpenTab(tabs) === undefined
   const first = elsewhere
@@ -283,15 +302,19 @@ export function ListView($: any, props: ListProps): any {
   const lookRows = compact ? -2 : 1 + cardFrame(false)
 
   const row = (d: Decision) => {
-    const second = secondLine(d, isParkedTab)
+    const isUnread = isWaiting(d) && hasUnread(d, seen)
+    const reply = isUnread && !compact ? unreadLine(d, seen) : undefined
+    const second = reply === undefined ? secondLine(d, isParkedTab) : undefined
     const isRinged = isFocused && view.ring === `row:${d.id}`
     const room = width - 2 - (isRinged ? cardInset(compact) : 0)
     const tint = isRinged && compact ? 'claude' : undefined
     const body = [
       <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d.id, tab?.key)}>
         {mark(`row:${d.id}`)}
-        {d.state === 'sent' ? <Text dimColor>{rowText(d, room)}</Text> : <Text color={tint}>{rowText(d, room)}</Text>}
+        {isUnread ? <Text color="claude">● </Text> : ''}
+        {d.state === 'sent' ? <Text dimColor>{rowText(d, room - (isUnread ? 2 : 0))}</Text> : <Text color={tint} bold={isUnread || undefined}>{rowText(d, room - (isUnread ? 2 : 0))}</Text>}
       </Button>,
+      reply !== undefined ? <Text key={`reply:${d.id}`} color="claude">{truncate(`     ${reply}`, room)}</Text> : null,
       second !== undefined ? <Text key={`second:${d.id}`} dimColor>{truncate(`     ${second}`, room)}</Text> : null,
     ]
 
@@ -313,7 +336,7 @@ export function ListView($: any, props: ListProps): any {
   const needsPaged = sections.needsYou.length > needsSize
   const needsPage = pageOf(sections.needsYou, view.openSection === undefined ? view.sectionPage : 0, needsSize)
   const needsShown = needsPaged ? needsPage.rows : sections.needsYou
-  const needsYouLines = needsShown.reduce((n, d) => n + (secondLine(d, isParkedTab) === undefined ? 1 : 2), 0)
+  const needsYouLines = needsShown.reduce((n, d) => n + (secondLine(d, isParkedTab) === undefined && (compact || !hasUnread(d, seen)) ? 1 : 2), 0)
   const answeredShown = sections.answered.slice(0, answeredRoom(rows, needsYouLines, view.openSection !== undefined))
   const answeredHidden = sections.answered.length - answeredShown.length
   const fixedRows = 9 + lookRows + elsewhereRows + needsYouLines + (answeredShown.length === 0 ? 0 : answeredShown.length + 1 + (answeredHidden > 0 ? 1 : 0)) + (batch.length >= 2 ? 1 : 0)

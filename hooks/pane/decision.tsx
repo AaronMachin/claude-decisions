@@ -27,7 +27,6 @@ export const INITIAL_VIEW: PaneView = {
   compactPage: 0,
   isContextOpen: false,
   answerDrafts: {},
-  hasKeys: false,
   isDetailHidden: false,
 }
 

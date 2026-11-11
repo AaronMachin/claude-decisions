@@ -3,42 +3,66 @@ import { counts, truncate } from './pane/list'
 import { PANE_ID, readView } from './pane/decision'
 import { openFocused } from './pane/render'
 import { readAll } from './store'
+import { hasUnread, newestUnread, readSeen } from './pane/seen'
 
-/** The band's one line: how many decisions wait and how to reach them without losing the draft. */
-export function bandText(waiting: number, isPlaced: boolean, key: string): string {
+/** The band's one line: any new reply first, then how many decisions wait and how to reach them without losing the draft. */
+export function bandText(waiting: number, isPlaced: boolean, key: string, unread?: { count: number; id: string }): string {
+  const lead = unread && unread.count > 0 ? `● ${unread.count} new repl${unread.count === 1 ? 'y' : 'ies'} on ${unread.id} · ` : ''
+  if (waiting === 0) {
+    return `${lead}${key}${isPlaced ? '' : ' then enter'} to read it`
+  }
   const what = `${waiting} decision${waiting === 1 ? '' : 's'} waiting`
 
-  return isPlaced ? `${what} · ${key} to answer, your draft stays` : `${what} · ${key} then enter to open, your draft stays`
+  return isPlaced ? `${lead}${what} · ${key} to answer, your draft stays` : `${lead}${what} · ${key} then enter to open, your draft stays`
+}
+
+/** Hidden keeps the band quiet about waiting decisions, but a new reply always shows (decision 223). Never while the pane has the keys. */
+export function isBandShown(s: { isHidden: boolean; isFocused: boolean; waiting: number; unread: number }): boolean {
+  if (s.isFocused) {
+    return false
+  }
+
+  return s.unread > 0 || (!s.isHidden && s.waiting > 0)
 }
 
 let lastPaneFocus: boolean | undefined
 
-/** Called by the pane's render hook; asks for a redraw only when the pane gained or lost the keys, so the band follows. */
-export function notePaneFocus($: any, isFocused: boolean): void {
-  if (lastPaneFocus !== undefined && lastPaneFocus !== isFocused) {
+/**
+ * Called by the pane's render hook; asks for a redraw only when the pane gained or lost the keys, so the band follows.
+ * Returns 'gained' or 'lost' on a change, for the pane's own work when the keys arrive or leave.
+ */
+export function notePaneFocus($: any, isFocused: boolean): 'gained' | 'lost' | undefined {
+  const was = lastPaneFocus
+  lastPaneFocus = isFocused
+  if (was !== undefined && was !== isFocused) {
     $.ui.invalidate('ui.render')
   }
-  lastPaneFocus = isFocused
+  if (isFocused && was !== true) {
+    return 'gained'
+  }
+
+  return !isFocused && was === true ? 'lost' : undefined
 }
 
-type BandState = { waiting: number; isPlaced: boolean } | undefined
+type BandState = { waiting: number; isPlaced: boolean; unread?: { count: number; id: string } } | undefined
 
 async function bandState($: any): Promise<BandState> {
   const view = await readView($)
-  if (view.isHidden) {
-    return undefined
-  }
   const { decisions } = await readAll($)
+  const seen = await readSeen($)
   const waiting = counts(decisions).open
-  if (waiting === 0) {
-    return undefined
-  }
+  const unreadOnes = decisions.filter(d => (d.state === 'open' || d.state === 'live') && hasUnread(d, seen))
   const pane = (await $.ui.panes()).find((p: { id: string }) => p.id === PANE_ID)
-  if (pane?.isFocused) {
+  if (!isBandShown({ isHidden: view.isHidden, isFocused: pane?.isFocused === true, waiting: view.isHidden ? 0 : waiting, unread: unreadOnes.length })) {
     return undefined
   }
+  const newest = newestUnread(unreadOnes, seen)
 
-  return { waiting, isPlaced: pane?.isPlaced === true }
+  return {
+    waiting: view.isHidden ? 0 : waiting,
+    isPlaced: pane?.isPlaced === true && !view.isHidden,
+    unread: newest ? { count: unreadOnes.length, id: newest.id } : undefined,
+  }
 }
 
 /**
@@ -59,7 +83,7 @@ export async function renderBand($: any, e: any, next: (e: any) => any): Promise
     return next(e)
   }
   const { Box, Text, Button } = $.ui.resolve(e)
-  const text = bandText(state.waiting, state.isPlaced, focusKeyName())
+  const text = bandText(state.waiting, state.isPlaced, focusKeyName(), state.unread)
   if (state.isPlaced) {
     return <Text dimColor>{truncate(text, e.props.bodyColumns)}</Text>
   }

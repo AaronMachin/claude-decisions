@@ -41,3 +41,41 @@ export function newestUnread(all: Decision[], seen: Seen): Decision | undefined 
 
   return best?.d
 }
+
+/** "just now", "2m ago", "3h ago", then the clock time ("10 Nov 09:05") from a day on. */
+export function ago(at: string, now: Date = new Date()): string {
+  const minutes = Math.floor((now.getTime() - new Date(at).getTime()) / 60_000)
+  if (Number.isNaN(minutes)) {
+    return ''
+  }
+  if (minutes < 1) {
+    return 'just now'
+  }
+  if (minutes < 60) {
+    return `${minutes}m ago`
+  }
+  if (minutes < 24 * 60) {
+    return `${Math.floor(minutes / 60)}h ago`
+  }
+
+  const t = new Date(at)
+
+  return `${t.getDate()} ${MONTHS[t.getMonth()]} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+let frozen: string[] | undefined
+
+/** While the pane has the keys the list keeps this order (decision 209). Held in memory: a reload just re-sorts. */
+export function freezeOrder(ids: string[]): void {
+  frozen = ids
+}
+
+export function thawOrder(): void {
+  frozen = undefined
+}
+
+export function frozenOrder(): string[] | undefined {
+  return frozen
+}
