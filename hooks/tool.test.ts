@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { RULE_PHRASES } from './integrate'
 import { create, readAll, write } from './store'
 import type { StoreCtx } from './store'
-import { ADD_DESCRIPTION, ADD_TOOL, LIST_TOOL, UPDATE_DESCRIPTION, addDecision, listDecisions, registerTools, updateDecision, validateAdd, validateUpdate } from './tool'
+import { ADD_DESCRIPTION, ADD_INPUT_SCHEMA, ADD_TOOL, LIST_TOOL, UPDATE_DESCRIPTION, addDecision, listDecisions, registerTools, updateDecision, validateAdd, validateUpdate } from './tool'
 
 function fake(): StoreCtx {
   const files = new Map<string, string>()
@@ -335,4 +335,13 @@ test('a go-ahead, assumption or finding with no recommendation is accepted; a ch
   expect(validateAdd({ ...FINDING, recommendation: { option: 5, reason: 'r' } }, [])).toMatch(/from 1 to 4/)
   expect(validateAdd({ ...FINDING, recommendation: { option: 1, reason: '' } }, [])).toMatch(/recommendation\.reason is required/)
   expect(validateAdd({ ...GOOD, recommendation: undefined }, [])).toMatch(/recommendation\.option must be the number of one of the options/)
+})
+
+test('the tool text says a question is answered in the pane, in its Something else row, not in the discussion', () => {
+  const kind = JSON.stringify(ADD_INPUT_SCHEMA.properties.kind)
+  for (const text of [ADD_DESCRIPTION, kind]) {
+    expect(text).toMatch(/question[^.]*types (the|its) answer in the pane's Something else row/)
+    expect(text).not.toMatch(/answer in the discussion/)
+  }
+  expect(ADD_DESCRIPTION.slice(0, 4096)).toContain("Something else row")
 })

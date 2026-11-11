@@ -24,6 +24,8 @@ export const FIXED_OPTIONS: Record<'go-ahead' | 'assumption' | 'finding' | 'task
   ],
 }
 
+// Something else (205, 207) is not here: the pane draws it after the last option and never stores it, so every kind gets it.
+
 /** The options the tool fills in for a kind, or undefined when Claude writes them (choice) or there are none (question). */
 export function fixedOptionsFor(kind: Kind, isTask: boolean): FixedOption[] | undefined {
   if (isTask) {

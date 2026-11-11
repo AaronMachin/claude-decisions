@@ -943,3 +943,32 @@ function lineTotal(node: any): number {
 
   return inner + (node.props?.borderStyle ? 2 : 0)
 }
+
+// Every kind gets Something else (decisions 207, 230).
+
+for (const [kind, count] of [['go-ahead', 2], ['assumption', 2], ['finding', 4]] as const) {
+  test(`a ${kind} ends with ${count + 1}: Something else`, async ($, on) => {
+    await begin($, on, { group: 'Code review', kind, title: 'Search ranking: exact matches sort low', scenario: 's', recommendation: { option: 1, reason: 'r' } })
+    const ui = await $.ui.mount(rowsOf(40))
+    await ui.press({ key: 'row:d1' })
+    const last = await ui.find({ key: `opt:${count + 1}` })
+    expect(last?.text).toMatch(/Something else/)
+    expect(last?.props.hotkey).toBe(String(count + 1))
+    expect(await ui.find({ key: `opt:${count + 2}` })).toBeUndefined()
+    await ui.unmount()
+  })
+}
+
+test('on the assumptions batch 3 does nothing, and enter on a row opens it with Something else as 3', async ($, on) => {
+  await begin($, on, { group: 'Code review', kind: 'assumption', title: 'Codes are 8 characters', scenario: 's' })
+  await $.tool.call({ tool: ADD_TOOL, group: 'Code review', kind: 'assumption', title: 'Links never expire', scenario: 's' })
+  const ui = await $.ui.mount(rowsOf(40))
+  await ui.press({ key: 'batch' })
+  const hotkeys = (await ui.findAll({ type: 'Button' })).map((b: any) => b.props.hotkey).filter(Boolean)
+  expect(hotkeys).toEqual(expect.arrayContaining(['1', '2']))
+  expect(hotkeys).not.toContain('3')
+  await ui.press({ key: 'batch:d1' })
+  expect((await ui.find({ key: 'opt:3' }))?.text).toMatch(/Something else/)
+  expect((await ui.find({ key: 'opt:1' }))?.props.autoFocus).toBe(true)
+  await ui.unmount()
+})
