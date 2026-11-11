@@ -342,3 +342,11 @@ Aaron accepted Claude's recommendations on pane decisions d11 to d13, d30, d31 a
 | 213 | `s` on an answered decision sends only that decision, straight away; `s` on the list still opens the Send screen for everything ready | Looking at one decision, you mean that one; sending everything is one key away on the list |
 | 214 | Half a day on a spike: can a `prompt.submit` hook keep a line like `d11 1` from Claude and save it as an answer | If it can, answering needs no switch into the pane at all. Known: the hook runs on Aaron's machine; not known: whether it can stop a prompt |
 | 215 | The new screens are mocked up and tried before any of 205 to 213 is built | Aaron, 12 November: "mock it up first though" |
+
+## 12 November 2026: Aaron, after the first inbox mockup
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 216 | Talking a decision through with Claude is part of the decision screen, not a separate screen behind `enter`: the thread sits under the options and the box to ask is always there | Aaron: "should be easy to have a convo about the options/decisions with claude - right now it's the second-class citizen" |
+| 217 | A decision shows everything by default (the whole scenario, every option's text and the reason for the recommendation), and `m` hides the detail; this replaces 211 | Aaron: "the full info should show by default, with options to hide it" |
+| 218 | The pane gets visual touches that make it easier to use, within what a terminal can draw: kind labels, progress, key caps, a reply-in-progress spinner, revisions marked in the thread. Each one is tried in the mockup before it is built | Aaron: "be creative - we should add visual niceties to make this a simple to use tool" |
