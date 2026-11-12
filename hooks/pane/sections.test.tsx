@@ -58,7 +58,7 @@ test('the groups hold the right decisions, and an answered one leaves its sectio
 test('the status line and counts count only what needs the person', () => {
   const all = review()
   expect(counts(all)).toEqual({ open: 3, ready: 1, parked: 0 })
-  expect(statusText(all)).toBe('3 open · 1 ready')
+  expect(statusText(all)).toBe('3 open · 1 not sent')
 })
 
 test('a task has its own tab before Parked and is not in its group tab', () => {

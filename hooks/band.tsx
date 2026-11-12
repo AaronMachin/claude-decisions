@@ -6,8 +6,12 @@ import { readAll } from './store'
 import { hasUnread, newestUnread, readSeen } from './pane/seen'
 
 /** The band's one line: any new reply first, then how many decisions wait and how to reach them without losing the draft. */
-export function bandText(waiting: number, isPlaced: boolean, key: string, unread?: { count: number; id: string }): string {
+export function bandText(waiting: number, isPlaced: boolean, key: string, unread?: { count: number; id: string }, unsent = 0): string {
   const lead = unread && unread.count > 0 ? `● ${unread.count} new repl${unread.count === 1 ? 'y' : 'ies'} on ${unread.id} · ` : ''
+  if (waiting === 0 && unsent > 0 && lead === '') {
+    // Claude waits on these as on a reply, so they show while the pane is hidden too (row 270).
+    return `${unsent} answer${unsent === 1 ? '' : 's'} not sent · ${key}, then s`
+  }
   if (waiting === 0) {
     return `${lead}${key}${isPlaced ? '' : ' then enter'} to read it`
   }
@@ -17,12 +21,12 @@ export function bandText(waiting: number, isPlaced: boolean, key: string, unread
 }
 
 /** Hidden keeps the band quiet about waiting decisions, but a new reply always shows (decision 223). Never while the pane has the keys. */
-export function isBandShown(s: { isHidden: boolean; isFocused: boolean; waiting: number; unread: number }): boolean {
+export function isBandShown(s: { isHidden: boolean; isFocused: boolean; waiting: number; unread: number; unsent?: number }): boolean {
   if (s.isFocused) {
     return false
   }
 
-  return s.unread > 0 || (!s.isHidden && s.waiting > 0)
+  return s.unread > 0 || (!s.isHidden && s.waiting > 0) || (s.waiting === 0 && (s.unsent ?? 0) > 0)
 }
 
 let lastPaneFocus: boolean | undefined
@@ -44,16 +48,16 @@ export function notePaneFocus($: any, isFocused: boolean): 'gained' | 'lost' | u
   return !isFocused && was === true ? 'lost' : undefined
 }
 
-type BandState = { waiting: number; isPlaced: boolean; unread?: { count: number; id: string } } | undefined
+type BandState = { waiting: number; isPlaced: boolean; unread?: { count: number; id: string }; unsent: number } | undefined
 
 async function bandState($: any): Promise<BandState> {
   const view = await readView($)
   const { decisions } = await readAll($)
   const seen = await readSeen($)
-  const waiting = counts(decisions).open
+  const { open: waiting, ready: unsent } = counts(decisions)
   const unreadOnes = decisions.filter(d => (d.state === 'open' || d.state === 'live') && hasUnread(d, seen))
   const pane = (await $.ui.panes()).find((p: { id: string }) => p.id === PANE_ID)
-  if (!isBandShown({ isHidden: view.isHidden, isFocused: pane?.isFocused === true, waiting: view.isHidden ? 0 : waiting, unread: unreadOnes.length })) {
+  if (!isBandShown({ isHidden: view.isHidden, isFocused: pane?.isFocused === true, waiting, unread: unreadOnes.length, unsent })) {
     return undefined
   }
   const newest = newestUnread(unreadOnes, seen)
@@ -62,6 +66,7 @@ async function bandState($: any): Promise<BandState> {
     waiting: view.isHidden ? 0 : waiting,
     isPlaced: pane?.isPlaced === true && !view.isHidden,
     unread: newest ? { count: unreadOnes.length, id: newest.id } : undefined,
+    unsent,
   }
 }
 
@@ -83,7 +88,7 @@ export async function renderBand($: any, e: any, next: (e: any) => any): Promise
     return next(e)
   }
   const { Box, Text, Button } = $.ui.resolve(e)
-  const text = bandText(state.waiting, state.isPlaced, focusKeyName(), state.unread)
+  const text = bandText(state.waiting, state.isPlaced, focusKeyName(), state.unread, state.unsent)
   if (state.isPlaced) {
     return <Text dimColor>{truncate(text, e.props.bodyColumns)}</Text>
   }

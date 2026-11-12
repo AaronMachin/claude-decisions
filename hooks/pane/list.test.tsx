@@ -67,9 +67,9 @@ test('the status line counts open and ready, and clears when nothing is left', (
   counter = 0
   expect(statusText([])).toBeUndefined()
   expect(statusText([make({ state: 'sent' })])).toBeUndefined()
-  expect(statusText([make(), make(), make({ state: 'ready' })])).toBe('2 open · 1 ready')
+  expect(statusText([make(), make(), make({ state: 'ready' })])).toBe('2 open · 1 not sent')
   expect(statusText([make({ state: 'parked' })])).toBe('nothing needs you · 1 parked')
-  expect(statusText([make({ state: 'ready' })])).toBe('nothing needs you · 1 ready')
+  expect(statusText([make({ state: 'ready' })])).toBe('nothing needs you · 1 not sent')
   expect(counts([make(), make({ state: 'live' })]).open).toBe(2)
 })
 
@@ -90,9 +90,9 @@ test('rows fit the width, with the state at the right edge on a wide pane', () =
   expect(rowText(long, 49).length).toBeLessThanOrEqual(47)
   expect(rowText(long, 49)).toMatch(/…$/)
   const answered = make({ state: 'ready', answer: { option: 2, answeredAt: 't' }, title: 'Which test runner' })
-  expect(rowText(answered, 96)).toMatch(/✓ 2 Vitest · ready to send$/)
+  expect(rowText(answered, 96)).toMatch(/✓ 2 Vitest · not sent yet$/)
   expect(rowText(answered, 96).length).toBe(94)
-  expect(rowText(answered, 49)).toMatch(/✓ 2 Vitest {2}ready$/)
+  expect(rowText(answered, 49)).toMatch(/✓ 2 Vitest {2}not sent$/)
   expect(truncate('abcdef', 4)).toBe('abc…')
 })
 
@@ -473,13 +473,13 @@ test('compact Send screen puts its key hints under the heading and pages the tic
   await ui.unmount()
 })
 
-test('nothing needs you, with answers ready: the line says how many are ready to send', async ($, on) => {
+test('nothing needs you, with answers ready: the line warns they are not sent yet', async ($, on) => {
   counter = 0
   const all = [make({ state: 'ready' })]
   const tabs = tabsFor(all)
   on('ui.render', ($$: any, e: any) => ListView($$, { ui: $$.ui.resolve(e), tabs, view: INITIAL_VIEW, width: 49, rows: 40, readyCount: 1, unreadable: 0, onSend: () => {}, onHide: () => {} }))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: '✓ Nothing needs you · 1 ready to send (s)' })).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: '1 answer not sent yet · s sends them' }))?.props.color).toBe('warning')
   await ui.unmount()
 })
 

@@ -96,6 +96,34 @@ const PANE = {
   props: { title: 'Decisions', isFocused: true, bodyColumns: 49, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
 } as const
 
+/**
+ * Answering the last waiting decision opens the Send screen (row 270). The tests that mount through this are about
+ * what follows on the list or the decision, so the mount holds the answers there with b, as the person would.
+ */
+async function mountHolding<M extends (props: any) => Promise<any>>($: { ui: { mount: M } }, props: Parameters<M>[0]): Promise<Awaited<ReturnType<M>>> {
+  const ui = await $.ui.mount(props)
+  const hold = async () => {
+    if (await ui.find({ type: 'Text', text: 'That was the last one.' })) {
+      await ui.press({ key: 'b' })
+    }
+  }
+  const press = async (args: any) => {
+    const result = await ui.press(args)
+    if (args.key !== 'b' && args.key !== 'confirm') {
+      await hold()
+    }
+    return result
+  }
+  const input = async (args: any) => {
+    const result = await ui.input(args)
+    await hold()
+    return result
+  }
+
+  // The kit's handle is frozen, so the wrapper is a view over it with press and input replaced.
+  return new Proxy({}, { get: (_target, key) => (key === 'press' ? press : key === 'input' ? input : typeof ui[key] === 'function' ? ui[key].bind(ui) : ui[key]) }) as Awaited<ReturnType<M>>
+}
+
 async function start($: any): Promise<void> {
   await $.session.start({ cwd: '/work/pantry', surface: 'terminal', isInteractive: true })
 }
@@ -109,7 +137,7 @@ const pass = (on: any) => {
 async function openThread($: any) {
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'o' })
 
@@ -126,7 +154,7 @@ test('o opens the thread, with Ask and the keys, and no Mark answered, d or m', 
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'o' })
   expect((await ui.find({ key: 'ask' }))?.props.autoFocus).toBe(true)
@@ -190,7 +218,7 @@ test('a half-typed question survives hiding the pane and reopening the thread', 
   await ui.press({ key: 'ask' })
   await ui.input({ key: 'ask-input', text: 'half a thou', kind: 'change' })
   await ui.unmount()
-  const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const again = await mountHolding($, { ...PANE, surface: 'terminal' })
   expect((await again.find({ key: 'ask-input' }))?.text).toContain('half a thou')
   await again.input({ key: 'ask-input', text: '' })
   expect(await again.find({ key: 'ask-input' })).toBeUndefined()
@@ -209,7 +237,7 @@ test('the thread no longer answers: a typed answer goes in Something else, and b
   await ui.press({ key: 'opt:3' })
   await ui.input({ key: 'answer', text: 'from the root, after the move' })
   expect(await ui.find({ key: 'row:d1' })).toBeDefined()
-  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 ready')
+  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 not sent')
   expect(seen.submitted).toEqual([])
   await ui.unmount()
 })
@@ -219,7 +247,7 @@ test('a ↻ line opens the earlier version and b returns to the thread', async (
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
   await $.tool.call({ tool: UPDATE_TOOL, id: 'd1', summary: 'Added option 3, Third', addOptions: [{ label: 'Third' }], recommendation: { option: 3, reason: 'fits' } })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'o' })
   expect((await ui.find({ key: 'rev:0' }))?.text).toContain('↻ Added option 3, Third')
@@ -240,7 +268,7 @@ test('a long thread in a short pane keeps only the newest entries and the key ro
   const d = JSON.parse(seen.files.get(file)!)
   d.thread = Array.from({ length: 60 }, (_, i) => ({ who: i % 2 ? 'claude' : 'person', text: `entry number ${i}`, at: `2026-11-05T10:${String(i).padStart(2, '0')}:00.000Z` }))
   seen.files.set(file, JSON.stringify(d))
-  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 24 } }, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 24 } }, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'o' })
   expect(await ui.find({ type: 'Text', text: 'entry number 59' })).toBeDefined()
@@ -298,7 +326,7 @@ test('under a fork reply there is no m: it hides and shows detail on the decisio
     { who: 'fork', text: 'No, I cannot read files.', at: '2026-11-07T10:00:05.000Z' },
   ]
   seen.files.set(file, JSON.stringify(d))
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'o' })
   expect(await ui.find({ key: 'm' })).toBeUndefined()
@@ -344,7 +372,7 @@ test('leaving the thread changes only the screen fields of the view it is given'
 test('thread entries read as a chat: speaker and age, then the text on the same line', async ($, on) => {
   const at = new Date(Date.now() - 2 * 60_000).toISOString()
   on('ui.render', ($$: any, e: any) => ChatEntry($$.ui.resolve(e), { who: 'person', at, text: 'would c work on findings too?' }, 60, 'chat'))
-  const ui = await $.ui.mount({ plugin: 'decisions', component: 'Pane', requestId: 'x', surface: 'terminal', props: { title: 't', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 10 }, view: {} } } as any)
+  const ui = await mountHolding($, { plugin: 'decisions', component: 'Pane', requestId: 'x', surface: 'terminal', props: { title: 't', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 10 }, view: {} } } as any)
   expect((await ui.find({ key: 'chat' }))?.text).toBe('you · 2m  would c work on findings too?')
   expect(JSON.stringify(await ui.find({ key: 'chat' }))).toContain('"color":"suggestion"')
   await ui.unmount()
@@ -384,7 +412,7 @@ test('a ↻ line in the thread is followed by what changed, the old label struck
   stored.revisions.push({ at: new Date().toISOString(), summary: 'Renamed 2', before: { ...stored, options: stored.options.map((o: any) => (o.id === 2 ? { ...o, label: 'Per package' } : o)), revisions: undefined, thread: undefined } })
   stored.thread.push({ who: 'claude', text: '↻ Renamed 2', at: new Date().toISOString(), revision: stored.revisions.length - 1 })
   seen.files.set(path, JSON.stringify(stored))
-  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 40 } }, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 40 } }, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'o' })
   const spans = (await ui.findAll({ type: 'Text' })) as any[]

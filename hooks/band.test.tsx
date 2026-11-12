@@ -201,3 +201,11 @@ test('an empty Focus key setting falls back to ctrl+x tab', { options: { focusKe
   expect(await band.find({ type: 'Text', text: /ctrl\+x tab to answer/ })).toBeDefined()
   await band.unmount()
 })
+
+test('unsent answers with nothing waiting: the band says so and how to send them, even while the pane is hidden', () => {
+  expect(bandText(0, true, 'ctrl+q', undefined, 2)).toBe('2 answers not sent · ctrl+q, then s')
+  expect(bandText(0, true, 'ctrl+q', undefined, 1)).toBe('1 answer not sent · ctrl+q, then s')
+  expect(isBandShown({ isHidden: true, isFocused: false, waiting: 0, unread: 0, unsent: 2 })).toBe(true)
+  expect(isBandShown({ isHidden: false, isFocused: true, waiting: 0, unread: 0, unsent: 2 })).toBe(false)
+  expect(bandText(2, true, 'ctrl+q', undefined, 1)).toBe('2 decisions waiting · ctrl+q to answer, your draft stays')
+})

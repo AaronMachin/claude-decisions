@@ -72,6 +72,34 @@ async function make(store: StoreCtx, count = 3, recommendation: Decision['recomm
   })
 }
 
+/**
+ * Answering the last waiting decision opens the Send screen (row 270). The tests that mount through this are about
+ * what follows on the list or the decision, so the mount holds the answers there with b, as the person would.
+ */
+async function mountHolding<M extends (props: any) => Promise<any>>($: { ui: { mount: M } }, props: Parameters<M>[0]): Promise<Awaited<ReturnType<M>>> {
+  const ui = await $.ui.mount(props)
+  const hold = async () => {
+    if (await ui.find({ type: 'Text', text: 'That was the last one.' })) {
+      await ui.press({ key: 'b' })
+    }
+  }
+  const press = async (args: any) => {
+    const result = await ui.press(args)
+    if (args.key !== 'b' && args.key !== 'confirm') {
+      await hold()
+    }
+    return result
+  }
+  const input = async (args: any) => {
+    const result = await ui.input(args)
+    await hold()
+    return result
+  }
+
+  // The kit's handle is frozen, so the wrapper is a view over it with press and input replaced.
+  return new Proxy({}, { get: (_target, key) => (key === 'press' ? press : key === 'input' ? input : typeof ui[key] === 'function' ? ui[key].bind(ui) : ui[key]) }) as Awaited<ReturnType<M>>
+}
+
 function focusRecorder() {
   const asked: string[] = []
 
@@ -405,7 +433,7 @@ async function drawDecision($: any, on: any, d: Decision) {
     DecisionView($$, { ui: $$.ui.resolve(e), d, view: INITIAL_VIEW, width: 49, readyCount: 0, onChanged: () => {}, onLeave: () => {}, onSend: () => {}, onHide: () => {} }),
   )
 
-  return $.ui.mount({ ...PANE, surface: 'terminal' })
+  return mountHolding($, { ...PANE, surface: 'terminal' })
 }
 
 test('a finding shows four options and Something else, each with its own number key, and no digit row', async ($, on) => {
@@ -565,7 +593,7 @@ const texts = async (ui: any) => (await ui.findAll({ type: 'Text' })).map((t: an
 
 test('opening puts the ring on the recommendation, on the chosen option once answered, and on 1 without either; opening marks it seen', async ($, on) => {
   const seen = await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'opt:2' }))?.props.autoFocus).toBe(true)
   expect(await ui.find({ key: 'card:2' })).toBeDefined()
@@ -585,7 +613,7 @@ test('opening puts the ring on the recommendation, on the chosen option once ans
 
 test('b goes straight back to the list, even with an option highlighted', async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'b' })
   expect(await ui.find({ key: 'row:d1' })).toBeDefined()
@@ -594,7 +622,7 @@ test('b goes straight back to the list, even with an option highlighted', async 
 
 test("every option's changes and the Why line show in full on a tall pane; m hides them but the highlighted one's", async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   const all = (await texts(ui)).join(' ')
   expect(all).toContain('by hand afterwards')
@@ -613,7 +641,7 @@ test("every option's changes and the Why line show in full on a tall pane; m hid
 
 test('full detail that would not fit the pane is still drawn whole, and the pane scrolls (row 262)', async ($, on) => {
   await begin($, on, { ...CHOICE, scenario: 'A long scenario sentence. '.repeat(30) })
-  const ui = await $.ui.mount(rowsOf(16))
+  const ui = await mountHolding($, rowsOf(16))
   await ui.press({ key: 'row:d1' })
   expect((await texts(ui)).join(' ')).toContain('by hand afterwards')
   expect(await ui.find({ key: 'card:2' })).toBeDefined()
@@ -622,7 +650,7 @@ test('full detail that would not fit the pane is still drawn whole, and the pane
 
 test('the last option is Something else; enter on it opens "Your answer ", and a typed answer saves without a turn', async ($, on) => {
   const seen = await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'opt:3' }))?.text).toMatch(/Something else/)
   expect((await ui.find({ key: 'opt:3' }))?.props.hotkey).toBe('3')
@@ -649,7 +677,7 @@ test('the last option is Something else; enter on it opens "Your answer ", and a
 
 test('an empty enter in the answer box closes it and saves nothing', async ($, on) => {
   const seen = await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'opt:3' })
   await ring($, 'opt:3')
@@ -663,7 +691,7 @@ test('an empty enter in the answer box closes it and saves nothing', async ($, o
 
 test('c on a highlighted option opens "Only if " and saves the option with its condition; c on Something else does nothing', async ($, on) => {
   const seen = await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'opt:3' })
   await ring($, 'opt:3')
@@ -685,12 +713,12 @@ test('c on a highlighted option opens "Only if " and saves the option with its c
 
 test('the answer box open when the pane is hidden comes back with its draft on the same option', async ($, on) => {
   await begin($, on)
-  let ui = await $.ui.mount(rowsOf(40))
+  let ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'c' })
   await ui.input({ key: 'answer', text: 'only on stag', kind: 'change' })
   await ui.unmount()
-  ui = await $.ui.mount(rowsOf(40))
+  ui = await mountHolding($, rowsOf(40))
   expect((await ui.find({ key: 'answer' }))?.props.label).toBe('Only if ')
   expect((await ui.find({ key: 'answer' }))?.text).toContain('only on stag')
   expect(await ui.find({ key: 'card:2' })).toBeDefined()
@@ -706,7 +734,7 @@ const TWELVE_PLACES = {
 
 test('12 options on a 9-row pane: every option is drawn, 1 then 3 reaches Something else, and 1 alone does not answer at once', async ($, on) => {
   const seen = await begin($, on, TWELVE_PLACES)
-  const ui = await $.ui.mount(rowsOf(9))
+  const ui = await mountHolding($, rowsOf(9))
   await ui.press({ key: 'row:d1' })
   expect(await ui.find({ key: 'opt:13' })).toBeDefined()
   await ui.press({ key: 'opt:1' })
@@ -720,7 +748,7 @@ test('12 options on a 9-row pane: every option is drawn, 1 then 3 reaches Someth
 
 test('a question has only Something else, and no line about typing in the discussion', async ($, on) => {
   await begin($, on, { group: 'Code review', kind: 'question', title: 'Which staging account', scenario: 'Two accounts exist.' })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   const options = (await ui.findAll({ type: 'Button' })).filter((b: any) => /^opt:/.test(String(b.props.key)))
   expect(options.map((b: any) => b.props.key)).toEqual(['opt:1'])
@@ -743,7 +771,7 @@ test('the conversation sits under the options: counts, the unread reply, and the
       { who: 'claude', text: 'Also, the importer has an owner who reads every PR.', at: at(120_000) },
     ],
   }))
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   const all = await texts(ui)
   expect(all).toContain('Talk it through with Claude')
@@ -761,7 +789,7 @@ test('the conversation sits under the options: counts, the unread reply, and the
 
 test('with no thread the conversation says what asking does; while a question waits it says Claude is replying', async ($, on) => {
   const seen = await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await texts(ui)).join(' ')).toContain('Ask why an option exists, what it would cost, or for another option. Claude replies here and can change the decision.')
   await ui.input({ key: 'ask-inline', text: 'Does the author read them?', kind: 'change' })
@@ -777,13 +805,13 @@ test('with no thread the conversation says what asking does; while a question wa
 
 test('t puts the ring in the ask box on a tall pane and opens the thread on a compact one', async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 't' }))?.props.hotkey).toBe('t')
   await ui.press({ key: 't' })
   expect(await ui.find({ key: 'ask-inline' })).toBeDefined()
   await ui.unmount()
-  const short = await $.ui.mount(rowsOf(9))
+  const short = await mountHolding($, rowsOf(9))
   expect(await short.find({ key: 'ask-inline' })).toBeUndefined()
   await short.press({ key: 't' })
   expect(await short.find({ type: 'Text', text: /^Replies from:/ })).toBeDefined()
@@ -792,7 +820,7 @@ test('t puts the ring in the ask box on a tall pane and opens the thread on a co
 
 test('o opens the whole thread, which has no d or m key and still has f', async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect(await ui.find({ key: 'discuss' })).toBeUndefined()
   await ui.press({ key: 'o' })
@@ -814,7 +842,7 @@ test('o opens the whole thread, which has no d or m key and still has f', async 
 test('the crumb names the id, the group and how many in it are answered; blocks shows as holds up', async ($, on) => {
   await begin($, on, { ...CHOICE, blocks: 'merging the branch' })
   await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: 'Second one' })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d2' })
   // The ring starts on the recommendation, so one press answers it.
   await ui.press({ key: 'opt:2' })
@@ -828,7 +856,7 @@ test('the crumb names the id, the group and how many in it are answered; blocks 
 test('an option from a discussion in the last two minutes is marked ↻ new, and not after', async ($, on) => {
   const seen = await begin($, on)
   await $.tool.call({ tool: UPDATE_TOOL, id: 'd1', summary: 'Added option 3, Both', addOptions: [{ label: 'Both' }] })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'line:3' }))?.text).toMatch(/↻ new/)
   expect((await ui.find({ key: 'line:1' }))?.text).not.toMatch(/↻ new/)
@@ -846,7 +874,7 @@ test('an option from a discussion in the last two minutes is marked ↻ new, and
 async function twoReady($: any, on: On, rows = 40): Promise<{ seen: Engine; ui: any }> {
   const seen = await begin($, on)
   await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: 'Second one', recommendation: { option: 1, reason: 'r' } })
-  const ui = await $.ui.mount(rowsOf(rows))
+  const ui = await mountHolding($, rowsOf(rows))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'opt:2' })
   await ui.press({ key: 'row:d2' })
@@ -899,7 +927,7 @@ test('b on the preview goes back to the decision, not the list, and nothing is s
 
 test('the preview of a lone answer has no line about others, shows a condition, and fits a 9-row pane', async ($, on) => {
   await begin($, on, { ...CHOICE, scenario: 's' })
-  const ui = await $.ui.mount(rowsOf(9))
+  const ui = await mountHolding($, rowsOf(9))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'c' })
   await ui.input({ key: 'answer', text: 'after CI is green' })
@@ -910,7 +938,7 @@ test('the preview of a lone answer has no line about others, shows a condition, 
   expect(all.join('|')).not.toMatch(/stays? ready/)
   expect(lineTotal(await ui.drawn())).toBeLessThanOrEqual(9)
   await ui.unmount()
-  const tall = await $.ui.mount(rowsOf(40))
+  const tall = await mountHolding($, rowsOf(40))
   expect(await texts(tall)).toContain('Condition: after CI is green')
   await tall.unmount()
 })
@@ -918,7 +946,7 @@ test('the preview of a lone answer has no line about others, shows a condition, 
 test('s on an unanswered decision still opens the Send screen for everything ready', async ($, on) => {
   const seen = await begin($, on)
   await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: 'Second one' })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'opt:2' })
   await ui.press({ key: 'row:d2' })
@@ -954,7 +982,7 @@ function lineTotal(node: any): number {
 for (const [kind, count] of [['go-ahead', 2], ['assumption', 2], ['finding', 4]] as const) {
   test(`a ${kind} ends with ${count + 1}: Something else`, async ($, on) => {
     await begin($, on, { group: 'Code review', kind, title: 'Search ranking: exact matches sort low', scenario: 's', recommendation: { option: 1, reason: 'r' } })
-    const ui = await $.ui.mount(rowsOf(40))
+    const ui = await mountHolding($, rowsOf(40))
     await ui.press({ key: 'row:d1' })
     const last = await ui.find({ key: `opt:${count + 1}` })
     expect(last?.text).toMatch(/Something else/)
@@ -967,7 +995,7 @@ for (const [kind, count] of [['go-ahead', 2], ['assumption', 2], ['finding', 4]]
 test('on the assumptions batch 3 does nothing, and enter on a row opens it with Something else as 3', async ($, on) => {
   await begin($, on, { group: 'Code review', kind: 'assumption', title: 'Codes are 8 characters', scenario: 's' })
   await $.tool.call({ tool: ADD_TOOL, group: 'Code review', kind: 'assumption', title: 'Links never expire', scenario: 's' })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'batch' })
   const hotkeys = (await ui.findAll({ type: 'Button' })).map((b: any) => b.props.hotkey).filter(Boolean)
   expect(hotkeys).toEqual(expect.arrayContaining(['1', '2']))
@@ -994,7 +1022,7 @@ test('the one-decision preview draws send first, with the focus on it and no c k
 
 test('compact at 49 columns: a 12-option decision keeps enter, c and Something else labelled, in 2 lines', async ($, on) => {
   await begin($, on, TWELVE_PLACES)
-  const ui = await $.ui.mount({ ...SCREEN, props: { ...SCREEN.props, bodyColumns: 49, scroll: { offset: 0, bodyRows: 9 } }, surface: 'terminal' as const })
+  const ui = await mountHolding($, { ...SCREEN, props: { ...SCREEN.props, bodyColumns: 49, scroll: { offset: 0, bodyRows: 9 } }, surface: 'terminal' as const })
   await ui.press({ key: 'row:d1' })
   const hints = (await ui.findAll({ type: 'Box' })).find((b: any) => b.props.key === 'hints')
   expect(hints).toBeDefined()
@@ -1009,7 +1037,7 @@ test('compact at 49 columns: a 12-option decision keeps enter, c and Something e
 
 test('a reply read on the decision screen is not new once the person leaves it', async ($, on) => {
   const seen = await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   tick()
   edit(seen, 'd1', d => ({ ...d, thread: [{ who: 'claude', text: 'A reply while you were here.', at: new Date().toISOString() }] }))
@@ -1079,7 +1107,7 @@ test('a 120-character title is drawn whole across lines, with keys on at the rig
   const title = 'Activity API docs: still says the app events are six and appear on the site log, when there are now eight of them'
   expect(title.length).toBeGreaterThan(110)
   await begin($, on, { ...CHOICE, title })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   const header = await ui.find({ key: 'header' })
   expect(header?.text.replace(/[▌\s]+/g, ' ')).toContain(title.split(' ').slice(-6).join(' '))
@@ -1091,7 +1119,7 @@ test('a 120-character title is drawn whole across lines, with keys on at the rig
 
 test('the header has the kind as an inverse label in its colour, and the crumb says how long ago it was asked', async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   const label = (await ui.findAll({ type: 'Text' })).find((t: any) => t.text === ' CHOICE ')
   expect(label?.props.backgroundColor).toBe('suggestion')
@@ -1104,7 +1132,7 @@ test('the header has the kind as an inverse label in its colour, and the crumb s
 test('the crumb counts answers with dots for up to 5 in the group, and without them above that', async ($, on) => {
   await begin($, on)
   await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: 'Second one' })
-  let ui = await $.ui.mount(rowsOf(40))
+  let ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'crumb' }))?.text.replace(/[▌\s]+/g, ' ')).toMatch(/· ○○ 0 of 2 answered/)
   await ui.press({ key: 'b' })
@@ -1112,7 +1140,7 @@ test('the crumb counts answers with dots for up to 5 in the group, and without t
   for (let i = 0; i < 6; i++) {
     await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: `More ${i}` })
   }
-  ui = await $.ui.mount(rowsOf(40))
+  ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'crumb' }))?.text.replace(/[▌\s]+/g, ' ')).toMatch(/· 0 of 8 answered/)
   expect((await ui.find({ key: 'crumb' }))?.text).not.toMatch(/○/)
@@ -1122,7 +1150,7 @@ test('the crumb counts answers with dots for up to 5 in the group, and without t
 test('what a decision waits on and holds up sits under the header, and is no longer in the m lines', async ($, on) => {
   await begin($, on, { ...CHOICE, blocks: 'merging the branch' })
   await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: 'Second one', dependsOn: ['d1'] })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'holds:d2' }))?.text).toMatch(/holds up d2 Second one ◆/)
   expect((await ui.find({ key: 'holds:blocks' }))?.text).toMatch(/holds up merging the branch/)
@@ -1135,7 +1163,7 @@ test('what a decision waits on and holds up sits under the header, and is no lon
 
 test('the ringed option has the selection background and no card border; Something else lines up with the options', async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'card:2' }))?.props.borderStyle).toBeUndefined()
   expect(JSON.stringify(await ui.find({ key: 'line:2' }))).toContain('"backgroundColor":"subtle"')
@@ -1148,7 +1176,7 @@ test('the ringed option has the selection background and no card border; Somethi
 
 test('the ask box has a border, and its placeholder is dim text before the field, not under the cursor', async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'ask-box' }))?.props.borderStyle).toBe('round')
   expect((await ui.find({ key: 'ask-inline' }))?.props.placeholder).toBeUndefined()
@@ -1159,7 +1187,7 @@ test('the ask box has a border, and its placeholder is dim text before the field
 test('the conversation reads as a chat: speaker and age, then the text on the same line', async ($, on) => {
   const seen = await begin($, on)
   edit(seen, 'd1', d => ({ ...d, thread: [{ who: 'person', text: 'would c work on findings too?', at: minutesBefore(2) }, { who: 'claude', text: 'Yes. c works on any highlighted option.', at: minutesBefore(0) }] }))
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   const reply = await ui.find({ key: 'talk:reply' })
   expect(reply?.text).toMatch(/^claude · now {2}Yes\. c works/)
@@ -1169,7 +1197,7 @@ test('the conversation reads as a chat: speaker and age, then the text on the sa
 
 test('sources are links: a path to its file with the line in the label, a URL as it is', async ($, on) => {
   await begin($, on, { ...CHOICE, sources: [{ label: 'Park box', path: 'hooks/pane/decision.tsx:681' }, { label: 'The PR', path: 'https://github.com/o/pantry/pull/12' }] })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   const links = (await ui.findAll({ type: 'Link' })).map((l: any) => l.props.href)
   expect(links).toEqual(expect.arrayContaining(['file:///work/pantry/hooks/pane/decision.tsx', 'https://github.com/o/pantry/pull/12']))
@@ -1179,7 +1207,7 @@ test('sources are links: a path to its file with the line in the label, a URL as
 
 test('backticks in a scenario draw as code, and a URL in it as a short link', async ($, on) => {
   await begin($, on, { ...CHOICE, scenario: 'The test calls `request()`, see https://github.com/o/pantry/pull/12 for the change.' })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.findAll({ type: 'Text' })).find((t: any) => t.text === 'request()')?.props.color).toBe('suggestion')
   expect(await allTexts(ui)).not.toContain('`request()`')
@@ -1189,7 +1217,7 @@ test('backticks in a scenario draw as code, and a URL in it as a short link', as
 
 test('12 options at 49x9: every option is drawn with its key, the key line comes before them, and ↑↓ is offered', async ($, on) => {
   await begin($, on, TWELVE_PLACES)
-  const ui = await $.ui.mount({ ...SCREEN, props: { ...SCREEN.props, bodyColumns: 49, scroll: { offset: 0, bodyRows: 9 } }, surface: 'terminal' as const })
+  const ui = await mountHolding($, { ...SCREEN, props: { ...SCREEN.props, bodyColumns: 49, scroll: { offset: 0, bodyRows: 9 } }, surface: 'terminal' as const })
   await ui.press({ key: 'row:d1' })
   const keys = await keysInOrder(ui)
   for (let n = 1; n <= 13; n++) {
@@ -1204,7 +1232,7 @@ test('12 options at 49x9: every option is drawn with its key, the key line comes
 test('a decision twice the pane tall draws every line, with nothing cut, and the key line near the top', async ($, on) => {
   const scenario = Array.from({ length: 30 }, (_, i) => `Sentence ${i + 1} of the scenario.`).join(' ')
   await begin($, on, { ...CHOICE, scenario })
-  const ui = await $.ui.mount(rowsOf(20))
+  const ui = await mountHolding($, rowsOf(20))
   await ui.press({ key: 'row:d1' })
   const all = (await allTexts(ui)).replace(ASK_PLACEHOLDER, '')
   expect(all).toContain('Sentence 30 of the scenario.')
@@ -1220,7 +1248,7 @@ test("the newest reply is drawn whole, even 12 lines of it on a 20-row pane", as
   const seen = await begin($, on)
   const reply = Array.from({ length: 12 }, (_, i) => `Line ${i + 1} of the reply.`).join('\n')
   edit(seen, 'd1', d => ({ ...d, thread: [{ who: 'person', text: 'why?', at: minutesBefore(3) }, { who: 'claude', text: reply, at: minutesBefore(1) }] }))
-  const ui = await $.ui.mount(rowsOf(20))
+  const ui = await mountHolding($, rowsOf(20))
   await ui.press({ key: 'row:d1' })
   const all = (await allTexts(ui)).replace(ASK_PLACEHOLDER, '')
   expect(all).toContain('Line 12 of the reply.')
@@ -1230,7 +1258,7 @@ test("the newest reply is drawn whole, even 12 lines of it on a 20-row pane", as
 
 test('a tall pane with the detail shown puts a blank line between options; m hides it with the detail', async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect(await ui.find({ key: 'gap:2' })).toBeDefined()
   expect(await ui.find({ key: 'gap:1' })).toBeUndefined()
@@ -1241,7 +1269,7 @@ test('a tall pane with the detail shown puts a blank line between options; m hid
 
 test('an open condition box is a bordered box indented under its option, with its line dim inside', async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'c' })
   const box = await ui.find({ key: 'answer-box' })
@@ -1262,7 +1290,7 @@ const WITH_WHY = {
 
 test('why and why not draw under an option in full detail, in success and warning, through the inline renderer', async ($, on) => {
   await begin($, on, { ...WITH_WHY, options: [{ ...WITH_WHY.options[0]!, why: 'nothing to `set up`' }, WITH_WHY.options[1]!] })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   const spans = (await ui.findAll({ type: 'Text' })) as any[]
   const plus = spans.find(t => /^\+ nothing to set up$/.test(t.text))
@@ -1275,7 +1303,7 @@ test('why and why not draw under an option in full detail, in success and warnin
 
 test('an option without why or why not draws neither', async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect(await allTexts(ui)).not.toMatch(/^[+−] /m)
   await ui.unmount()
@@ -1283,7 +1311,7 @@ test('an option without why or why not draws neither', async ($, on) => {
 
 test('with the detail hidden, why and why not show only under the highlighted option', async ($, on) => {
   await begin($, on, { ...WITH_WHY, recommendation: { option: 2, reason: 'r' } })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'm' })
   expect(await allTexts(ui)).not.toContain('nothing to set up')
@@ -1294,7 +1322,7 @@ test('with the detail hidden, why and why not show only under the highlighted op
 
 test('compact at 49x9 with why and why not keeps the key line at the top', async ($, on) => {
   await begin($, on, WITH_WHY)
-  const ui = await $.ui.mount({ ...SCREEN, props: { ...SCREEN.props, bodyColumns: 49, scroll: { offset: 0, bodyRows: 9 } }, surface: 'terminal' as const })
+  const ui = await mountHolding($, { ...SCREEN, props: { ...SCREEN.props, bodyColumns: 49, scroll: { offset: 0, bodyRows: 9 } }, surface: 'terminal' as const })
   await ui.press({ key: 'row:d1' })
   const keys = await keysInOrder(ui)
   expect(keys.indexOf('b')).toBeLessThan(keys.indexOf('opt:1'))
@@ -1303,7 +1331,7 @@ test('compact at 49x9 with why and why not keeps the key line at the top', async
 
 test('while the ring is in the ask box the key line shows only what works there', async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ring($, 'ask-inline')
   const hintKeys = (await ui.findAll({ type: 'Button' })).map((b: any) => String(b.props.key)).filter((k: string) => !/^(opt|row):/.test(k))
@@ -1319,7 +1347,7 @@ test('while the ring is in the ask box the key line shows only what works there'
 test('after a question is sent from the ask box the ring goes back to the highlighted option', async ($, on) => {
   const clock = mock.clock(on as any)
   const seen = await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await clock.advance(100)
   await ring($, 'ask-inline')
@@ -1341,7 +1369,7 @@ test('a sent decision shows when it went and the first line of what Claude did n
   const seen = await begin($, on)
   const sentAt = new Date().toISOString()
   edit(seen, 'd1', d => ({ ...d, state: 'sent', sentAt, answer: { option: 2, answeredAt: sentAt }, thread: [{ who: 'receipt', text: 'Posted three PR comments.', at: sentAt }] }))
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   const clock = sentAt.slice(11, 16)
   const local = new Date(sentAt)
   const hm = `${String(local.getHours()).padStart(2, '0')}:${String(local.getMinutes()).padStart(2, '0')}`

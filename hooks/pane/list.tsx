@@ -73,7 +73,7 @@ export function statusText(all: Decision[]): string | undefined {
     return undefined
   }
 
-  return [open > 0 ? `${open} open` : 'nothing needs you', ready > 0 ? `${ready} ready` : '', parked > 0 ? `${parked} parked` : '']
+  return [open > 0 ? `${open} open` : 'nothing needs you', ready > 0 ? `${ready} not sent` : '', parked > 0 ? `${parked} parked` : '']
     .filter(Boolean)
     .join(' · ')
 }
@@ -176,10 +176,15 @@ export function toggleTick(ticked: string[], id: string): string[] {
  */
 export function openReview(view: PaneView, readyIds: string[], only?: string): PaneView {
   if (only !== undefined) {
-    return { ...view, screen: 'review', decisionId: only, ticked: [only], answerBox: undefined, notice: undefined, compactPage: 0, ring: 'confirm' }
+    return { ...view, screen: 'review', decisionId: only, ticked: [only], answerBox: undefined, notice: undefined, compactPage: 0, ring: 'confirm', isLastOne: false }
   }
 
-  return { ...view, screen: 'review', decisionId: undefined, ticked: readyIds, notice: undefined, compactPage: 0, ring: readyIds[0] === undefined ? undefined : `tick:${readyIds[0]}` }
+  return { ...view, screen: 'review', decisionId: undefined, ticked: readyIds, notice: undefined, compactPage: 0, ring: readyIds[0] === undefined ? undefined : `tick:${readyIds[0]}`, isLastOne: false }
+}
+
+/** The person answered the last waiting decision (row 270): the Send screen with every ready answer ticked and the ring on send. */
+export function openLastOne(view: PaneView, readyIds: string[]): PaneView {
+  return { ...openReview(view, readyIds), decisionId: undefined, highlight: undefined, answerBox: undefined, ring: 'confirm', isLastOne: true }
 }
 
 function chosenText(d: Decision): string {
@@ -196,7 +201,7 @@ function chosenText(d: Decision): string {
 export function rowMeta(d: Decision, width: number): string {
   const isWide = width >= 70
   if (d.state === 'ready') {
-    return isWide ? `${chosenText(d)} · ready to send` : `${chosenText(d)}  ready`
+    return isWide ? `${chosenText(d)} · not sent yet` : `${chosenText(d)}  not sent`
   }
   if (d.state === 'sent') {
     return isWide ? `${chosenText(d)} · sent` : `${chosenText(d)}  sent`
@@ -552,9 +557,16 @@ export function ListView($: any, props: ListProps): any {
       </Box>
       {compact ? null : Rule(ui, width, 'rule:sections')}
       {isIdle ? (
-        <Text key="idle" color="success">
-          {truncate(readyCount > 0 ? `✓ Nothing needs you · ${readyCount} ready to send (s)` : '✓ Nothing needs you', width)}
-        </Text>
+        readyCount > 0 ? (
+          // Until they are sent nothing says done (row 270).
+          <Text key="idle" color="warning">
+            {truncate(`${readyCount} answer${readyCount === 1 ? '' : 's'} not sent yet · s sends them`, width)}
+          </Text>
+        ) : (
+          <Text key="idle" color="success">
+            {truncate('✓ Nothing needs you', width)}
+          </Text>
+        )
       ) : isParkedTab ? null : heading('Needs you', sections.needsYou.length, '◆')}
       {lastSent ? <Text key="last-sent" dimColor>{truncate(lastSent, width)}</Text> : null}
       {recent.map(row)}
@@ -698,7 +710,7 @@ export function ReviewView($: any, props: ReviewProps): any {
   const isFocused = props.isFocused === true
   const compact = isCompact(props.rows ?? 30)
   const back = () => {
-    void setView($, v => ({ ...v, screen: 'list', compactPage: 0 }))
+    void setView($, v => ({ ...v, screen: 'list', compactPage: 0, isLastOne: false }))
     onLeave()
   }
   const send = () => {
@@ -707,6 +719,28 @@ export function ReviewView($: any, props: ReviewProps): any {
     }
   }
   const tick = (d: Decision) => () => setView($, v => ({ ...v, ticked: toggleTick(v.ticked, d.id) }))
+
+  if (view.isLastOne === true) {
+    const count = ticked.length
+    // Send is drawn first and has the ring, so enter sends; b holds them. Nothing is sent without enter.
+    return (
+      <Box flexDirection="column">
+        <Text bold>That was the last one.</Text>
+        <Text>{`enter sends ${count} answer${count === 1 ? '' : 's'} to Claude, b to hold them.`}</Text>
+        <Button key="confirm" variant="primary" autoFocus onPress={send}>
+          {`${ringMark('confirm', view.ring, isFocused)}enter: send ${count}  `}
+        </Button>
+        {ready.map(d => (
+          <Button key={`tick:${d.id}`} plain onPress={tick(d)}>
+            {`${ringMark(`tick:${d.id}`, view.ring, isFocused)} ` + truncate(`${ticked.includes(d.id) ? '[x]' : '[ ]'} ${d.id}  ${d.title} · ${chosenText(d).replace('✓ ', '')}`, width - 2)}
+          </Button>
+        ))}
+        <Button key="b" hotkey="b" plain onPress={back}>
+          {'hold them'}
+        </Button>
+      </Box>
+    )
+  }
 
   if (compact) {
     const size = Math.max(1, (props.rows ?? 30) - REVIEW_COMPACT_FIXED - (isFocused ? 0 : 1))

@@ -3,7 +3,8 @@ import { atom, read, update } from 'claude-code'
 import type { PaneView } from '../../types'
 import { reopenDependents, reopenNotice } from '../dependents'
 import { focusKeyName } from '../focus-key'
-import { readOne, write } from '../store'
+import { readAll, readOne, write } from '../store'
+import { openLastOne } from './list'
 import { askQuestion, currentMode } from '../discuss'
 import type { Answer, Decision, Kind, Option, StoreCtx, ThreadEntry } from '../store'
 import { HEADER_RIGHT_GAP, KeyHints, Rule, hintLineCount, isCompact, keysState, wrapLines } from './look'
@@ -924,6 +925,19 @@ export function DecisionView($: any, props: Props): any {
 
   const toList = async (notice: string | undefined): Promise<unknown> => {
     await leaving()
+    const { decisions } = await readAll($)
+    const isLast = !decisions.some(x => (x.state === 'open' || x.state === 'live') && x.section === 'needs-you')
+    const readyIds = decisions.filter(x => x.state === 'ready').map(x => x.id)
+    if (isLast && readyIds.length > 0) {
+      // That was the last one (row 270): straight to sending, the ring on send.
+      await setView($, v => {
+        const { [d.id]: _gone, ...answerDrafts } = v.answerDrafts
+        return { ...openLastOne(v, readyIds), answerDrafts, isContextOpen: false, compactPage: 0, notice }
+      })
+      focusLater($, 'confirm')
+
+      return undefined
+    }
 
     return setView($, v => {
       const { [d.id]: _gone, ...answerDrafts } = v.answerDrafts
