@@ -1,10 +1,12 @@
+import { reopenDependents } from './dependents'
 import { fixedOptionsFor } from './kind-options'
 import { create, readAll, readOne, write } from './store'
-import type { Decision, Kind, Section, StoreCtx } from './store'
+import type { Answer, Decision, Kind, Section, StoreCtx } from './store'
 
 export const ADD_TOOL = 'mcp__decisions__decisions_add'
 export const LIST_TOOL = 'mcp__decisions__decisions_list'
 export const UPDATE_TOOL = 'mcp__decisions__decisions_update'
+export const ANSWER_TOOL = 'mcp__decisions__decisions_answer'
 
 export const ADD_DESCRIPTION = `Adds one decision to the decisions pane, where the person answers it. Use it for every question, decision, assumption, go-ahead or review finding you would otherwise put to the person in chat, and never use AskUserQuestion: call this tool instead. Write one line in chat saying what you added (such as "Added 2 decisions to the pane, 1 blocks the plan") and carry on with anything that does not depend on the answer. Never list the decisions in chat.
 
@@ -142,6 +144,20 @@ export const UPDATE_INPUT_SCHEMA = {
 }
 
 const LIST_INPUT_SCHEMA = { type: 'object', properties: {} }
+
+export const ANSWER_DESCRIPTION = `Records an answer the person gave in the chat instead of the pane (row 263). Use it only when their own message answers a decision that is in the pane: for example "happy with your recommendations" answers every open decision you had recommended for, each with its recommended option. Give the option they chose, or text with their answer in their words, an optional condition, and quote: their message, verbatim. The decision is marked sent, since you already have the answer, and the pane shows it with the quote. Never use it to answer on the person's behalf without their words, or for a decision their message doesn't answer.`
+
+export const ANSWER_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: 'The decision, such as "d3".' },
+    option: { type: 'number', description: 'The number of the option they chose. Give this or text.' },
+    text: { type: 'string', description: 'Their answer in their own words, when it is not one of the options.' },
+    condition: { type: 'string', description: 'Optional: a condition they put on it ("only if ...").' },
+    quote: { type: 'string', description: "The person's chat message the answer came from, verbatim." },
+  },
+  required: ['id', 'quote'],
+}
 
 function isBlank(value: unknown): boolean {
   return typeof value !== 'string' || value.trim() === ''
@@ -368,6 +384,59 @@ export async function updateDecision($: StoreCtx, input: Record<string, any>): P
   return { result: `Updated ${d.id}: ${summary}. The earlier version is kept in the thread.` }
 }
 
+/** The refusal text for a chat answer, or undefined when it's fine. */
+export function validateAnswer(input: Record<string, any>, d: Decision | undefined): string | undefined {
+  if (!d) {
+    return `decisions_answer refused: ${String(input.id)}: no such decision.`
+  }
+  if (['sent', 'superseded', 'withdrawn'].includes(d.state)) {
+    return `decisions_answer refused: ${d.id} is already ${d.state}.`
+  }
+  if ((input.option === undefined) === isBlank(input.text)) {
+    return 'decisions_answer refused: give an option or text, one of them.'
+  }
+  if (input.option !== undefined && !d.options.some(o => o.id === input.option)) {
+    return `decisions_answer refused: option ${String(input.option)} is not one of ${d.id}'s options.`
+  }
+  if (input.condition !== undefined && typeof input.condition !== 'string') {
+    return 'decisions_answer refused: condition must be a sentence, or left out.'
+  }
+  if (isBlank(input.quote)) {
+    return "decisions_answer refused: quote is required: the person's chat message, verbatim."
+  }
+
+  return undefined
+}
+
+/** A chat answer (row 263): the answer, sent at once since Claude already has it, the quote in the thread, and dependents reopened as for any changed answer. */
+export async function answerDecision($: StoreCtx, input: Record<string, any>): Promise<{ result: string } | { deny: string }> {
+  const d = typeof input.id === 'string' ? await readOne($, input.id) : undefined
+  const reason = validateAnswer(input, d)
+  if (reason !== undefined || !d) {
+    return { deny: reason ?? 'decisions_answer refused: no such decision.' }
+  }
+  const at = new Date().toISOString()
+  const condition = isBlank(input.condition) ? undefined : String(input.condition).trim()
+  const answer: Answer = {
+    ...(input.option !== undefined ? { option: input.option as number } : { text: String(input.text).trim() }),
+    ...(condition !== undefined ? { condition } : {}),
+    answeredAt: at,
+  }
+  const previous = d.answer
+  const next: Decision = {
+    ...d,
+    state: 'sent',
+    sentAt: at,
+    answer,
+    thread: [...d.thread, { who: 'person', text: `Answered in chat: ${String(input.quote).trim()}`, at }],
+  }
+  await write($, next)
+  const changed = previous !== undefined && (previous.option !== answer.option || previous.text !== answer.text || previous.condition !== condition)
+  const reopened = changed ? (await reopenDependents($, next, previous)).reopened : []
+
+  return { result: `Recorded ${d.id} as answered in chat and sent.${reopened.length > 0 ? ` Reopened ${reopened.join(', ')}.` : ''}` }
+}
+
 const WAITING = ['open', 'live']
 
 export async function addDecision($: StoreCtx, input: Record<string, any>): Promise<{ result: string } | { deny: string }> {
@@ -470,6 +539,12 @@ export async function registerTools($: { tool: { register: (spec: any) => Promis
     name: 'decisions_update',
     description: UPDATE_DESCRIPTION,
     inputSchema: UPDATE_INPUT_SCHEMA,
+    isDeferred: false,
+  })
+  await $.tool.register({
+    name: 'decisions_answer',
+    description: ANSWER_DESCRIPTION,
+    inputSchema: ANSWER_INPUT_SCHEMA,
     isDeferred: false,
   })
 }

@@ -6,7 +6,7 @@ import { changed, followFocus, isTabKey, openFocused, openForNewDecision, refres
 import { configure, onTurnComplete, onTurnStart } from './discuss'
 import { addContextBlock, addRulesSection, answerAskUserQuestion, noteAtSessionStart, noteOnSubmit, nudgeAfterTurn, onCompact, refuseSubagent } from './integrate'
 import { PANE_ID } from './pane/decision'
-import { ADD_TOOL, LIST_TOOL, UPDATE_TOOL, addDecision, listDecisions, registerTools, updateDecision } from './tool'
+import { ADD_TOOL, ANSWER_TOOL, LIST_TOOL, UPDATE_TOOL, addDecision, answerDecision, listDecisions, registerTools, updateDecision } from './tool'
 
 export const register: Register = (on, options) => {
   configure(options)
@@ -50,6 +50,19 @@ export const register: Register = (on, options) => {
 
     return answer
   }).catch(() => ({ deny: 'decisions_update failed: the decision could not be read or written. Say so in chat instead of retrying.' }))
+
+  on('tool.call', { tool: ANSWER_TOOL }, async ($, e) => {
+    const refused = refuseSubagent(e)
+    if (refused) {
+      return refused
+    }
+    const answer = await answerDecision($, e)
+    if ('result' in answer) {
+      await changed($)
+    }
+
+    return answer
+  }).catch(() => ({ deny: 'decisions_answer failed: the decision could not be read or written. Say so in chat instead of retrying.' }))
 
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e) => {
     const refused = refuseSubagent(e)

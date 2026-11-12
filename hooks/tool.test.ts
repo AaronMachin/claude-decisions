@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { RULE_PHRASES } from './integrate'
 import { create, readAll, write } from './store'
 import type { StoreCtx } from './store'
-import { ADD_DESCRIPTION, ADD_INPUT_SCHEMA, ADD_TOOL, LIST_TOOL, UPDATE_DESCRIPTION, addDecision, listDecisions, registerTools, updateDecision, validateAdd, validateUpdate } from './tool'
+import { ADD_DESCRIPTION, ADD_INPUT_SCHEMA, ADD_TOOL, ANSWER_DESCRIPTION, ANSWER_TOOL, LIST_TOOL, UPDATE_DESCRIPTION, addDecision, answerDecision, listDecisions, registerTools, updateDecision, validateAdd, validateUpdate } from './tool'
 
 function fake(): StoreCtx {
   const files = new Map<string, string>()
@@ -132,7 +132,7 @@ test('the description fits in what reaches Claude and carries the rules', () => 
 test('both tools are registered with their schemas, not deferred', async () => {
   const registered: any[] = []
   await registerTools({ tool: { register: async (spec: any) => void registered.push(spec) } })
-  expect(registered.map(s => s.name)).toEqual(['decisions_add', 'decisions_list', 'decisions_update'])
+  expect(registered.map(s => s.name)).toEqual(['decisions_add', 'decisions_list', 'decisions_update', 'decisions_answer'])
   expect(registered.every(s => s.isDeferred === false)).toBe(true)
   expect(registered[0].inputSchema.required).toEqual(['kind', 'title', 'scenario'])
 })
@@ -370,4 +370,64 @@ test('why and why not must be strings', async () => {
   const schema = (ADD_INPUT_SCHEMA.properties.options.items as any).properties
   expect(schema.why.type).toBe('string')
   expect(schema.whyNot.type).toBe('string')
+})
+
+test('decisions_answer records a chat answer as sent, with the quote in the thread', async () => {
+  const $ = fake()
+  await addDecision($, GOOD)
+  expect(ANSWER_TOOL).toBe('mcp__decisions__decisions_answer')
+  const result = await answerDecision($, { id: 'd1', option: 1, quote: 'happy with your recommendations' })
+  expect(result).toHaveProperty('result')
+  const d = (await readAll($)).decisions[0]!
+  expect(d.state).toBe('sent')
+  expect(d.sentAt).toBeDefined()
+  expect(d.answer).toMatchObject({ option: 1 })
+  expect(d.thread.at(-1)).toMatchObject({ who: 'person', text: 'Answered in chat: happy with your recommendations' })
+})
+
+test('decisions_answer takes the person\'s own words and a condition', async () => {
+  const $ = fake()
+  await addDecision($, GOOD)
+  await answerDecision($, { id: 'd1', text: 'a config folder', condition: 'it is gitignored', quote: 'put it in a config folder, if gitignored' })
+  expect((await readAll($)).decisions[0]!.answer).toMatchObject({ text: 'a config folder', condition: 'it is gitignored' })
+})
+
+test('decisions_answer refuses an unknown id, a missing option, neither or both, an empty quote, and a sent or withdrawn decision', async () => {
+  const $ = fake()
+  await addDecision($, GOOD)
+  const deny = async (input: Record<string, unknown>) => ((await answerDecision($, input)) as { deny?: string }).deny
+  expect(await deny({ id: 'd9', option: 1, quote: 'yes' })).toMatch(/d9/)
+  expect(await deny({ id: 'd1', option: 7, quote: 'yes' })).toMatch(/option/)
+  expect(await deny({ id: 'd1', quote: 'yes' })).toMatch(/option or text/)
+  expect(await deny({ id: 'd1', option: 1, text: 'x', quote: 'yes' })).toMatch(/option or text/)
+  expect(await deny({ id: 'd1', option: 1, quote: '  ' })).toMatch(/quote/)
+  await answerDecision($, { id: 'd1', option: 1, quote: 'yes' })
+  expect(await deny({ id: 'd1', option: 2, quote: 'no, 2' })).toMatch(/sent/)
+  const d = (await readAll($)).decisions[0]!
+  await write($, { ...d, state: 'withdrawn' })
+  expect(await deny({ id: 'd1', option: 1, quote: 'yes' })).toMatch(/withdrawn/)
+})
+
+test('decisions_answer refuses another session\'s decision', async () => {
+  const $ = fake()
+  await addDecision($, GOOD)
+  const other = { ...$, session: { ...$.session, id: async () => 'session-2' } }
+  expect(await answerDecision(other, { id: 'd1', option: 1, quote: 'yes' })).toHaveProperty('deny')
+})
+
+test('a chat answer that changes an earlier answer reopens its dependents', async () => {
+  const $ = fake()
+  await addDecision($, GOOD)
+  await addDecision($, { ...GOOD, title: 'Second', dependsOn: ['d1'] })
+  const [d1, d2] = (await readAll($)).decisions
+  await write($, { ...d1!, state: 'ready', answer: { option: 1, answeredAt: 't' } })
+  await write($, { ...d2!, state: 'ready', answer: { option: 1, answeredAt: 't' } })
+  await answerDecision($, { id: 'd1', option: 2, quote: 'actually per package' })
+  expect((await readAll($)).decisions[1]!.state).toBe('open')
+})
+
+test('the answer description is short and says to use it only with the person\'s own words', () => {
+  expect(ANSWER_DESCRIPTION.length).toBeLessThanOrEqual(1200)
+  expect(ANSWER_DESCRIPTION).toMatch(/happy with your recommendations/)
+  expect(ANSWER_DESCRIPTION).toMatch(/Never/)
 })
