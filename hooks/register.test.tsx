@@ -364,6 +364,38 @@ test('a sent decision offers only b, and review back sends nothing', async ($, o
   await ui.unmount()
 })
 
+test('u on a sent decision takes it back to an unsent answer, so it can be changed or sent again (row 292)', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  await answer($, ui, 1)
+  await ui.press({ key: 's' })
+  await ui.press({ key: 'confirm' })
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(seen.submitted).toHaveLength(1)
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'u' }))?.text).toContain('unsend')
+  await ui.press({ key: 'u' })
+  for (let i = 0; i < 10; i++) {
+    await Promise.resolve()
+  }
+  const path = [...seen.files.keys()].find(p => p.endsWith('/d1.json'))!
+  const d = JSON.parse(seen.files.get(path)!)
+  expect(d.state).toBe('ready')
+  expect(d.answer.option).toBe(1)
+  expect(d.sentAt).toBeUndefined()
+  await ui.press({ key: 'b' })
+  await ui.press({ key: 's' })
+  await ui.press({ key: 'confirm' })
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(seen.submitted).toHaveLength(2)
+  await ui.unmount()
+})
+
 test('a send that fails shows its notice in the pane and the answers are ready again', async ($, on) => {
   const seen = engine(on, { failSubmit: true })
   await start($)

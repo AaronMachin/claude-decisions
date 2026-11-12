@@ -116,6 +116,22 @@ export async function back(
   return { ...view, screen: 'list', decisionId: undefined, highlight: undefined, answerBox: undefined, isParking: false, notice: undefined }
 }
 
+/**
+ * Takes a sent decision back to ready, keeping its answer, so it can be changed or sent again:
+ * for a send whose prompt was cancelled, or a change of mind (row 292). Undefined unless it was sent.
+ */
+export async function unsend(store: StoreCtx, d: Decision): Promise<Decision | undefined> {
+  const current = (await readOne(store, d.id)) ?? d
+  if (current.state !== 'sent') {
+    return undefined
+  }
+  const { sentAt: _sentAt, ...rest } = current
+  const next: Decision = { ...rest, state: 'ready' }
+  await write(store, next)
+
+  return next
+}
+
 /** Records the answer and makes the decision ready. Refused (undefined) once it is sent, or for an option that isn't there. */
 export async function chooseOption(store: StoreCtx, d: Decision, option: number): Promise<Decision | undefined> {
   if (d.state === 'sent' || !d.options.some(o => o.id === option)) {
@@ -523,6 +539,7 @@ type Handlers = {
   park: () => void
   send: () => void
   hide: () => void
+  unsend: () => void
 }
 
 const NO_HANDLERS: Handlers = {
@@ -538,6 +555,7 @@ const NO_HANDLERS: Handlers = {
   park: () => {},
   send: () => {},
   hide: () => {},
+  unsend: () => {},
 }
 
 /** The decision screen's key hints. */
@@ -570,6 +588,10 @@ export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
   }
   if (!isSent && isOption) {
     hints.push({ id: 'c', keyText: 'c', label: 'condition', hotkey: 'c', onPress: on.condition, keepLabel: true })
+  }
+  if (isSent) {
+    // Taking it back keeps the answer: change it, or send it again (row 292).
+    hints.push({ id: 'u', keyText: 'u', label: 'unsend', hotkey: 'u', onPress: on.unsend, keepLabel: true })
   }
   hints.push({ id: 't', keyText: 't', label: 'talk', hotkey: 't', onPress: on.talk })
   hints.push({ id: 'o', keyText: 'o', label: 'thread', hotkey: 'o', onPress: on.thread })
@@ -1062,6 +1084,11 @@ export function DecisionView($: any, props: Props): any {
     await markSeen($, d.id)
   }
   const handlers: Handlers = {
+    unsend: async () => {
+      if (await unsend($, d)) {
+        props.onChanged()
+      }
+    },
     recommend: async () => {
       const option = d.recommendation?.option
       if (option !== undefined && d.options.some(o => o.id === option)) {
