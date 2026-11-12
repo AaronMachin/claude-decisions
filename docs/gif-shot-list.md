@@ -35,8 +35,8 @@ The pane shows only the decisions of the session that added them, so the seeded 
 ### 2. A live discussion that adds an option
 
 - **Setup:** seeded.
-- **Do:** `/decisions`; `enter` on "Where share links live" (highlighted to start with); `enter` again (nothing highlighted) to open the discussion; `enter` on "Ask a question"; type `Could links expire on their own after a week? If that's worth weighing, add it as an option.` and press `enter`.
-- **On screen at the end:** a `↻ Added option 3, ...` line in the thread, then Claude's reply under it. `b` once shows the decision with its third option. In the trial run the revision showed in about 8 seconds and the reply soon after; the main chat shows the same exchange beside it.
+- **Do:** `/decisions`; `enter` on "Where share links live" (highlighted to start with); `t` to put the ring in the ask box under the options; type `Could links expire on their own after a week? If that's worth weighing, add it as an option.` and press `enter`.
+- **On screen at the end:** `✻ Claude is replying…` under "Talk it through with Claude", then a third option marked `↻ new` and Claude's reply in the conversation, all on the decision screen. `o` opens the whole thread with its `↻ Added option 3, ...` line. In the trial run (on the old thread screen) the revision showed in about 8 seconds and the reply soon after; the main chat shows the same exchange beside it.
 - **Length:** 20 to 30 seconds (trim the wait for the reply).
 
 ### 3. The assumptions batch
@@ -49,7 +49,7 @@ The pane shows only the decisions of the session that added them, so the seeded 
 ### 4. Findings triage with folded sections
 
 - **Setup:** seeded.
-- **Do:** `/decisions`; `t` to the "Pantry review" tab; move to "Recipe list: cooking times show in seconds" (check the highlight) and `enter`; `1` then `enter` to agree; after it returns to the list, `Down` twice to "▸ Claude's call (2)" and `enter`.
+- **Do:** `/decisions`; `t` to the "Pantry review" tab; move to "Recipe list: cooking times show in seconds" (check the highlight) and `enter`; `1` then `enter` to agree (the ring starts on the recommendation, so if that is Agree, `enter` alone does it); after it returns to the list, `Down` twice to "▸ Claude's call (2)" and `enter`.
 - **On screen at the end:** "Needs you (2)", "▾ Claude's call (2)" open with its two findings, "▸ Already decided (2)" still folded, and the agreed finding under "Answered" as `ready to send`.
 - **Length:** about 15 seconds.
 
@@ -57,6 +57,6 @@ The pane shows only the decisions of the session that added them, so the seeded 
 
 - **Setup:** seeded.
 - **Before recording:** `/decisions`, then `esc`, so the pane is open without the keys.
-- **Do:** type `also remember the` in the prompt and stop; focus key (the header turns to `keys on`); `Down` to "What a receiver can do with a shared recipe" and `enter`; `a` to highlight the recommendation, `enter` to confirm; `esc`.
+- **Do:** type `also remember the` in the prompt and stop; focus key (the header turns to `keys on`); `Down` to "What a receiver can do with a shared recipe" and `enter`; the ring is already on the recommendation, so `enter` confirms it; `esc`.
 - **On screen at the end:** the prompt with `also remember the` still in it, the pane showing the decision answered and `keys off`.
 - **Length:** about 10 seconds.
