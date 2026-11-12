@@ -80,13 +80,15 @@ type Decision = { /* as before */ problem?: string; problemBy?: 'claude' | 'mode
 // discuss.ts
 type Replies = 'main' | 'fork' | 'quick' | 'auto'
 function currentReplies(): Replies
-function askQuestion($, mode: Replies, decisionId: string, question: string): Promise<void>
+function askQuestion($, mode: Replies, decisionId: string, question: string, session?: SessionSummary): Promise<void>
 function askMainInstead($, decisionId: string, replyAt: string): Promise<void>
 function canAskMainInstead(d: Decision, replyAt: string, pending: PendingQuestion[]): boolean
 
 // triage.ts
 type SessionSummary = { title?: string; summary?: string; now?: string }
-function useSessionSummary(read: ($) => Promise<SessionSummary | undefined>): void
+
+// problem.ts
+const PROBLEM_MAX = 140
 ```
 
-`currentMode()` keeps its type (`main`, `fork` or `quick`, the replier the pane names); under `auto` it says `main`, since that is where anything the small model can't answer goes. The pane passes `currentReplies()` to `askQuestion` for `auto` to take effect.
+`currentMode()` keeps its type (`main`, `fork` or `quick`, the replier the pane names); under `auto` it says `main`, since that is where anything the small model can't answer goes. The pane passes `currentReplies()` to `askQuestion` for `auto` to take effect, and the session record's note as its last argument once there is one.

@@ -92,13 +92,14 @@ A decision can be marked as blocking. Claude carries on with work that doesn't d
 One record per decision, grouped by the piece of work it belongs to (a ticket, a PR review, a plan). Fields, as a first pass:
 
 - `id`, `group`, `kind`, `title`, `scenario`
+- `problem`: one line on what the decision is about, and `problemBy` (`claude`, or `model` when the small model wrote it in the background, 271)
 - `options`: id, label, what it changes, and whether it came from a discussion
 - `recommendation`: option id and reason
 - `sources`: label and path or URL
 - `dependsOn`, `blocks`
 - `state`, `parkedReason`
 - `answer`: chosen option (optional), free text, condition
-- `thread`: who (person, Claude, fork, quick model), text, time
+- `thread`: who (person, Claude, fork, quick model), text, time; a quick answer from `auto` also carries `via: 'triage'`
 - `revisions`: what changed and when
 
 Decisions belong to the project, not the session. **(my call)** The project is the repository, shared by all its git worktrees, so a decision made in a worktree shows from the main checkout too. They are stored as files outside the repository, under `~/.claude/decisions/<project>/`, one JSON file per decision, so they're readable by any tool and never committed by accident. The mod's tool definition defines the schema.
@@ -174,9 +175,10 @@ The thread screen (`o`) holds the whole thread, with older and newer pages, the 
 
 Every decision keeps its whole thread for good: questions, replies, revisions and the final answer. Switching between decisions, or going back to one that was answered, sent or closed days ago, shows the full discussion in the pane, whichever mode replied and however long ago it scrolled out of the chat or was compacted away (Aaron, 6 November). The reply can revise the decision: add an option, change the recommendation, re-open dependents.
 
-Who replies is the `Discussion replies` setting: main session, fork or quick model. **The main session is the default (Aaron, 6 November: "it's the best option")**. The side agent is left out of the first release (Aaron, 6 November): in the spike its report also landed in the main conversation and Claude stopped mid-task to comment on it.
+Who replies is the `Discussion replies` setting: auto, main session, fork or quick model. **Auto is the default (270, 12 November); the main session was until then (Aaron, 6 November: "it's the best option")**. The side agent is left out of the first release (Aaron, 6 November): in the spike its report also landed in the main conversation and Claude stopped mid-task to comment on it.
 
-- **main session** (default): the question goes to the main conversation as a prompt marked as coming from the pane. Claude's reply appears in the main chat as normal, which Aaron is happy with (6 November), as long as the mod shows it properly: the question and reply are mirrored into the decision's thread, and in the chat the question row is labelled with the decision it belongs to ("on 3 · When a shared recipe link expires") so it doesn't read as a stray prompt. Full context and full tools, and every exchange uses the main conversation's context. In the spike the question only reached Claude when its current turn ended (20 to 29 seconds while Claude was busy), so the thread shows "queued, Claude is mid-step" and offers a key to send that one question to the fork instead (Aaron, 6 November). The mod can't relabel its own chat rows (the engine skips a plugin's hook for something the same plugin sent), so the question it sends starts "On decision 3 · When a shared recipe link expires:". The reply is the turn that begins with the engine's "The <plugin> plugin sent ..." text, not simply the next turn to end.
+- **auto** (default): the small model gets the decision, its thread and the session record's note, and either answers (kept as a quick answer, with a key to ask the main session instead) or hands the question to the main session exactly as main session does. A model error or a reply not in the fixed form hands over. `docs/specs/10-small-model.md` has the prompt and the reply form.
+- **main session**: the question goes to the main conversation as a prompt marked as coming from the pane. Claude's reply appears in the main chat as normal, which Aaron is happy with (6 November), as long as the mod shows it properly: the question and reply are mirrored into the decision's thread, and in the chat the question row is labelled with the decision it belongs to ("on 3 · When a shared recipe link expires") so it doesn't read as a stray prompt. Full context and full tools, and every exchange uses the main conversation's context. In the spike the question only reached Claude when its current turn ended (20 to 29 seconds while Claude was busy), so the thread shows "queued, Claude is mid-step" and offers a key to send that one question to the fork instead (Aaron, 6 November). The mod can't relabel its own chat rows (the engine skips a plugin's hook for something the same plugin sent), so the question it sends starts "On decision 3 · When a shared recipe link expires:". The reply is the turn that begins with the engine's "The <plugin> plugin sent ..." text, not simply the next turn to end.
 - **fork**: one call (`$.model.fork`) with the whole conversation so far, served from the prompt cache. Replied in 3.5 seconds in the spike without touching the main conversation, and knew the conversation. The reply arrives whole rather than streaming. Whether it can read files is untested; if it can't, the side agent comes back up.
 - **quick model**: a single model call that only sees the decision. Fastest, but no conversation and no files.
 
@@ -184,7 +186,7 @@ Who replies is the `Discussion replies` setting: main session, fork or quick mod
 
 | Setting | Values | Default |
 | --- | --- | --- |
-| Discussion replies | main session, fork, quick model | main session |
+| Discussion replies | auto, main session, fork, quick model | auto |
 | Send answers to Claude | when I press s, straight away | when I press s (suggested, Aaron to confirm) |
 | Open the pane | when Claude adds one, only when I ask | when Claude adds one **(my call)** |
 
