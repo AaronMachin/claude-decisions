@@ -453,6 +453,8 @@ export type Conversation = {
   unread: number
   /** The newest unread reply, else the newest reply: always drawn whole (row 262). */
   reply?: ThreadEntry
+  /** The person's newest question when nothing has answered it yet: drawn after the reply, so a question never looks lost. */
+  asked?: ThreadEntry
   earlier?: string
   empty?: string[]
 }
@@ -470,10 +472,12 @@ export function conversationLines(d: Decision, seenAt: string | undefined, width
   if (messages.length === 0) {
     return { heading, messages: 0, unread: 0, empty: wrapLines(ASK_EMPTY, width) }
   }
-  const rest = shown ? messages.length - 1 : messages.length
-  const earlier = rest > 0 ? `${rest} ${shown ? 'earlier ' : ''}${rest === 1 ? 'message' : 'messages'}` : undefined
+  const newest = messages.at(-1)
+  const asked = newest?.who === 'person' && newest !== shown ? newest : undefined
+  const rest = messages.length - (shown ? 1 : 0) - (asked ? 1 : 0)
+  const earlier = rest > 0 ? `${rest} ${shown || asked ? 'earlier ' : ''}${rest === 1 ? 'message' : 'messages'}` : undefined
 
-  return { heading, messages: messages.length, unread: unread.length, reply: shown, earlier }
+  return { heading, messages: messages.length, unread: unread.length, reply: shown, asked, earlier }
 }
 
 /** The newest reply, when it is a quick answer from triage that can still go to the main session: the `r` key's target. */
@@ -485,7 +489,7 @@ export function mainInsteadReply(d: Decision, pending: PaneView['pending']): str
 
 /** Rows the conversation block takes, rule included: heading, the reply, earlier line, replying line, the bordered ask box. */
 function conversationRows(c: Conversation, isReplying: boolean, width: number): number {
-  return 2 + (c.reply ? chatRows(c.reply, width) : 0) + (c.earlier ? 1 : 0) + (c.empty?.length ?? 0) + (isReplying ? 1 : 0) + 3
+  return 2 + (c.reply ? chatRows(c.reply, width) : 0) + (c.asked ? chatRows(c.asked, width) : 0) + (c.earlier ? 1 : 0) + (c.empty?.length ?? 0) + (isReplying ? 1 : 0) + 3
 }
 
 type HintCtx = {
@@ -1306,6 +1310,7 @@ export function DecisionView($: any, props: Props): any {
       </Box>
       {talk.earlier ? <Text key="talk:earlier" dimColor>{`${talk.earlier} · o: whole thread`}</Text> : null}
       {talk.reply ? ChatEntry(ui, talk.reply, width, 'talk:reply') : null}
+      {talk.asked ? ChatEntry(ui, talk.asked, width, 'talk:asked') : null}
       {(talk.empty ?? []).map((line, index) => (
         <Text key={`talk:empty:${index}`} dimColor>
           {line}

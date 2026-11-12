@@ -6,6 +6,13 @@ import type { CompleteCtx } from './triage'
 /** The longest problem line, in characters. */
 export const PROBLEM_MAX = 140
 
+/**
+ * How long a small model's problem line may run before it is cut. The model is asked for 140 but
+ * sometimes runs over; the pane wraps the line whole, so a little over is kept rather than chopped
+ * mid-word (262). Past this it is cut at a word, with `…`.
+ */
+export const MODEL_PROBLEM_MAX = 240
+
 /** The refusal for a `problem` field, or undefined when it's fine (or not given). `tool` names the tool in the refusal. */
 export function validateProblem(value: unknown, tool: 'decisions_add' | 'decisions_update'): string | undefined {
   if (value === undefined) {
@@ -42,7 +49,7 @@ export function problemPrompt(d: Decision): string {
   return parts.join('\n\n')
 }
 
-/** The model's reply as a problem line: first non-blank line, no label or quotes, cut to the limit. Undefined when nothing is left. */
+/** The model's reply as a problem line: first non-blank line, no label or quotes, kept whole up to MODEL_PROBLEM_MAX and cut at a word past it. Undefined when nothing is left. */
 export function cleanProblemReply(reply: string): string | undefined {
   const first = reply.split('\n').map(l => l.trim()).find(l => l !== '') ?? ''
   const line = first
@@ -50,7 +57,16 @@ export function cleanProblemReply(reply: string): string | undefined {
     .replace(/^["'“‘]+|["'”’]+$/g, '')
     .trim()
 
-  return line === '' ? undefined : line.slice(0, PROBLEM_MAX).trim()
+  if (line === '') {
+    return undefined
+  }
+  if (line.length <= MODEL_PROBLEM_MAX) {
+    return line
+  }
+  const room = line.slice(0, MODEL_PROBLEM_MAX - 1)
+  const space = room.lastIndexOf(' ')
+
+  return `${(space > 0 ? room.slice(0, space) : room).trimEnd()}…`
 }
 
 /**

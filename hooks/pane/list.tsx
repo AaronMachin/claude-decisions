@@ -1,3 +1,5 @@
+import { cardLines } from './card'
+import type { SessionRecord } from '../session'
 import type { PaneView } from '../../types'
 import type { Decision } from '../store'
 import { focusLater, openDecision, readView, ringMark, setView } from './decision'
@@ -349,7 +351,7 @@ type ListProps = {
   /** The order to keep while the pane has the keys. */
   frozen?: string[]
   /** The session record, for the card at the top (row 265). */
-  session?: { title?: string; now?: { text: string } }
+  session?: Pick<SessionRecord, 'title' | 'summary' | 'now' | 'plan' | 'links'>
   /** Enter on the session card. */
   onOpenSession?: () => void
   onSend: () => void
@@ -623,7 +625,11 @@ export function ListView($: any, props: ListProps): any {
         {mark('session-card')}
         <Text bold>{truncate(`✻ ${props.session.title ?? 'This session'}`, width - 2)}</Text>
       </Button>
-      {!compact && props.session.now ? <Text dimColor>{truncate(`  ▶ now: ${props.session.now.text}`, width)}</Text> : null}
+      {cardLines(props.session, width, compact).map((line, index) => (
+        <Text key={`session-card:${index}`} dimColor={line.dim}>
+          {line.text}
+        </Text>
+      ))}
     </Box>
   ) : null
 
