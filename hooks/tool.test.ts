@@ -132,7 +132,7 @@ test('the description fits in what reaches Claude and carries the rules', () => 
 test('both tools are registered with their schemas, not deferred', async () => {
   const registered: any[] = []
   await registerTools({ tool: { register: async (spec: any) => void registered.push(spec) } })
-  expect(registered.map(s => s.name)).toEqual(['decisions_add', 'decisions_list', 'decisions_update', 'decisions_answer'])
+  expect(registered.map(s => s.name)).toEqual(['decisions_add', 'decisions_list', 'decisions_update', 'decisions_answer', 'decisions_session'])
   expect(registered.every(s => s.isDeferred === false)).toBe(true)
   expect(registered[0].inputSchema.required).toEqual(['kind', 'title', 'scenario'])
 })

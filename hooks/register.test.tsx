@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 import { PANE_ID, INITIAL_VIEW } from './pane/decision'
 import { tabsFor } from './pane/list'
@@ -120,7 +120,7 @@ test('session.start registers /decisions and both tools and sets the status line
   const seen = engine(on)
   await start($)
   expect(seen.commands).toContain('decisions')
-  expect(seen.tools).toEqual(['decisions_add', 'decisions_list', 'decisions_update', 'decisions_answer'])
+  expect(seen.tools).toEqual(['decisions_add', 'decisions_list', 'decisions_update', 'decisions_answer', 'decisions_session'])
   expect(seen.statuses.at(-1)).toBeUndefined()
   expect(seen.statuses).toHaveLength(1)
 })
@@ -1019,4 +1019,21 @@ test('a chat answer through decisions_answer shows the decision as sent with its
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ key: 'under:d1' }))?.text).toMatch(/↗ sent .* · 1 Project root/)
   await ui.unmount()
+})
+
+test("a subagent's Artifact publish adds its link to the session record; a clear carries the record to the new id", async ($, on) => {
+  const seen = engine(on)
+  const url = ['https://claude.ai', 'code', 'artifact', 'ab12'].join('/')
+  ;(on as any)('tool.call', { tool: 'Artifact' }, () => ({ result: {}, text: `Published ${url}` }))
+  on('session.end', () => ({ sessionId: 'session-1' }))
+  const clock = mock.clock(on as any)
+  await start($)
+  await $.tool.call({ tool: 'Artifact', file_path: '/tmp/x/mock.html', title: 'Share mock', agentId: 'agent-1' } as any)
+  const file = () => [...seen.files.entries()].find(([k]) => /session-session-1\.json$/.test(k))
+  expect(JSON.parse(file()![1]).links).toEqual([{ url, label: 'Share mock', kind: 'artifact', addedBy: 'mod' }])
+  await $.session.end({ reason: 'clear' } as any)
+  seen.session = 'session-2'
+  await clock.advance(300)
+  const carried = [...seen.files.entries()].find(([k]) => /session-session-2\.json$/.test(k))
+  expect(JSON.parse(carried![1])).toMatchObject({ session: 'session-2', continuedFrom: 'session-1' })
 })

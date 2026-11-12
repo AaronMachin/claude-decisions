@@ -1,4 +1,5 @@
 import { reopenDependents } from './dependents'
+import { SESSION_DESCRIPTION, SESSION_INPUT_SCHEMA } from './session'
 import { fixedOptionsFor } from './kind-options'
 import { create, readAll, readOne, write } from './store'
 import type { Answer, Decision, Kind, Section, StoreCtx } from './store'
@@ -545,6 +546,12 @@ export async function registerTools($: { tool: { register: (spec: any) => Promis
     name: 'decisions_answer',
     description: ANSWER_DESCRIPTION,
     inputSchema: ANSWER_INPUT_SCHEMA,
+    isDeferred: false,
+  })
+  await $.tool.register({
+    name: 'decisions_session',
+    description: SESSION_DESCRIPTION,
+    inputSchema: SESSION_INPUT_SCHEMA,
     isDeferred: false,
   })
 }
