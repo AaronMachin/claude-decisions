@@ -1,6 +1,7 @@
 import type { PaneView, PendingQuestion } from '../types'
 import { readView, setView } from './pane/decision'
 import { statusText } from './pane/list'
+import { noteRefreshTurn, refreshTurnEnded } from './pane/session-tab'
 import { readAll, readOne, write } from './store'
 import type { Decision, StoreCtx, ThreadEntry } from './store'
 
@@ -400,6 +401,7 @@ export async function askMain($: any): Promise<void> {
 /** The `turn.start` hook's work: a reply turn that begins is "answering". */
 export async function onTurnStart($: any, e: any, next: (e: any) => Promise<any>): Promise<any> {
   routeAnswerStart(e)
+  noteRefreshTurn(e, 'start')
   const waiter = routeStart(e)
   if (waiter && !waiter.late) {
     await setPending($, list => list.map(p => (p.decisionId === waiter.decisionId && p.asked === waiter.asked && p.mode === 'main' ? { ...p, status: 'answering' } : p)))
@@ -412,6 +414,9 @@ export async function onTurnStart($: any, e: any, next: (e: any) => Promise<any>
 /** The `turn.complete` hook's work: the claimed turn's answer goes into the thread under its question. */
 export async function onTurnComplete($: any, e: any, next: (e: any) => Promise<any>): Promise<any> {
   const done = await next(e)
+  if (noteRefreshTurn(e, 'complete')) {
+    await refreshTurnEnded($).catch(() => undefined)
+  }
   const receipt = routeAnswerComplete(e)
   if (receipt) {
     await recordReceipt($, receipt.ids, receipt.line)

@@ -34,7 +34,7 @@ export const INITIAL_VIEW: PaneView = {
 }
 
 // Change the tag when PaneView's fields change: it declines what an earlier version stored.
-const viewAtom = atom({ plugin: 'decisions', key: 'view' } as const, INITIAL_VIEW, { shape: 'view-6' })
+const viewAtom = atom({ plugin: 'decisions', key: 'view' } as const, INITIAL_VIEW, { shape: 'view-7' })
 
 export type Typed = { digit: string; at: number } | undefined
 export type Typing = { typed: Typed; option: number | undefined }

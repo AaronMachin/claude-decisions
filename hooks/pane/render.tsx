@@ -11,6 +11,8 @@ import { foldAll, sectionsFor } from './sections'
 import { freezeOrder, frozenOrder, readSeen, thawOrder, visitSeenAt } from './seen'
 import type { Seen } from './seen'
 import { BatchView, batchRows } from './kinds'
+import { REFRESH_PROMPT, SessionView } from './session-tab'
+import { readSession } from '../session'
 import { firstKey } from './sections'
 
 /** Sets the status line from what's in the store. */
@@ -235,6 +237,22 @@ export async function renderPane($: any, e: any): Promise<any> {
       <Box flexDirection="column">
         {header(ui, width, e.props.isFocused === true, `${batchTab?.label ?? 'Other'} › assumptions`, rows)}
         {BatchView($, { ...common, rows: batchList, paneRows: rows, view, onChanged: () => void changed($), onLeave: () => leaveToList($) })}
+      </Box>
+    )
+  }
+  if (view.screen === 'session') {
+    return (
+      <Box flexDirection="column">
+        {header(ui, width, e.props.isFocused === true, 'Session', rows)}
+        {SessionView($, {
+          ...common,
+          record: await readSession($),
+          view,
+          rows,
+          isFocused: e.props.isFocused === true,
+          onLeave: () => leaveToList($),
+          onRefresh: () => void $.prompt.submit({ text: REFRESH_PROMPT }).catch(() => undefined),
+        })}
       </Box>
     )
   }
