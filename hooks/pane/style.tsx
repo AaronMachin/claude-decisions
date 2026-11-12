@@ -348,7 +348,7 @@ export function InlineLines(ui: { Text: any; Link?: any }, text: string, width: 
   return wrapInline(text, width).map((line, index) => Inline(ui, line, base, `${key}:${index}`))
 }
 
-const SPEAKER: Record<string, string> = { person: 'you', claude: 'claude', fork: 'fork', quick: 'quick model' }
+const SPEAKER: Record<string, string> = { person: 'you', claude: 'claude', fork: 'fork', quick: 'quick model', receipt: 'claude' }
 
 /** How long ago, short, for a chat line: `now`, `2m`, `3h`, else the clock time. */
 export function shortAgo(at: string, now: Date = new Date()): string {

@@ -8,7 +8,7 @@ import { askQuestion, currentMode } from '../discuss'
 import type { Answer, Decision, Kind, Option, StoreCtx, ThreadEntry } from '../store'
 import { HEADER_RIGHT_GAP, KeyHints, Rule, hintLineCount, isCompact, keysState, wrapLines } from './look'
 import type { Hint } from './look'
-import { ago, markSeen, noteVisit, readSeen, unreadReplies } from './seen'
+import { ago, markSeen, noteVisit, readSeen, unreadReplies, when } from './seen'
 import { Bar, ChatEntry, Inline, InlineLines, SELECTED_BG, barColour, chatRows, colourProps, kindColour, kindLabel, wrapInline } from './style'
 
 export const PANE_ID = 'decisions'
@@ -457,7 +457,7 @@ export type Conversation = {
 
 /** The conversation under the options: the counts, the newest unread reply or else the newest reply, and how many other messages the thread screen holds. */
 export function conversationLines(d: Decision, seenAt: string | undefined, width: number): Conversation {
-  const messages = d.thread.filter(e => e.revision === undefined)
+  const messages = d.thread.filter(e => e.revision === undefined && e.who !== 'receipt')
   const unread = unreadReplies(d, seenAt)
   const shown = unread.at(-1) ?? messages.findLast(e => REPLIERS.has(e.who))
   const heading = [
@@ -616,6 +616,16 @@ export function answerNote(d: Decision): string | undefined {
   return d.answer?.text !== undefined && d.answer.option === undefined ? `⤷ ${d.answer.text}` : undefined
 }
 
+/** Under a sent decision's answer: when it went and, once the turn that carried it ended, the first line of Claude's reply (row 252, extra 4). */
+export function receiptLines(d: Decision): string[] {
+  if (d.state !== 'sent') {
+    return []
+  }
+  const receipt = d.thread.findLast(e => e.who === 'receipt')?.text
+
+  return [`↗ sent${d.sentAt ? ` ${when(d.sentAt)}` : ''}`, ...(receipt !== undefined ? [`claude: ${receipt}`] : [])]
+}
+
 /** Columns before an option's number: the bar, the ring's mark and a space. */
 const OPTION_LEAD = 3
 /** Columns before an option's detail: the bar, then five spaces, under the option's label. */
@@ -700,7 +710,7 @@ function optionRows(d: Decision, o: DrawnOption, width: number, withDetail: bool
   const label = wrapLines(o.label, Math.max(8, width - OPTION_LEAD - `${o.id}: `.length)).length
   const detail = withDetail ? detailParts(d, o.id).reduce((n, part) => n + wrapInline(part.text, width - DETAIL_INDENT).length, 0) : 0
 
-  return label + detail + (chosenNumber(d) === o.id && answerNote(d) !== undefined ? 1 : 0)
+  return label + detail + (chosenNumber(d) === o.id ? (answerNote(d) !== undefined ? 1 : 0) + receiptLines(d).length : 0)
 }
 
 export function decisionLayout(
@@ -1160,7 +1170,19 @@ export function DecisionView($: any, props: Props): any {
         <Text> </Text>
       </Box>
     ) : null
-    const block = [row, more, noteRow, detail]
+    const receipt = isChosen
+      ? barredBlock(
+          `receipt:${o.id}`,
+          lineColour,
+          DETAIL_INDENT - 1,
+          receiptLines(d).map((line, index) => (
+            <Text key={`receipt:${o.id}:${index}`} dimColor>
+              {line}
+            </Text>
+          )),
+        )
+      : null
+    const block = [row, more, noteRow, receipt, detail]
 
     return [
       gap,

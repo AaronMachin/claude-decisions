@@ -28,7 +28,8 @@ export type Answer = {
 }
 
 export type ThreadEntry = {
-  who: 'person' | 'claude' | 'fork' | 'quick'
+  /** `receipt`: the first line of Claude's reply to the turn that carried this decision's answer (row 252, extra 4). */
+  who: 'person' | 'claude' | 'fork' | 'quick' | 'receipt'
   text: string
   at: string
   /** On a ↻ line: the index into `Decision.revisions` of the version it replaced. */

@@ -185,6 +185,73 @@ export function routeComplete(e: { turnId: string; agentId?: string; answer: str
   return { waiter: waiter!, text: e.answer.trim() === '' ? PLACEHOLDER : e.answer }
 }
 
+/** Answer prompts whose turn has started, by turn id: the decisions each carried. */
+const answerTurns = new Map<string, string[]>()
+
+/** The ids an answer prompt carries, from its `Decision dX ·` lines; undefined when the text is not one. */
+export function answerPromptIds(text: string): string[] | undefined {
+  if (!/Answers? from the decisions pane/.test(text)) {
+    return undefined
+  }
+  const ids = [...text.matchAll(/^Decision (d\d+) · /gm)].map(m => m[1]!)
+
+  return ids.length > 0 ? ids : undefined
+}
+
+/**
+ * A main-loop `turn.start` whose text is an answer prompt (`Answer from the decisions pane` or `Answers from…`): its
+ * turn claims the decisions it carried. Matched by the turn's own text, so a prompt queued behind a running turn is
+ * claimed by its own turn when that starts. A subagent's turn never claims one.
+ */
+export function routeAnswerStart(e: { text: string; turnId: string; agentId?: string }): string[] | undefined {
+  if (e.agentId !== undefined) {
+    return undefined
+  }
+  const ids = answerPromptIds(e.text)
+  if (ids !== undefined) {
+    answerTurns.set(e.turnId, ids)
+  }
+
+  return ids
+}
+
+/** The first non-empty line of an answer, cut at 200 characters. */
+export function receiptLine(answer: string): string | undefined {
+  const line = answer
+    .split('\n')
+    .map(l => l.trim())
+    .find(l => l !== '')
+
+  return line === undefined ? undefined : line.slice(0, 200)
+}
+
+/** A `turn.complete`: the decisions its turn carried and the receipt line, only for a turn `routeAnswerStart` claimed. */
+export function routeAnswerComplete(e: { turnId: string; agentId?: string; answer: string }): { ids: string[]; line: string } | undefined {
+  if (e.agentId !== undefined) {
+    return undefined
+  }
+  const ids = answerTurns.get(e.turnId)
+  answerTurns.delete(e.turnId)
+  const line = receiptLine(e.answer ?? '')
+
+  return ids === undefined || line === undefined ? undefined : { ids, line }
+}
+
+/** Writes the receipt (the answer's first non-empty line) into each carried decision's thread. */
+export async function recordReceipt(store: StoreCtx, ids: string[], answer: string): Promise<void> {
+  const line = receiptLine(answer)
+  if (line === undefined) {
+    return
+  }
+  const at = new Date().toISOString()
+  for (const id of ids) {
+    const d = await readOne(store, id)
+    if (d) {
+      await write(store, { ...d, thread: [...d.thread, { who: 'receipt', text: line, at }] })
+    }
+  }
+}
+
 export type Mode = 'main' | 'fork' | 'quick'
 
 /** `/config`'s `Discussion replies` value as a mode; anything unknown is the main session. */
@@ -332,6 +399,7 @@ export async function askMain($: any): Promise<void> {
 
 /** The `turn.start` hook's work: a reply turn that begins is "answering". */
 export async function onTurnStart($: any, e: any, next: (e: any) => Promise<any>): Promise<any> {
+  routeAnswerStart(e)
   const waiter = routeStart(e)
   if (waiter && !waiter.late) {
     await setPending($, list => list.map(p => (p.decisionId === waiter.decisionId && p.asked === waiter.asked && p.mode === 'main' ? { ...p, status: 'answering' } : p)))
@@ -344,6 +412,11 @@ export async function onTurnStart($: any, e: any, next: (e: any) => Promise<any>
 /** The `turn.complete` hook's work: the claimed turn's answer goes into the thread under its question. */
 export async function onTurnComplete($: any, e: any, next: (e: any) => Promise<any>): Promise<any> {
   const done = await next(e)
+  const receipt = routeAnswerComplete(e)
+  if (receipt) {
+    await recordReceipt($, receipt.ids, receipt.line)
+    await redraw($)
+  }
   const routed = routeComplete(e)
   if (routed) {
     await recordReply($, routed.waiter.decisionId, routed.waiter.asked, 'claude', routed.text)

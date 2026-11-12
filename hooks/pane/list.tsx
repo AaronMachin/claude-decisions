@@ -307,9 +307,14 @@ export function titleLines(d: Decision, room: number): string[] {
   return capLines(`${d.id} ${d.title}`, room, 2).lines
 }
 
-/** Lines a row takes: one on a compact pane; tall, its title lines and the second line. */
+/** The receipt on a sent decision: the first line of what Claude did next (row 252, extra 4). */
+export function receiptOf(d: Decision): string | undefined {
+  return d.state === 'sent' ? d.thread.findLast(e => e.who === 'receipt')?.text : undefined
+}
+
+/** Lines a row takes: one on a compact pane; tall, its title lines, the second line and a sent row's receipt. */
 export function rowLines(d: Decision, width: number, compact: boolean): number {
-  return compact ? 1 : titleLines(d, width - 5).length + 1
+  return compact ? 1 : titleLines(d, width - 5).length + 1 + (receiptOf(d) !== undefined ? 1 : 0)
 }
 
 /** One row, padded so the meta sits at the right edge. The meta is left out when the title wouldn't fit whole beside it (row 168). */
@@ -422,6 +427,12 @@ export function ListView($: any, props: ListProps): any {
             {truncate(`  ${second.text}`, width - 1)}
           </Text>
         </Box>
+        {receiptOf(d) !== undefined ? (
+          <Box key={`receipt:${d.id}`}>
+            {Bar(ui, barColour(d))}
+            <Text dimColor>{truncate(`  claude: ${receiptOf(d)}`, width - 1)}</Text>
+          </Box>
+        ) : null}
       </Box>
     )
   }

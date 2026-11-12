@@ -1336,3 +1336,21 @@ test('after a question is sent from the ask box the ring goes back to the highli
   expect(await ui.find({ key: 'b' })).toBeDefined()
   await ui.unmount()
 })
+
+test('a sent decision shows when it went and the first line of what Claude did next, on the list and the decision', async ($, on) => {
+  const seen = await begin($, on)
+  const sentAt = new Date().toISOString()
+  edit(seen, 'd1', d => ({ ...d, state: 'sent', sentAt, answer: { option: 2, answeredAt: sentAt }, thread: [{ who: 'receipt', text: 'Posted three PR comments.', at: sentAt }] }))
+  const ui = await $.ui.mount(rowsOf(40))
+  const clock = sentAt.slice(11, 16)
+  const local = new Date(sentAt)
+  const hm = `${String(local.getHours()).padStart(2, '0')}:${String(local.getMinutes()).padStart(2, '0')}`
+  expect(clock.length).toBe(5)
+  expect((await ui.find({ key: 'under:d1' }))?.text).toMatch(new RegExp(`↗ sent ${hm} · 2 As PR comments`))
+  expect((await ui.find({ key: 'receipt:d1' }))?.text).toMatch(/claude: Posted three PR comments\./)
+  await ui.press({ key: 'row:d1' })
+  const all = await allTexts(ui)
+  expect(all).toContain(`↗ sent ${hm}`)
+  expect(all).toContain('claude: Posted three PR comments.')
+  await ui.unmount()
+})
