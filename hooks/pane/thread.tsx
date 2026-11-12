@@ -7,8 +7,8 @@ import { markSeen, when } from './seen'
 export { when }
 import { truncate } from './list'
 import { Rule } from './look'
+import { ChatEntry, chatRows } from './style'
 
-const WHO: Record<ThreadEntry['who'], string> = { person: 'you', claude: 'Claude', fork: 'Fork', quick: 'Quick model' }
 const MODE_NAME = { main: 'main session', fork: 'fork', quick: 'quick model' } as const
 const STATE_TEXT: Record<string, string> = {
   open: 'open',
@@ -42,15 +42,12 @@ export function isResendable(p: PendingQuestion, run: string): boolean {
   return p.status === 'queued' || p.status === 'failed' || p.run !== run
 }
 
-/** Rows an entry takes: its label and wrapped text, or one row for a ↻ line. */
+/** Rows an entry takes: its chat line wrapped under itself, or one row for a ↻ line. */
 export function rowsOf(e: ThreadEntry, width: number): number {
   if (e.revision !== undefined) {
     return 1
   }
-  const wrap = Math.max(1, width - 2)
-
-  // Words wrap early, so count about 15% more than the characters alone say.
-  return 1 + e.text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil((line.length * 1.15) / wrap)), 0)
+  return chatRows(e, width)
 }
 
 /** An entry cut with `…` so it fits in `budget` rows; the same entry when it already does. */
@@ -202,10 +199,7 @@ export function ThreadView($: any, props: Props): any {
           </Button>
         ) : (
           <Box key={`entry:${e.at}:${e.who}`} flexDirection="column">
-            <Text dimColor>{`${WHO[e.who]} · ${when(e.at)}`}</Text>
-            <Box paddingLeft={2}>
-              <Text>{e.text}</Text>
-            </Box>
+            {ChatEntry(ui, e, width, `chat:${e.at}:${e.who}`)}
             {pendingFor(e).map(p => (
               <Box key={`note:${p.mode}`} paddingLeft={2} flexDirection="column">
                 <Text dimColor>{noteFor(p, RUN)}</Text>

@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { RUN } from '../discuss'
+import { ChatEntry } from './style'
 import { INITIAL_VIEW, PANE_ID } from './decision'
 import { UPDATE_TOOL, ADD_TOOL } from '../tool'
 import { backFromThread, clipToBudget, isResendable, leaveThread, noteFor, rowsOf, visibleEntries, when } from './thread'
@@ -256,11 +257,12 @@ const entry = (text: string, who: ThreadEntry['who'] = 'person'): ThreadEntry =>
 
 test('visibleEntries keeps the newest that fit, pages with skip and always shows one', () => {
   const thread = Array.from({ length: 10 }, (_, i) => entry(`e${i}`))
-  const first = visibleEntries(thread, 0, 6, 40)
+  // A chat line is one row: the speaker and the text share it (row 251).
+  const first = visibleEntries(thread, 0, 3, 40)
   expect(first.shown.map(e => e.text)).toEqual(['e7', 'e8', 'e9'])
   expect(first.olderHidden).toBe(7)
-  expect(visibleEntries(thread, 3, 6, 40).shown.map(e => e.text)).toEqual(['e4', 'e5', 'e6'])
-  expect(visibleEntries(thread, 3, 6, 40).newerHidden).toBe(3)
+  expect(visibleEntries(thread, 3, 3, 40).shown.map(e => e.text)).toEqual(['e4', 'e5', 'e6'])
+  expect(visibleEntries(thread, 3, 3, 40).newerHidden).toBe(3)
   expect(visibleEntries(thread, 0, 0, 40).shown).toHaveLength(1)
   expect(visibleEntries([entry('x'.repeat(200))], 0, 4, 20).shown).toHaveLength(1)
 })
@@ -337,4 +339,13 @@ test('leaving the thread changes only the screen fields of the view it is given'
   const live = { ...INITIAL_VIEW, screen: 'thread' as const, pending: [{ asked: 'a', decisionId: 'd1', mode: 'main' as const, status: 'answering' as const, run: RUN }] }
   expect(leaveThread(live).pending).toEqual(live.pending)
   expect(leaveThread(live).screen).toBe('decision')
+})
+
+test('thread entries read as a chat: speaker and age, then the text on the same line', async ($, on) => {
+  const at = new Date(Date.now() - 2 * 60_000).toISOString()
+  on('ui.render', ($$: any, e: any) => ChatEntry($$.ui.resolve(e), { who: 'person', at, text: 'would c work on findings too?' }, 60, 'chat'))
+  const ui = await $.ui.mount({ plugin: 'decisions', component: 'Pane', requestId: 'x', surface: 'terminal', props: { title: 't', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 10 }, view: {} } } as any)
+  expect((await ui.find({ key: 'chat' }))?.text).toBe('you · 2m  would c work on findings too?')
+  expect(JSON.stringify(await ui.find({ key: 'chat' }))).toContain('"color":"suggestion"')
+  await ui.unmount()
 })

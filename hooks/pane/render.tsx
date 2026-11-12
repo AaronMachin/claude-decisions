@@ -214,6 +214,8 @@ export async function renderPane($: any, e: any): Promise<any> {
       d: decision,
       all: decisions,
       seenAt: visitSeenAt(decision.id, seen),
+      cwd: await $.session.cwd().catch(() => ''),
+      scrollOffset: e.props.scroll?.offset ?? 0,
       onSendThis: async () => {
         await setView($, v => openReview(v, ready.map(d => d.id), decision.id))
         focusLater($, 'confirm')

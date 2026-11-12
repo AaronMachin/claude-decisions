@@ -1,6 +1,7 @@
 /** The pane's colours by kind and state (row 251), and Claude's inline markdown (row 252, extra 1). */
 
-import type { Decision, Kind } from '../store'
+import type { Decision, Kind, ThreadEntry } from '../store'
+import { ago } from './seen'
 
 const KIND_COLOUR: Record<Kind, string | undefined> = {
   choice: 'suggestion',
@@ -343,4 +344,50 @@ export function Inline(ui: { Text: any; Link?: any }, segments: Segment[], base:
 /** Claude's text wrapped to `width`, one Text per line. */
 export function InlineLines(ui: { Text: any; Link?: any }, text: string, width: number, base: TextLook = {}, key = 'inline'): any[] {
   return wrapInline(text, width).map((line, index) => Inline(ui, line, base, `${key}:${index}`))
+}
+
+const SPEAKER: Record<string, string> = { person: 'you', claude: 'claude', fork: 'fork', quick: 'quick model' }
+
+/** How long ago, short, for a chat line: `now`, `2m`, `3h`, else the clock time. */
+export function shortAgo(at: string, now: Date = new Date()): string {
+  const long = ago(at, now)
+  if (long === 'just now') {
+    return 'now'
+  }
+
+  return long.replace(/ ago$/, '')
+}
+
+/** The speaker and age a chat entry starts with, then two spaces: `claude · now  `. */
+export function chatPrefix(e: Pick<ThreadEntry, 'who' | 'at'>, now: Date = new Date()): string {
+  return `${SPEAKER[e.who] ?? e.who} · ${shortAgo(e.at, now)}  `
+}
+
+/** Rows a chat entry takes at `width`: its text wrapped under itself after the prefix. */
+export function chatRows(e: Pick<ThreadEntry, 'who' | 'at' | 'text'>, width: number, now: Date = new Date()): number {
+  return wrapInline(e.text, Math.max(8, width - chatPrefix(e, now).length)).length
+}
+
+/**
+ * One thread entry as a chat line (row 251): the speaker in `suggestion` (you) or `claude`, the age dim, the text
+ * after it on the same line and wrapped under itself.
+ */
+export function ChatEntry(ui: { Box: any; Text: any; Link?: any }, e: Pick<ThreadEntry, 'who' | 'at' | 'text'>, width: number, key: string, now: Date = new Date()): any {
+  const { Box, Text } = ui
+  const prefix = chatPrefix(e, now)
+  const speaker = SPEAKER[e.who] ?? e.who
+  const lines = wrapInline(e.text, Math.max(8, width - prefix.length))
+
+  // The speaker in a column of its own, so the text wraps under itself and each line stays whole.
+  return (
+    <Box key={key}>
+      <Box flexDirection="column" width={prefix.length}>
+        <Text>
+          <Text color={e.who === 'person' ? 'suggestion' : 'claude'}>{speaker}</Text>
+          <Text dimColor>{prefix.slice(speaker.length)}</Text>
+        </Text>
+      </Box>
+      <Box flexDirection="column">{lines.map((line, index) => Inline(ui, line, {}, `${key}:${index}`))}</Box>
+    </Box>
+  )
 }

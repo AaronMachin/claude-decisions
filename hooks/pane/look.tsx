@@ -206,34 +206,6 @@ export function Header(ui: { Box: any; Text: any }, title: string, isFocused: bo
   )
 }
 
-/** The highlighted row's frame: a rounded border in the `claude` colour; compact, no border (the row is tinted and starts `›`). */
-export function Card(ui: { Box: any }, compact: boolean, key: string, children: any): any {
-  const { Box } = ui
-  if (compact) {
-    return (
-      <Box key={key} flexDirection="column">
-        {children}
-      </Box>
-    )
-  }
-
-  return (
-    <Box key={key} flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
-      {children}
-    </Box>
-  )
-}
-
-/** Rows a card adds around what it holds. */
-export function cardFrame(compact: boolean): number {
-  return compact ? 0 : 2
-}
-
-/** Columns a card takes from its contents: the border and one cell of padding each side. */
-export function cardInset(compact: boolean): number {
-  return compact ? 0 : 4
-}
-
 function cut(text: string, width: number): string {
   return text.length <= width ? text : text.slice(0, Math.max(0, width - 1)) + '…'
 }

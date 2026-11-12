@@ -495,8 +495,8 @@ test('a move onto an option marks that option', async ($, on) => {
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await $.ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'opt:2', origin: { kind: 'person' } })
-  expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/^› {2}Per package/)
-  expect((await ui.find({ key: 'line:1' }))?.text).toMatch(/^ {3}Project root/)
+  expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/^▌› Per package/)
+  expect((await ui.find({ key: 'line:1' }))?.text).toMatch(/^▌ {2}Project root/)
   await ui.unmount()
 })
 
@@ -545,6 +545,51 @@ function findBox(node: any, match: (props: any) => boolean): any {
   return (node.children ?? []).map((child: any) => findBox(child, match)).find(Boolean)
 }
 
+
+/** The row a keyed Box starts on in a drawn tree, counting rows as the terminal stacks them. */
+function rowOfKey(tree: any, key: string): number | undefined {
+  let found: number | undefined
+  const walk = (n: any, at: number): number => {
+    if (found !== undefined || n === null || n === undefined || n === '' || typeof n === 'boolean') {
+      return 0
+    }
+    if (typeof n !== 'object') {
+      return 1
+    }
+    if (Array.isArray(n)) {
+      let used = 0
+      for (const child of n) {
+        used += walk(child, at + used)
+      }
+      return used
+    }
+    if (n.type === 'Box' && n.props?.key === key) {
+      found = at
+      return 0
+    }
+    if (n.type !== 'Box') {
+      return 1
+    }
+    const kids = (n.children ?? []).flat()
+    const border = n.props?.borderStyle ? 1 : 0
+    if (n.props?.flexDirection === 'column') {
+      let used = border
+      for (const child of kids) {
+        used += walk(child, at + used)
+      }
+      return used + border
+    }
+    let most = 0
+    for (const child of kids) {
+      most = Math.max(most, walk(child, at + border))
+    }
+    return most + 2 * border
+  }
+  walk(tree, 0)
+
+  return found
+}
+
 const SHORT = (rows: number, bodyColumns = 90) => ({ ...PANE, props: { ...PANE.props, bodyColumns, scroll: { offset: 0, bodyRows: rows } } })
 
 test('the header is the title in bold with keys on at the right, then the crumb', async ($, on) => {
@@ -554,10 +599,10 @@ test('the header is the title in bold with keys on at the right, then the crumb'
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   const header = await ui.find({ key: 'header' })
-  expect(header?.text).toMatch(/^Where the config file lives +keys on/)
+  expect(header?.text).toMatch(/^▌ +CHOICE +Where the config file lives/)
   expect((await ui.find({ type: 'Text', text: 'Where the config file lives' }))?.props.bold).toBe(true)
-  // At 49 columns the crumb is cut at the edge.
-  expect(await ui.find({ type: 'Text', text: /^CHOICE · d1 · Config file plan · ○ 0 of 1 answer/ })).toBeDefined()
+  // At 49 columns the crumb wraps, and the keys state sits at the right of its last line.
+  expect((await ui.find({ key: 'crumb' }))?.text.replace(/[▌\s]+/g, ' ')).toMatch(/^ d1 · Config file plan · asked just now keys on$/)
   await ui.unmount()
 })
 
@@ -585,8 +630,9 @@ test('the highlighted option is a card holding its description and why; with the
   await ringOn($, 'opt:2')
   expect(await ui.find({ type: 'Text', text: /one file, shared/ })).toBeUndefined()
   await ui.press({ key: 'opt:1' })
-  const card = findBox(await ui.drawn(), props => props.borderStyle === 'round')
-  expect(card?.props.borderColor).toBe('claude')
+  const card = findBox(await ui.drawn(), props => props.key === 'card:1')
+  expect(card?.props.borderStyle).toBeUndefined()
+  expect(JSON.stringify(card)).toContain('"backgroundColor":"subtle"')
   expect(JSON.stringify(card)).toContain('one file, shared by every package')
   expect(JSON.stringify(card)).toContain('Why: Every other tool reads from the root.')
   expect(JSON.stringify(card)).toContain('opt:1')
@@ -595,7 +641,7 @@ test('the highlighted option is a card holding its description and why; with the
   await ui.unmount()
 })
 
-test('the whole scenario and the sources show by default; m hides them down to 3 lines and shows them again', async ($, on) => {
+test('the whole scenario and the sources show by default; m hides the sources and keeps the scenario whole', async ($, on) => {
   engine(on)
   await start($)
   const long = Array.from({ length: 12 }, (_, i) => `Sentence ${i + 1} of the scenario.`).join(' ')
@@ -604,14 +650,14 @@ test('the whole scenario and the sources show by default; m hides them down to 3
   await ui.press({ key: 'row:d1' })
   const context = async () => (await ui.findAll({ type: 'Text' })).filter(t => /Sentence|Sources/.test(t.text))
   expect((await context()).length).toBeGreaterThan(3)
-  expect(await ui.find({ type: 'Text', text: /Sources: config.ts \(src\/config.ts\)/ })).toBeDefined()
+  expect((await ui.find({ type: 'Link' }))?.props.href).toBe('file:///work/pantry/src/config.ts')
   expect((await ui.find({ key: 'm' }))?.text).toMatch(/hide detail/)
   await ui.press({ key: 'm' })
-  expect(await context()).toHaveLength(3)
-  expect((await context()).at(-1)?.text).toMatch(/…$/)
+  expect(await ui.find({ type: 'Link' })).toBeUndefined()
+  expect((await ui.findAll({ type: 'Text' })).map(t => t.text).join(' ')).toContain('Sentence 12 of the scenario.')
   expect((await ui.find({ key: 'm' }))?.text).toMatch(/show detail/)
   await ui.press({ key: 'm' })
-  expect((await context()).length).toBeGreaterThan(3)
+  expect(await ui.find({ type: 'Link' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -622,7 +668,7 @@ test('thin rules sit between the header, context, options, conversation and key 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   const rules = (await ui.findAll({ type: 'Text' })).filter(t => /^─+$/.test(t.text))
-  expect(rules).toHaveLength(4)
+  expect(rules).toHaveLength(3)
   expect(rules[0]?.props.color).toBe('subtle')
   expect((await ui.findAll({ type: 'Text' })).some(t => /^-+$/.test(t.text))).toBe(false)
   await ui.unmount()
@@ -635,48 +681,42 @@ test('the ring starts on the recommended option, enter is shown choosing it, and
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'opt:1' }))?.props.autoFocus).toBe(true)
-  expect((await ui.find({ key: 'line:1' }))?.text).toMatch(/^›/)
+  expect((await ui.find({ key: 'line:1' }))?.text).toMatch(/^▌›/)
   expect(await ui.find({ type: 'Text', text: /^enter: choose 1/ })).toBeDefined()
   expect(await ui.find({ key: 'discuss' })).toBeUndefined()
   await ui.unmount()
 })
 
-test('compact at 9 rows: 12 options fit the pane, the ringed row is tinted with ›, no border, and o pages', async ($, on) => {
+test('compact at 9 rows: all 12 options are drawn under the key line, the ringed row has › and no border, and ↑↓ is offered', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...TWELVE })
   const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  expect(rowOfKey(await ui.drawn(), 'hints')).toBeLessThanOrEqual(3)
   const first = (await ui.findAll({ type: 'Button' })).filter(b => /^opt:/.test(String(b.props.key))).map(b => String(b.props.key))
   expect(first[0]).toBe('opt:1')
-  expect(first.length).toBeLessThan(12)
-  expect(await ui.find({ key: 'o' })).toBeDefined()
+  expect(first).toHaveLength(13)
+  expect(await ui.find({ type: 'Text', text: /↑↓: more options/ })).toBeDefined()
   await ui.press({ key: 'opt:2' })
   await ringOn($, 'opt:2')
   expect(findBox(await ui.drawn(), props => props.borderStyle !== undefined)).toBeUndefined()
-  expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/^›/)
+  expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/^▌›/)
   expect(await ui.find({ type: 'Text', text: /what place 2 costs/ })).toBeDefined()
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
-  await ui.press({ key: 'o' })
-  const second = (await ui.findAll({ type: 'Button' })).filter(b => /^opt:/.test(String(b.props.key))).map(b => String(b.props.key))
-  expect(second[0]).toBe(`opt:${first.length + 1}`)
-  expect(await ui.find({ key: 'card:2' })).toBeUndefined()
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  expect(rowOfKey(await ui.drawn(), 'hints')).toBeLessThanOrEqual(3)
   await ui.unmount()
 })
 
-test('compact: a digit for an option on another page draws its page and highlights it, and 9 then enter answers', async ($, on) => {
+test('compact: option 9, below the window, keeps its own key; 9 highlights it and 9 then enter answers', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...TWELVE })
   const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
-  expect(await ui.find({ key: 'opt:9' })).toBeUndefined()
-  expect((await ui.find({ key: 'digit:9' }))?.props.hotkey).toBe('9')
-  await ui.press({ key: 'digit:9' })
+  expect((await ui.find({ key: 'opt:9' }))?.props.hotkey).toBe('9')
+  expect(await ui.find({ key: 'digit:9' })).toBeUndefined()
+  await ui.press({ key: 'opt:9' })
   expect(await ui.find({ key: 'card:9' })).toBeDefined()
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
   await ringOn($, 'opt:9')
   await ui.press({ key: 'opt:9' })
   expect(await ui.find({ type: 'Text', text: '✓ Answered · 1' })).toBeDefined()
@@ -692,7 +732,7 @@ test('compact: 1 then 2 reaches option 12 on its own page, not option 1', async 
   await ui.press({ key: 'opt:1' })
   await ui.press({ key: 'opt:2' })
   expect(await ui.find({ key: 'card:12' })).toBeDefined()
-  expect(await ui.find({ key: 'opt:1' })).toBeUndefined()
+  expect(await ui.find({ key: 'card:1' })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -721,9 +761,9 @@ test('compact with no recommendation and no descriptions: no a, the scenario lin
   await ui.press({ key: 'row:d1' })
   expect(await ui.find({ key: 'a' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /^Recipes need a home/ })).toBeDefined()
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  expect(rowOfKey(await ui.drawn(), 'hints')).toBeLessThanOrEqual(3)
   await ui.press({ key: 'opt:3' })
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  expect(rowOfKey(await ui.drawn(), 'hints')).toBeLessThanOrEqual(3)
   await ui.unmount()
 })
 
@@ -861,7 +901,7 @@ test('compact at 90 columns: every key line fits the width as the engine draws i
   for (const width of await lines()) {
     expect(width).toBeLessThanOrEqual(89)
   }
-  await ui.press({ key: 'digit:9' })
+  await ui.press({ key: 'opt:9' })
   for (const width of await lines()) {
     expect(width).toBeLessThanOrEqual(89)
   }
@@ -927,7 +967,7 @@ test('compact assumptions screen fits 9 rows with the pane header and a notice, 
   await off.unmount()
 })
 
-test('a sent 12-option decision on a 9-row pane shows the page holding its answer', async ($, on) => {
+test('a sent 12-option decision on a 9-row pane draws its answer, with the key line at the top', async ($, on) => {
   const seen = engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...TWELVE })
@@ -936,11 +976,11 @@ test('a sent 12-option decision on a 9-row pane shows the page holding its answe
   const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'line:9' }))?.text).toMatch(/✓/)
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  expect(rowOfKey(await ui.drawn(), 'hints')).toBeLessThanOrEqual(3)
   await ui.unmount()
 })
 
-test('compact with m open and an option highlighted still fits 9 rows', async ($, on) => {
+test('compact with m open and an option highlighted draws it all, with the key line at the top', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...TWELVE, scenario: 'A long scenario. '.repeat(20), sources: [{ label: 'a.ts', path: 'src/a.ts' }] })
@@ -949,7 +989,8 @@ test('compact with m open and an option highlighted still fits 9 rows', async ($
   await ui.press({ key: 'm' })
   await ui.press({ key: 'opt:1' })
   expect(await ui.find({ type: 'Text', text: /what place 1 costs/ })).toBeDefined()
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  expect(await ui.find({ type: 'Link' })).toBeDefined()
+  expect(rowOfKey(await ui.drawn(), 'hints')).toBeLessThanOrEqual(3)
   await ui.unmount()
 })
 
