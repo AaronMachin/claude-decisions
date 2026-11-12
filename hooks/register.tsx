@@ -1,3 +1,5 @@
+import { readOne } from './store'
+import { arrowTarget } from './pane/arrows'
 import { followResume } from './resume'
 import type { Register } from 'claude-code'
 
@@ -6,7 +8,7 @@ import { configureFocusKey } from './focus-key'
 import { changed, followFocus, isTabKey, openFocused, openForNewDecision, refreshStatus, renderPane } from './pane/render'
 import { configure, onTurnComplete, onTurnStart } from './discuss'
 import { addContextBlock, addRulesSection, answerAskUserQuestion, noteAtSessionStart, noteOnSubmit, nudgeAfterTurn, onCompact, refuseSubagent } from './integrate'
-import { PANE_ID } from './pane/decision'
+import { PANE_ID, readView } from './pane/decision'
 import { startProblem } from './problem'
 import { dropRefresh } from './pane/session-tab'
 import { SESSION_TOOL, addCapturedLinks, captureLinks, carryOver, sessionTool } from './session'
@@ -196,6 +198,26 @@ export const register: Register = (on, options) => {
     await nudgeAfterTurn($, e).catch(() => undefined)
 
     return done
+  })
+
+  // An arrow on a long decision scrolled the pane instead of moving between options (row 293).
+  on('ui.scroll', async ($, e, next) => {
+    if (e.requestId !== PANE_ID) {
+      return next(e)
+    }
+    const view = await readView($)
+    const d = view.decisionId ? await readOne($, view.decisionId) : undefined
+    const target = d ? arrowTarget(e, view, d.options.length + 1) : undefined
+    if (target === undefined) {
+      return next(e)
+    }
+    const moved = await $.ui.focus({ requestId: PANE_ID, key: target }).catch(() => ({ deny: 'failed' }))
+    if (moved.deny !== undefined) {
+      return next(e)
+    }
+    await $.ui.scroll({ in: PANE_ID, to: { key: target }, block: 'nearest' }).catch(() => undefined)
+
+    return {}
   })
 
   on('ui.focus', async ($, e, next) => {
