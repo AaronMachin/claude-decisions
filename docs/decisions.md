@@ -399,3 +399,9 @@ A fresh reviewer checked 205 to 218 against 1 to 204 and the mod API. Aaron acce
 | 248 | Leaving a decision or its thread (back, the thread, send, hide, an answer, parking) marks it read as well as opening it **(Claude's call)** | A reply that landed while the person was looking at it still showed as new on the list |
 | 249 | Choosing an option reopens dependents whenever it changes the earlier answer, including replacing a typed answer or dropping a condition by choosing the plain option; any key but a digit, a ring move or leaving cancels a held `1` (240) **(Claude's call)** | A typed answer replaced by an option reopened nothing, and a held `1` could answer option 1 after another key |
 | 250 | The one-decision Send screen draws send first with the focus on it and sends only with `enter`; `b` goes back. It has no `c` **(Claude's call)** | `enter` went to back, the first thing drawn, and `c` means "add a condition" on the screen the person came from |
+
+## 12 November 2026: Aaron, the pane's look after 0.2.0
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 251 | The pane gets direction B, "Structured": a coloured bar down the left of every row and decision for its kind or state, two-line list rows with how long ago, answered rows showing the answer, the conversation laid out as a chat, plus direction A's fixes (the cursor on the ask box's placeholder, Something else's indent, a crumb count that says nothing for one decision, the two-line keys-off sentence, one colour per kind, bold ids, a boxed ask field). Not C's thinking timer or progress line | Aaron, after 0.2.0: "it's just a little bland"; of three mocked directions, "I like B - build on it and investigate other things we could do" |
