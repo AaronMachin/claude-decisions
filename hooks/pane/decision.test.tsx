@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 import { ADD_TOOL, UPDATE_TOOL, addDecision } from '../tool'
 import { create, readAll, readOne, write } from '../store'
@@ -19,6 +19,9 @@ import {
   highlightRecommendation,
   parkDecision,
   pressDigit,
+  pressOption,
+  cancelHeldDigit,
+  setView,
   unparkDecision,
 } from './decision'
 import type { Typing } from './decision'
@@ -512,6 +515,7 @@ function engine(on: On): Engine {
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
   on('turn.start', (_: any, e: any) => ({ turnId: e.turnId }))
   on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  mock.store(on as any)
 
   return seen
 }
@@ -972,3 +976,94 @@ test('on the assumptions batch 3 does nothing, and enter on a row opens it with 
   expect((await ui.find({ key: 'opt:1' }))?.props.autoFocus).toBe(true)
   await ui.unmount()
 })
+
+
+// Fixes from the branch review.
+
+test('the one-decision preview draws send first, with the focus on it and no c key', async ($, on) => {
+  const { ui } = await twoReady($, on)
+  await ui.press({ key: 's' })
+  const buttons = (await ui.findAll({ type: 'Button' })).map((b: any) => b.props.key)
+  expect(buttons[0]).toBe('confirm')
+  expect((await ui.find({ key: 'confirm' }))?.props.autoFocus).toBe(true)
+  expect((await ui.find({ key: 'confirm' }))?.props.hotkey).toBeUndefined()
+  expect((await ui.find({ key: 'b' }))?.props.hotkey).toBe('b')
+  await ui.unmount()
+})
+
+test('compact at 49 columns: a 12-option decision keeps enter, c and Something else labelled, in 2 lines', async ($, on) => {
+  await begin($, on, TWELVE_PLACES)
+  const ui = await $.ui.mount({ ...SCREEN, props: { ...SCREEN.props, bodyColumns: 49, scroll: { offset: 0, bodyRows: 9 } }, surface: 'terminal' as const })
+  await ui.press({ key: 'row:d1' })
+  const hints = (await ui.findAll({ type: 'Box' })).find((b: any) => b.props.key === 'hints')
+  expect(hints).toBeDefined()
+  const line = JSON.stringify(await ui.drawn())
+  expect(line).toContain('choose 1')
+  expect(line).toContain('condition')
+  expect(line).toMatch(/something else/i)
+  const rows = (await ui.findAll({ type: 'Box' })).filter((b: any) => /^hints:\d+$/.test(String(b.props.key)))
+  expect(rows.length).toBeLessThanOrEqual(2)
+  await ui.unmount()
+})
+
+test('a reply read on the decision screen is not new once the person leaves it', async ($, on) => {
+  const seen = await begin($, on)
+  const ui = await $.ui.mount(rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  tick()
+  edit(seen, 'd1', d => ({ ...d, thread: [{ who: 'claude', text: 'A reply while you were here.', at: new Date().toISOString() }] }))
+  tick()
+  await ui.press({ key: 'b' })
+  expect((await ui.find({ key: 'row:d1' }))?.text).not.toMatch(/●/)
+  await ui.unmount()
+})
+
+test('replacing a typed answer with an option reopens a dependent, and so does dropping a condition', async () => {
+  const store = fakeStore()
+  const base = { version: 1, section: 'needs-you', kind: 'choice', scenario: 's', options: [{ id: 1, label: 'A' }, { id: 2, label: 'B' }], sources: [], thread: [], revisions: [], createdAt: 't', updatedAt: 't', session: 'session-1' } as unknown as Decision
+  await write(store, { ...base, id: 'd1', number: 1, title: 'First', dependsOn: [], state: 'ready', answer: { text: 'neither', answeredAt: 't' } })
+  await write(store, { ...base, id: 'd2', number: 2, title: 'Second', dependsOn: ['d1'], state: 'ready', answer: { option: 2, answeredAt: 't' } })
+  expect((await chooseAndReopen(store, (await readOne(store, 'd1'))!, 1))?.notice).toBe('d1 changed. Reopened d2.')
+  await write(store, { ...(await readOne(store, 'd2'))!, state: 'ready', answer: { option: 2, answeredAt: 't' } })
+  await write(store, { ...(await readOne(store, 'd1'))!, answer: { option: 1, condition: 'later', answeredAt: 't' } })
+  expect((await chooseAndReopen(store, (await readOne(store, 'd1'))!, 1))?.notice).toBe('d1 changed. Reopened d2.')
+  await write(store, { ...(await readOne(store, 'd2'))!, state: 'ready', answer: { option: 2, answeredAt: 't' } })
+  expect((await chooseAndReopen(store, (await readOne(store, 'd1'))!, 1))?.notice).toBeUndefined()
+  expect((await readOne(store, 'd2'))!.state).toBe('ready')
+})
+
+test('a held 1 is cancelled by any other key, so its timer never answers option 1', async () => {
+  const values = new Map<string, { value: unknown; version: number }>()
+  let fire: (() => void) | undefined
+  const $ = {
+    state: {
+      get: async (ref: { key: string }) => values.get(ref.key) ?? { value: undefined, version: 0 },
+      set: async (ref: { key: string }, value: unknown) => {
+        const version = (values.get(ref.key)?.version ?? 0) + 1
+        values.set(ref.key, { value, version })
+        return { isSet: true, version }
+      },
+    },
+    clock: { after: (_ms: number, fn: () => void) => void (fire = fn) },
+    ui: { focus: async () => ({}) },
+  }
+  await setView($, v => ({ ...v, ring: 'opt:1' }))
+  const d = { id: 'd1', options: Array.from({ length: 12 }, (_, i) => ({ id: i + 1, label: `P${i + 1}` })) } as unknown as Decision
+  const chosen: number[] = []
+  await pressOption($, d, 1, async option => void chosen.push(option), 4)
+  expect(fire).toBeDefined()
+  cancelHeldDigit()
+  fire!()
+  expect(chosen).toEqual([])
+  await pressOption($, d, 1, async option => void chosen.push(option), 4)
+  fire!()
+  expect(chosen).toEqual([1])
+})
+
+/** Lets a few milliseconds pass, so two times taken either side differ. */
+function tick(): void {
+  const until = Date.now() + 3
+  while (Date.now() < until) {
+    // waiting
+  }
+}

@@ -964,4 +964,5 @@ test('when the pane gets the keys the ring goes where the pane means it, not to 
   expect(ringTarget({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd2' }, tabs)).toBe('opt:1')
   expect(ringTarget({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd2', highlight: 1, answerBox: { kind: 'text', option: 2 } }, tabs)).toBe('answer')
   expect(ringTarget({ ...INITIAL_VIEW, screen: 'review' }, tabs)).toBeUndefined()
+  expect(ringTarget({ ...INITIAL_VIEW, screen: 'review', decisionId: 'd2', ticked: ['d2'] }, tabs)).toBe('confirm')
 })

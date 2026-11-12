@@ -2,6 +2,7 @@ import type { PaneView, PendingQuestion } from '../../types'
 import { RUN, askQuestion, currentMode, resendToFork } from '../discuss'
 import type { Decision, ThreadEntry } from '../store'
 import { focusLater, focusTo, openingOption, setView } from './decision'
+import { markSeen } from './seen'
 import { truncate } from './list'
 import { Rule } from './look'
 
@@ -132,6 +133,8 @@ type Props = {
 
 async function goBack($: any, view: PaneView, d: Decision): Promise<void> {
   const next = backFromThread(view)
+  // The thread was on screen, so what it showed counts as read.
+  await markSeen($, d.id)
   await setView($, leaveThread)
   if (next.focusAsk) {
     await focusTo($, 'ask')
@@ -290,7 +293,15 @@ export function ThreadView($: any, props: Props): any {
                 {`send ${readyCount}  `}
               </Button>
             ) : null}
-            <Button key="h" hotkey="h" plain onPress={onHide}>
+            <Button
+              key="h"
+              hotkey="h"
+              plain
+              onPress={async () => {
+                await markSeen($, d.id)
+                onHide()
+              }}
+            >
               {'hide  '}
             </Button>
           </Box>

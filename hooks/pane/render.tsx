@@ -2,7 +2,7 @@ import type { PaneView } from '../../types'
 import { notePaneFocus } from '../band'
 import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
-import { DecisionView, INITIAL_VIEW, PANE_ID, focusLater, focusTo, keysOffLines, openingOption, readView, setView } from './decision'
+import { DecisionView, INITIAL_VIEW, PANE_ID, cancelHeldDigit, focusLater, focusTo, keysOffLines, openingOption, readView, setView } from './decision'
 import { Header, isCompact } from './look'
 import { ThreadView } from './thread'
 import type { Tab } from './list'
@@ -75,6 +75,9 @@ export function isTabKey(element: string | undefined): boolean {
 
 /** The `ui.focus` hook, once the ring has moved: records where it is for the `›`, and the highlight follows it. */
 export async function followFocus($: any, element: string | undefined): Promise<void> {
+  if (element !== 'opt:1') {
+    cancelHeldDigit()
+  }
   await setView($, v => ({ ...v, ring: element }))
   const batch = /^batch:(.+)$/.exec(element ?? '')
   const match = /^opt:(\d+)$/.exec(element ?? '')
@@ -108,6 +111,9 @@ export function ringTarget(view: PaneView, tabs: Tab[], seen: Seen = {}, frozen?
     const d = tabs.flatMap(t => t.decisions).find(x => x.id === view.decisionId)
 
     return `opt:${view.highlight ?? (d ? openingOption(d) : 1)}`
+  }
+  if (view.screen === 'review' && view.decisionId !== undefined) {
+    return 'confirm'
   }
   if (view.screen !== 'list') {
     return undefined
@@ -213,7 +219,10 @@ export async function renderPane($: any, e: any): Promise<any> {
       d: decision,
       all: decisions,
       seenAt: visitSeenAt(decision.id, seen),
-      onSendThis: () => void setView($, v => openReview(v, ready.map(d => d.id), decision.id)),
+      onSendThis: async () => {
+        await setView($, v => openReview(v, ready.map(d => d.id), decision.id))
+        focusLater($, 'confirm')
+      },
       view,
       rows: e.props.scroll?.bodyRows ?? 30,
       readyCount: ready.length,

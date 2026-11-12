@@ -2,6 +2,7 @@ import type { PaneView } from '../../types'
 import type { Decision } from '../store'
 import { focusLater, openDecision, readView, ringMark, setView } from './decision'
 import { previewLines } from '../send'
+import { SETTLED_TEXT } from '../discuss'
 import { Card, KeyHints, Rule, cardFrame, cardInset, isCompact, wrapLines } from './look'
 import type { Hint } from './look'
 import { ago, hasUnread, unreadReplies } from './seen'
@@ -183,7 +184,11 @@ export function openReview(view: PaneView, readyIds: string[], only?: string): P
 function chosenText(d: Decision): string {
   const o = d.options.find(x => x.id === d.answer?.option)
 
-  return o ? `✓ ${o.id} ${o.label}` : '✓ discussed'
+  if (o) {
+    return `✓ ${o.id} ${o.label}`
+  }
+
+  return d.answer?.text !== undefined && d.answer.text !== SETTLED_TEXT ? '✓ Something else' : '✓ discussed'
 }
 
 /** The right-hand part of a list row: wide panes say more. */
@@ -539,11 +544,11 @@ function SendOneView($: any, props: ReviewProps, d: Decision): any {
       ))}
       {compact ? null : Rule(ui, width, 'rule:send-keys')}
       <Box>
-        <Button key="b" hotkey="b" plain onPress={() => void back()}>
-          {'back  '}
+        <Button key="confirm" variant="primary" autoFocus onPress={() => onConfirm([d.id])}>
+          {`${ringMark('confirm', view.ring, isFocused)}enter: send it  `}
         </Button>
-        <Button key="confirm" hotkey="c" variant="primary" autoFocus onPress={() => onConfirm([d.id])}>
-          {`${ringMark('confirm', view.ring, isFocused)}send it`}
+        <Button key="b" hotkey="b" plain onPress={() => void back()}>
+          {'back'}
         </Button>
       </Box>
     </Box>

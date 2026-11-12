@@ -61,6 +61,6 @@ export type PaneView = {
 
 declare module 'claude-code' {
   interface PluginState {
-    decisions: { view: Shaped<PaneView>; seen: Shaped<Record<string, string>> }
+    decisions: { view: Shaped<PaneView> }
   }
 }

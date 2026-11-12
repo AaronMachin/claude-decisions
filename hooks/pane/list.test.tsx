@@ -557,3 +557,10 @@ test('review for one decision ticks only it and keeps which one, with the ring o
   expect(view.ring).toBe('confirm')
   expect(openReview({ ...INITIAL_VIEW, decisionId: 'd3' }, ['d1', 'd3']).decisionId).toBeUndefined()
 })
+
+test('the list meta says Something else for a typed answer, and discussed only for the old settled answers', () => {
+  const typed = make({ state: 'ready', answer: { text: 'a QR code', answeredAt: 't' } })
+  expect(rowMeta(typed, 90)).toMatch(/^✓ Something else/)
+  const settled = make({ state: 'ready', answer: { text: 'settled in the discussion, see below', answeredAt: 't' } })
+  expect(rowMeta(settled, 90)).toMatch(/^✓ discussed/)
+})

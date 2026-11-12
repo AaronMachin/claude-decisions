@@ -138,7 +138,8 @@ export async function chooseAndReopen(store: StoreCtx, d: Decision, option: numb
   if (!decision) {
     return undefined
   }
-  if (previous?.option === undefined || previous.option === option) {
+  // A typed answer replaced, or a condition dropped by choosing the plain option, is a change too.
+  if (previous === undefined || isSameAnswer(previous, { option })) {
     return { decision }
   }
 
@@ -454,6 +455,8 @@ type HintCtx = {
   compact?: boolean
   /** Tall: `m` has something to hide or show. */
   canToggleDetail?: boolean
+  /** Something else is on another page, so the key line names it. */
+  isElseOffPage?: boolean
 }
 
 type Handlers = {
@@ -493,13 +496,13 @@ export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
   const isOption = highlight !== undefined && d.options.some(o => o.id === highlight)
   const hints: Hint[] = []
   if (highlight !== undefined && !isSent && (isOption || isSomethingElse)) {
-    hints.push({ id: 'enter-choose', keyText: 'enter', label: isSomethingElse ? 'type an answer' : `choose ${highlight}` })
+    hints.push({ id: 'enter-choose', keyText: 'enter', label: isSomethingElse ? 'type an answer' : `choose ${highlight}`, keepLabel: true })
   }
   if (!isSent && d.recommendation !== undefined) {
     hints.push({ id: 'a', keyText: 'a', label: 'recommended', hotkey: 'a', onPress: on.recommend })
   }
   if (!isSent && isOption) {
-    hints.push({ id: 'c', keyText: 'c', label: 'condition', hotkey: 'c', onPress: on.condition })
+    hints.push({ id: 'c', keyText: 'c', label: 'condition', hotkey: 'c', onPress: on.condition, keepLabel: true })
   }
   hints.push({ id: 't', keyText: 't', label: 'talk', hotkey: 't', onPress: on.talk })
   if (c.isPaged && !isSent) {
@@ -510,7 +513,13 @@ export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
   if (!isSent) {
     for (const option of c.offPage) {
       const digit = digitOf(option)!
-      hints.push({ id: `digit:${digit}`, keyText: digit, label: '', hotkey: digit, onPress: () => on.digit(option) })
+      const label = option === somethingElseNumber(d) ? 'something else' : ''
+      hints.push({ id: `digit:${digit}`, keyText: digit, label, hotkey: digit, onPress: () => on.digit(option), keepLabel: label !== '' })
+    }
+    // Something else past 10 has no key of its own: the line names the number to type.
+    const somethingElse = somethingElseNumber(d)
+    if (c.isElseOffPage === true && digitOf(somethingElse) === undefined) {
+      hints.push({ id: 'else', keyText: String(somethingElse), label: 'something else', keepLabel: true })
     }
   }
   if (c.compact === false) {
@@ -656,8 +665,8 @@ export function decisionLayout(
     (view.answerBox !== undefined && d.state !== 'sent' ? 1 + wrapLines(BOX_LINE, width).length : 0) +
     (answerNote(d) !== undefined ? 1 : 0)
   const hintMax = hintLinesMax(compact)
-  const hintsFor = (isPaged: boolean, offPage: number[], canToggleDetail: boolean) =>
-    decisionHints({ d, view, isFocused, readyCount, isPaged, offPage, hasMore, compact, canToggleDetail })
+  const hintsFor = (isPaged: boolean, offPage: number[], canToggleDetail: boolean, isElseOffPage = false) =>
+    decisionHints({ d, view, isFocused, readyCount, isPaged, offPage, hasMore, compact, canToggleDetail, isElseOffPage })
 
   // Full detail: every option's text at the card's width, so moving the highlight never tips it over the edge.
   const fullOptionRows = drawn.reduce((n, o) => n + 1 + detailLines(d, o.id, inner).length, 0) + cardFrame(false)
@@ -725,6 +734,7 @@ export function decisionLayout(
         true,
         drawn.filter(o => digitOf(o.id) !== undefined && Math.floor((o.id - 1) / size) !== page).map(o => o.id),
         canToggleDetail,
+        Math.floor((count - 1) / size) !== page,
       )
     hints = pagedHints(guess, pageFor(anchored, guess, count))
     hintLines = hintLineCount(hints, width, hintMax)
@@ -773,6 +783,15 @@ export function pageFor(view: PaneView, pageSize: number, count: number): number
 
 /** A `1` pressed on option 1 while the ring was already there, waiting to see whether a second digit makes it 10 to 19. */
 let heldOne: Typed
+
+/** Any other key, a ring move or leaving the screen: a held `1` must not answer option 1 a moment later. */
+export function cancelHeldDigit(): void {
+  if (heldOne !== undefined && typing.typed === heldOne) {
+    typing.typed = undefined
+    typing.option = undefined
+  }
+  heldOne = undefined
+}
 
 /**
  * A digit key or a press on an option. With the ring already on that option it is
@@ -888,11 +907,14 @@ export function DecisionView($: any, props: Props): any {
   const now = Date.now()
   const box = isSent ? undefined : view.answerBox
 
-  const toList = (notice: string | undefined): Promise<unknown> =>
-    setView($, v => {
+  const toList = async (notice: string | undefined): Promise<unknown> => {
+    await leaving()
+
+    return setView($, v => {
       const { [d.id]: _gone, ...answerDrafts } = v.answerDrafts
       return { ...v, screen: 'list', decisionId: undefined, highlight: undefined, ring: undefined, compactPage: 0, isContextOpen: false, answerBox: undefined, answerDrafts, notice }
     })
+  }
   const openBox = async (kind: 'text' | 'condition', option: number) => {
     if (isSent) {
       return
@@ -943,6 +965,7 @@ export function DecisionView($: any, props: Props): any {
     onLeave()
   }
   const openThread = async () => {
+    await leaving()
     await setView($, v => ({
       ...v,
       screen: 'thread',
@@ -954,6 +977,11 @@ export function DecisionView($: any, props: Props): any {
       notice: undefined,
     }))
     focusLater($, (view.drafts[d.id] ?? '') !== '' ? 'ask-input' : 'ask')
+  }
+  /** Leaving this decision: what was on screen counts as read, and a held `1` is dropped. */
+  const leaving = async () => {
+    cancelHeldDigit()
+    await markSeen($, d.id)
   }
   const handlers: Handlers = {
     recommend: async () => {
@@ -988,7 +1016,10 @@ export function DecisionView($: any, props: Props): any {
       }
     },
     more: () => void setView($, v => (compact ? { ...v, isContextOpen: !v.isContextOpen } : { ...v, isDetailHidden: !v.isDetailHidden })),
-    back: () => void onBack($, onLeave),
+    back: async () => {
+      await leaving()
+      await onBack($, onLeave)
+    },
     park: async () => {
       if (d.state === 'parked') {
         await unparkDecision($, d)
@@ -998,8 +1029,24 @@ export function DecisionView($: any, props: Props): any {
         focusLater($, 'park')
       }
     },
-    send: d.state === 'ready' && props.onSendThis ? props.onSendThis : onSend,
-    hide: onHide,
+    send: async () => {
+      await leaving()
+      ;(d.state === 'ready' && props.onSendThis ? props.onSendThis : onSend)()
+    },
+    hide: async () => {
+      await leaving()
+      onHide()
+    },
+  }
+  // Every key but a digit drops a held `1`; a digit may be the second half of 10 to 19.
+  for (const name of Object.keys(handlers) as (keyof Handlers)[]) {
+    if (name !== 'digit') {
+      const run = handlers[name] as () => void
+      ;(handlers as Record<string, unknown>)[name] = () => {
+        cancelHeldDigit()
+        run()
+      }
+    }
   }
   const hints = decisionHints(
     {
@@ -1012,6 +1059,7 @@ export function DecisionView($: any, props: Props): any {
       hasMore: layout.hasMore,
       compact,
       canToggleDetail: layout.canToggleDetail,
+      isElseOffPage: layout.pages > 1 && !layout.shown.some(o => o.isSomethingElse === true),
     },
     handlers,
   )
@@ -1173,6 +1221,9 @@ export function DecisionView($: any, props: Props): any {
           onInput={(text: string) => void setView($, v => ({ ...v, parkDraft: text }))}
           onSubmit={async (text: string) => {
             const isParked = await parkDecision($, d, text)
+            if (isParked) {
+              await leaving()
+            }
             await setView($, v => ({
               ...v,
               isParking: false,

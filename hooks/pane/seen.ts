@@ -1,19 +1,31 @@
-import { atom, read, update } from 'claude-code'
-
 import type { Decision, ThreadEntry } from '../store'
 
-/** When the person last opened each decision, by id. Kept apart from the decision files so reading one never moves its `updatedAt` (decision 232). */
+/**
+ * When the person last opened each decision, by id. Kept in the mod's own store, so it lasts between sessions,
+ * and apart from the decision files, so reading one never moves its `updatedAt` (decision 232).
+ */
 export type Seen = Record<string, string>
 
-const seenAtom = atom({ plugin: 'decisions', key: 'seen' } as const, {} as Seen, { shape: 'seen-1' })
+const SEEN_KEY = 'seen'
 
-export function readSeen($: any): Promise<Seen> {
-  return read($, seenAtom)
+export async function readSeen($: any): Promise<Seen> {
+  try {
+    const value = await $.store.get(SEEN_KEY)
+
+    return value !== null && typeof value === 'object' ? (value as Seen) : {}
+  } catch {
+    return {}
+  }
 }
 
-/** Records that the person opened a decision now (or at `at`). */
-export function markSeen($: any, id: string, at: string = new Date().toISOString()): Promise<unknown> {
-  return update($, seenAtom, (seen: Seen) => ({ ...seen, [id]: at }))
+/** Records that the person opened (or left) a decision now, or at `at`. */
+export async function markSeen($: any, id: string, at: string = new Date().toISOString()): Promise<void> {
+  const seen = await readSeen($)
+  try {
+    await $.store.set(SEEN_KEY, { ...seen, [id]: at })
+  } catch {
+    // Without a store the dots just stay; nothing else depends on it.
+  }
 }
 
 const REPLIERS = new Set<ThreadEntry['who']>(['claude', 'fork', 'quick'])

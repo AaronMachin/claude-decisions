@@ -61,20 +61,13 @@ test('newestUnread picks the decision with the latest unread reply', () => {
   expect(newestUnread([d3], { d3: at(10) })).toBeUndefined()
 })
 
-test('markSeen keeps the time in the pane state and touches no decision file', async () => {
-  const values = new Map<string, { value: unknown; version: number }>()
+test('markSeen keeps the time in the mod\'s own store, which lasts between sessions, and touches no decision file', async () => {
+  const kept = new Map<string, unknown>()
   const writes: string[] = []
   const $ = {
-    state: {
-      get: async (ref: { key: string }) => values.get(ref.key) ?? { value: undefined, version: 0 },
-      set: async (ref: { key: string }, value: unknown, options?: { ifVersion?: number }) => {
-        const version = values.get(ref.key)?.version ?? 0
-        if (options?.ifVersion !== undefined && options.ifVersion !== version) {
-          return { isSet: false, version }
-        }
-        values.set(ref.key, { value, version: version + 1 })
-        return { isSet: true, version: version + 1 }
-      },
+    store: {
+      get: async (key: string) => kept.get(key),
+      set: async (key: string, value: unknown) => void kept.set(key, JSON.parse(JSON.stringify(value))),
     },
     fs: { write: async (path: string) => void writes.push(path) },
   }
@@ -82,5 +75,6 @@ test('markSeen keeps the time in the pane state and touches no decision file', a
   await markSeen($, 'd1', at(7))
   await markSeen($, 'd2', at(8))
   expect(await readSeen($)).toEqual({ d1: at(7), d2: at(8) })
+  expect([...kept.keys()]).toEqual(['seen'])
   expect(writes).toEqual([])
 })
