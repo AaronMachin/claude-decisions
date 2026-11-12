@@ -1,5 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+import { configure } from '../discuss'
+import { SESSION_TOOL } from '../session'
 import { ADD_TOOL, UPDATE_TOOL, addDecision } from '../tool'
 import { create, readAll, readOne, write } from '../store'
 import type { Decision, StoreCtx } from '../store'
@@ -1388,5 +1390,103 @@ test('a sent decision shows when it went and the first line of what Claude did n
   const all = await allTexts(ui)
   expect(all).toContain(`↗ sent ${hm}`)
   expect(all).toContain('claude: Posted three PR comments.')
+  await ui.unmount()
+})
+
+/** Answers `$.model.complete`: the triage prompt with `triage`, the problem prompt with a fixed line. Records each request. */
+function smallModel(on: On, triage: string): any[] {
+  const asked: any[] = []
+  on('model.complete', (_: any, e: any) => {
+    asked.push(e)
+    return { value: { isAnswered: true, text: /HAND OVER/.test(e.system ?? '') ? triage : 'Review comments need a home' } }
+  })
+
+  return asked
+}
+
+test('auto: a question from the ask box goes to the small model with the session record, and its answer stays in the pane', async ($, on) => {
+  const clock = mock.clock(on as any)
+  const asked = smallModel(on, 'ANSWER\nA comment on the line it is about.')
+  configure({ discussionReplies: 'auto' })
+  try {
+    const seen = await begin($, on)
+    await $.tool.call({ tool: SESSION_TOOL, title: 'Pantry importer review', summary: 'Reviewing the recipe importer.', now: { text: 'Choosing where comments go' } })
+    const ui = await mountHolding($, rowsOf(40))
+    await ui.press({ key: 'row:d1' })
+    await clock.advance(100)
+    await ring($, 'ask-inline')
+    await ui.input({ key: 'ask-inline', text: 'what does a PR comment look like?' })
+    for (let i = 0; i < 5; i++) {
+      for (let j = 0; j < 30; j++) {
+        await Promise.resolve()
+      }
+      await clock.advance(100)
+    }
+    const triage = asked.find(e => /HAND OVER/.test(e.system ?? ''))
+    expect(triage?.prompt).toContain('Title: Pantry importer review')
+    expect(triage?.prompt).toContain('Summary: Reviewing the recipe importer.')
+    expect(triage?.prompt).toContain('Now: Choosing where comments go')
+    expect(seen.submitted).toEqual([])
+    expect((await ui.find({ key: 'talk:reply' }))?.text).toMatch(/^quick answer · now {2}A comment on the line/)
+    await ui.unmount()
+  } finally {
+    configure({})
+  }
+})
+
+test('a quick answer from triage reads "quick answer", dim, and r asks the main session instead, once', async ($, on) => {
+  const seen = await begin($, on)
+  edit(seen, 'd1', d => ({
+    ...d,
+    thread: [
+      { who: 'person', text: 'what does a PR comment look like?', at: minutesBefore(3) },
+      { who: 'quick', via: 'triage', text: 'A note on the line it is about.', at: minutesBefore(2) },
+    ],
+  }))
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'talk:reply' }))?.text).toMatch(/^quick answer · 2m {2}A note on the line/)
+  const speaker = (await ui.findAll({ type: 'Text' })).find((t: any) => t.text === 'quick answer')
+  expect(speaker?.props.color).toBe('claude')
+  expect(speaker?.props.dimColor).toBe(true)
+  expect((await ui.find({ key: 'r' }))?.text).toMatch(/ask the main session/)
+  await ui.press({ key: 'r' })
+  expect(seen.submitted).toEqual(['On decision 1 · Where the review comments go: what does a PR comment look like?'])
+  expect(await ui.find({ key: 'r' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a reply the person asked the quick model for keeps its name and has no r', async ($, on) => {
+  const seen = await begin($, on)
+  edit(seen, 'd1', d => ({
+    ...d,
+    thread: [
+      { who: 'person', text: 'which is cheaper?', at: minutesBefore(3) },
+      { who: 'quick', text: 'The chat.', at: minutesBefore(2) },
+    ],
+  }))
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'talk:reply' }))?.text).toMatch(/^quick model · 2m/)
+  expect(await ui.find({ key: 'r' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the problem line sits under the title in bold, with ◇ when the small model wrote it', async ($, on) => {
+  const seen = await begin($, on, { ...CHOICE, problem: 'Review comments need a home the team reads' })
+  let ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const header = (await ui.find({ key: 'header' }))!.text
+  expect(header.indexOf('Where the review comments go')).toBeLessThan(header.indexOf('Review comments need a home'))
+  expect(header.indexOf('Review comments need a home')).toBeLessThan(header.indexOf('d1 · Code review'))
+  expect(header).not.toContain('◇')
+  const line = (await ui.findAll({ type: 'Text' })).find((t: any) => t.text.startsWith('Review comments need a home'))
+  expect(line?.props.bold).toBe(true)
+  await ui.press({ key: 'b' })
+  await ui.unmount()
+  edit(seen, 'd1', d => ({ ...d, problemBy: 'model' }))
+  ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'header' }))!.text.replace(/[▌\s]+/g, ' ')).toContain('◇ Review comments need a home the team reads')
   await ui.unmount()
 })

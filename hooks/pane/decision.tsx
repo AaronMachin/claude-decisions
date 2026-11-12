@@ -5,7 +5,8 @@ import { reopenDependents, reopenNotice } from '../dependents'
 import { focusKeyName } from '../focus-key'
 import { readAll, readOne, write } from '../store'
 import { openLastOne } from './list'
-import { askQuestion, currentMode } from '../discuss'
+import { askMainInstead, askQuestion, canAskMainInstead, currentReplies } from '../discuss'
+import { readSession, sessionSummary } from '../session'
 import type { Answer, Decision, Kind, Option, StoreCtx, ThreadEntry } from '../store'
 import { HEADER_RIGHT_GAP, KeyHints, Rule, hintLineCount, isCompact, keysState, wrapLines } from './look'
 import type { Hint } from './look'
@@ -475,6 +476,13 @@ export function conversationLines(d: Decision, seenAt: string | undefined, width
   return { heading, messages: messages.length, unread: unread.length, reply: shown, earlier }
 }
 
+/** The newest reply, when it is a quick answer from triage that can still go to the main session: the `r` key's target. */
+export function mainInsteadReply(d: Decision, pending: PaneView['pending']): string | undefined {
+  const newest = d.thread.findLast(e => REPLIERS.has(e.who) && e.revision === undefined)
+
+  return newest?.who === 'quick' && newest.via === 'triage' && canAskMainInstead(d, newest.at, pending) ? newest.at : undefined
+}
+
 /** Rows the conversation block takes, rule included: heading, the reply, earlier line, replying line, the bordered ask box. */
 function conversationRows(c: Conversation, isReplying: boolean, width: number): number {
   return 2 + (c.reply ? chatRows(c.reply, width) : 0) + (c.earlier ? 1 : 0) + (c.empty?.length ?? 0) + (isReplying ? 1 : 0) + 3
@@ -494,6 +502,8 @@ type HintCtx = {
   canToggleDetail?: boolean
   /** Something else is on another page, so the key line names it. */
   isElseOffPage?: boolean
+  /** The newest reply is a quick answer that can go to the main session, so `r` is offered. */
+  canAskMain?: boolean
 }
 
 type Handlers = {
@@ -502,6 +512,7 @@ type Handlers = {
   talk: () => void
   moreOptions: () => void
   thread: () => void
+  askMain: () => void
   digit: (option: number) => void
   more: () => void
   back: () => void
@@ -516,6 +527,7 @@ const NO_HANDLERS: Handlers = {
   talk: () => {},
   moreOptions: () => {},
   thread: () => {},
+  askMain: () => {},
   digit: () => {},
   more: () => {},
   back: () => {},
@@ -550,6 +562,9 @@ export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
   }
   hints.push({ id: 't', keyText: 't', label: 'talk', hotkey: 't', onPress: on.talk })
   hints.push({ id: 'o', keyText: 'o', label: 'thread', hotkey: 'o', onPress: on.thread })
+  if (c.canAskMain) {
+    hints.push({ id: 'r', keyText: 'r', label: 'ask the main session', hotkey: 'r', onPress: on.askMain, keepLabel: true })
+  }
   if (c.isPaged) {
     // Every option is drawn and the pane scrolls (row 262): ↑ and ↓ reach the ones out of view.
     hints.push({ id: 'more-options', keyText: '↑↓', label: 'more options' })
@@ -694,6 +709,16 @@ export function headerLines(d: Decision, width: number, compact: boolean): strin
   return compact ? [truncateLine(d.title, room)] : wrapLines(d.title, room)
 }
 
+/** The problem line under the title, wrapped whole, `◇ ` first when the small model wrote it; none on a compact pane. */
+export function problemLines(d: Decision, width: number, compact: boolean): string[] {
+  if (compact || d.problem === undefined || d.problem === '') {
+    return []
+  }
+  const room = Math.max(8, width - 2 - ` ${kindLabel(d.kind)} `.length - 1)
+
+  return wrapLines(`${d.problemBy === 'model' ? '◇ ' : ''}${d.problem}`, room)
+}
+
 /** Lines the crumb takes: one, or wrapped whole on a tall pane with the keys state after. */
 function crumbRows(d: Decision, all: Decision[], width: number, compact: boolean): number {
   const room = width - HEADER_RIGHT_GAP - 2 - 10
@@ -735,11 +760,24 @@ export function decisionLayout(
   const showSources = d.sources.length > 0 && (compact ? view.isContextOpen : isFull)
   const withDetail = (o: DrawnOption) => isFull || view.highlight === o.id
   const hintsFor = (outOfView: boolean) =>
-    decisionHints({ d, view, isFocused, readyCount, isPaged: outOfView, offPage: [], hasMore, compact, canToggleDetail: !compact, isElseOffPage: false })
+    decisionHints({
+      d,
+      view,
+      isFocused,
+      readyCount,
+      isPaged: outOfView,
+      offPage: [],
+      hasMore,
+      compact,
+      canToggleDetail: !compact,
+      isElseOffPage: false,
+      canAskMain: mainInsteadReply(d, view.pending) !== undefined,
+    })
 
   // Rows above the options, then the options, for telling whether some are out of the window.
   const before = (hintLines: number) =>
     headerLines(d, width, compact).length +
+    problemLines(d, width, compact).length +
     crumbRows(d, all, width, compact) +
     (compact ? 0 : relationLines(d, all).length) +
     hintLines +
@@ -1035,6 +1073,13 @@ export function DecisionView($: any, props: Props): any {
       focusLater($, `opt:${first}`)
     },
     thread: () => void openThread(),
+    askMain: async () => {
+      const replyAt = mainInsteadReply(d, (await readView($)).pending)
+      if (replyAt !== undefined) {
+        await askMainInstead($, d.id, replyAt)
+        onChanged()
+      }
+    },
     digit: async (option: number) => {
       const digit = digitOf(option)!
       const result = highlightFor(digit, Date.now(), typing.typed, drawnOptions(d).length)
@@ -1089,6 +1134,7 @@ export function DecisionView($: any, props: Props): any {
       compact,
       canToggleDetail: layout.canToggleDetail,
       isElseOffPage: false,
+      canAskMain: mainInsteadReply(d, view.pending) !== undefined,
     },
     handlers,
   )
@@ -1264,7 +1310,7 @@ export function DecisionView($: any, props: Props): any {
             const option = `opt:${view.highlight ?? openingOption(d)}`
             await setView($, v => ({ ...v, ring: option }))
             focusLater($, option)
-            await askQuestion($, currentMode(), d.id, text.trim())
+            await askQuestion($, currentReplies(), d.id, text.trim(), sessionSummary(await readSession($).catch(() => undefined)))
             onChanged()
           }}
         />
@@ -1354,6 +1400,13 @@ function DecisionHeader(ui: { Box: any; Text: any }, d: Decision, all: Decision[
           ) : (
             <Text>{' '.repeat(label.length + 2)}</Text>
           )}
+          <Text bold>{line}</Text>
+        </Box>
+      ))}
+      {problemLines(d, width, compact).map((line, index) => (
+        <Box key={`problem:${index}`}>
+          {Bar(ui, colour)}
+          <Text>{' '.repeat(label.length + 2)}</Text>
           <Text bold>{line}</Text>
         </Box>
       ))}

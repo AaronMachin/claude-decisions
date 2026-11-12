@@ -266,7 +266,8 @@ const SOMETHING_ELSE_WORDS = 'Something else'
 
 /**
  * A row's second line on a tall pane (row 251): the unread reply in `claude`; a parked or reopened row's own line;
- * a sent row's `↗ sent 12:04 · <answer>`; else the kind, how long ago it was asked and, once answered, the answer.
+ * a sent row's `↗ sent 12:04 · <answer>`; else the problem line when there is one, the kind, how long ago it was asked
+ * and, once answered, the answer.
  */
 export function rowSecondLine(d: Decision, seen: Seen, now: Date = new Date(), isParkedTab = false): { text: string; colour?: string } {
   const reply = isWaiting(d) && hasUnread(d, seen) ? unreadLine(d, seen, now) : undefined
@@ -283,7 +284,7 @@ export function rowSecondLine(d: Decision, seen: Seen, now: Date = new Date(), i
   }
   const age = ago(d.createdAt, now)
 
-  return { text: [d.isTask ? 'to do' : d.kind, age === '' ? '' : `asked ${age}`, d.state === 'ready' ? answer : ''].filter(Boolean).join(' · ') }
+  return { text: [d.problem ?? '', d.isTask ? 'to do' : d.kind, age === '' ? '' : `asked ${age}`, d.state === 'ready' ? answer : ''].filter(Boolean).join(' · ') }
 }
 
 /** Up to three of the latest sent decisions, newest first, for the all-clear (row 252, extra 6). */

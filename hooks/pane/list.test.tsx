@@ -684,3 +684,14 @@ test('a tall list with long titles keeps its key line within the rows', async ($
   expect(await ui.find({ key: 'h' })).toBeDefined()
   await ui.unmount()
 })
+
+test('the dim line leads with the problem when there is one, before the kind and age', () => {
+  counter = 0
+  const now = new Date()
+  const asked = new Date(now.getTime() - 4 * 60_000).toISOString()
+  expect(rowSecondLine(make({ createdAt: asked, problem: 'Where settings are read from', problemBy: 'model' }), {}, now).text).toBe(
+    'Where settings are read from · choice · asked 4m ago',
+  )
+  const ready = make({ createdAt: asked, problem: 'Where settings are read from', state: 'ready', answer: { option: 1, answeredAt: 't' } })
+  expect(rowSecondLine(ready, {}, now).text).toBe('Where settings are read from · choice · asked 4m ago · 1 Project root')
+})

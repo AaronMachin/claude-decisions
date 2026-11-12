@@ -1,5 +1,6 @@
 import type { PaneView, PendingQuestion } from '../../types'
-import { RUN, askQuestion, currentMode, resendToFork } from '../discuss'
+import { RUN, askQuestion, currentMode, currentReplies, resendToFork } from '../discuss'
+import { readSession, sessionSummary } from '../session'
 import type { Decision, Revision, ThreadEntry } from '../store'
 import { focusLater, focusTo, openingOption, setView } from './decision'
 import { markSeen, when } from './seen'
@@ -284,7 +285,7 @@ export function ThreadView($: any, props: Props): any {
                 return { ...v, isAsking: false, drafts }
               })
             } else {
-              await askQuestion($, currentMode(), d.id, text.trim())
+              await askQuestion($, currentReplies(), d.id, text.trim(), sessionSummary(await readSession($).catch(() => undefined)))
             }
             focusLater($, 'ask')
             onChanged()

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { RUN } from '../discuss'
+import { RUN, configure } from '../discuss'
 import { ChatEntry } from './style'
 import { INITIAL_VIEW, PANE_ID } from './decision'
 import { UPDATE_TOOL, ADD_TOOL } from '../tool'
@@ -431,4 +431,27 @@ test('a ↻ line in the thread is followed by what changed, the old label struck
   // The blocks change shows nothing under its ↻ line.
   expect((await ui.find({ key: 'changes:1' }))).toBeUndefined()
   await ui.unmount()
+})
+
+test('auto: a question asked on the thread screen goes to the small model first, and its answer reads "quick answer"', async ($, on) => {
+  const seen = engine(on)
+  pass(on)
+  const asked: any[] = []
+  on('model.complete', (_: any, e: any) => {
+    asked.push(e)
+    return { value: { isAnswered: true, text: /HAND OVER/.test(e.system ?? '') ? 'ANSWER\nIt checks each parent folder.' : 'Where settings live' } } as any
+  })
+  configure({ discussionReplies: 'auto' })
+  try {
+    const ui = await openThread($)
+    await ui.press({ key: 'ask' })
+    await ui.input({ key: 'ask-input', text: 'What does walking up mean?' })
+    await settle()
+    expect(asked.some(e => /HAND OVER/.test(e.system ?? ''))).toBe(true)
+    expect(seen.submitted).toEqual([])
+    expect(await ui.find({ type: 'Text', text: 'quick answer' })).toBeDefined()
+    await ui.unmount()
+  } finally {
+    configure({})
+  }
 })

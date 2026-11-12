@@ -2,6 +2,7 @@
 
 import { storeDir } from './store'
 import type { StoreCtx } from './store'
+import type { SessionSummary } from './triage'
 
 export type PlanStatus = 'done' | 'active' | 'todo'
 
@@ -100,6 +101,15 @@ async function readFor($: StoreCtx, session: string): Promise<SessionRecord | un
 /** This session's record, or undefined before anything was written. */
 export async function readSession($: StoreCtx): Promise<SessionRecord | undefined> {
   return readFor($, await $.session.id())
+}
+
+/** What triage is told about the session (row 280): the record's title, summary and now line; nothing before there is a record. */
+export function sessionSummary(record: SessionRecord | undefined): SessionSummary | undefined {
+  if (!record || (!record.title && !record.summary && !record.now)) {
+    return undefined
+  }
+
+  return { title: record.title, summary: record.summary, now: record.now?.text }
 }
 
 let queue: Promise<unknown> = Promise.resolve()
