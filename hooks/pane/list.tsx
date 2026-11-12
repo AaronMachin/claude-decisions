@@ -1,11 +1,16 @@
 import type { PaneView } from '../../types'
 import type { Decision } from '../store'
-import { focusLater, ringMark, setView } from './decision'
-import { Card, KeyHints, Rule, cardFrame, cardInset, isCompact } from './look'
+import { focusLater, openDecision, readView, ringMark, setView } from './decision'
+import { previewLines } from '../send'
+import { SETTLED_TEXT } from '../discuss'
+import { Card, KeyHints, Rule, cardFrame, cardInset, isCompact, wrapLines } from './look'
 import type { Hint } from './look'
+import { ago, hasUnread, unreadReplies } from './seen'
+import type { Seen } from './seen'
 import { FOLDED, answeredRoom, assumptionsIn, firstKey, foldAll, foldedRows, isWaiting, movePage, pageOf, pageSize, sectionsFor, toggleSection } from './sections'
 
-export type Tab = { key: string; label: string; decisions: Decision[] }
+/** `hasUnread`: a decision in it has a reply from Claude the person hasn't opened (its chip ends ●). */
+export type Tab = { key: string; label: string; decisions: Decision[]; hasUnread?: boolean }
 
 const HIDDEN: Decision['state'][] = ['superseded', 'withdrawn']
 
@@ -14,7 +19,7 @@ const HIDDEN: Decision['state'][] = ['superseded', 'withdrawn']
  * then "For you to do" (tasks, wherever they came from), then "Parked". A parked
  * decision shows only in "Parked".
  */
-export function tabsFor(all: Decision[]): Tab[] {
+export function tabsFor(all: Decision[], seen: Seen = {}): Tab[] {
   const groups = new Map<string, Tab>()
   const other: Decision[] = []
   const parked: Decision[] = []
@@ -47,7 +52,7 @@ export function tabsFor(all: Decision[]): Tab[] {
     tabs.push({ key: 'parked', label: 'Parked', decisions: parked })
   }
 
-  return tabs
+  return tabs.map(t => ({ ...t, hasUnread: t.decisions.some(d => isWaiting(d) && hasUnread(d, seen)) }))
 }
 
 export { sectionsFor }
@@ -137,7 +142,7 @@ export const TAB_LABEL_MAX = 24
 export function tabChipText(t: Tab): string {
   const open = openCount(t)
 
-  return ` ${truncate(t.label, TAB_LABEL_MAX)}${open > 0 ? ` ${open}` : ''} `
+  return ` ${truncate(t.label, TAB_LABEL_MAX)}${open > 0 ? ` ${open}` : ''}${t.hasUnread ? ' ●' : ''} `
 }
 
 /** The open tab: the one the view names, else the one holding the newest decision that waits, else the first. */
@@ -164,15 +169,26 @@ export function toggleTick(ticked: string[], id: string): string[] {
   return ticked.includes(id) ? ticked.filter(t => t !== id) : [...ticked, id]
 }
 
-/** The review screen opens with every ready decision ticked, the ring on the first (its autoFocus) and on the first page. */
-export function openReview(view: PaneView, readyIds: string[]): PaneView {
-  return { ...view, screen: 'review', ticked: readyIds, notice: undefined, compactPage: 0, ring: readyIds[0] === undefined ? undefined : `tick:${readyIds[0]}` }
+/**
+ * The review screen opens with every ready decision ticked, the ring on the first (its autoFocus) and on the first page.
+ * With `only`, it is the preview for that one decision (221): only it is ticked, `decisionId` keeps which, and the ring is on send.
+ */
+export function openReview(view: PaneView, readyIds: string[], only?: string): PaneView {
+  if (only !== undefined) {
+    return { ...view, screen: 'review', decisionId: only, ticked: [only], answerBox: undefined, notice: undefined, compactPage: 0, ring: 'confirm' }
+  }
+
+  return { ...view, screen: 'review', decisionId: undefined, ticked: readyIds, notice: undefined, compactPage: 0, ring: readyIds[0] === undefined ? undefined : `tick:${readyIds[0]}` }
 }
 
 function chosenText(d: Decision): string {
   const o = d.options.find(x => x.id === d.answer?.option)
 
-  return o ? `✓ ${o.id} ${o.label}` : '✓ discussed'
+  if (o) {
+    return `✓ ${o.id} ${o.label}`
+  }
+
+  return d.answer?.text !== undefined && d.answer.text !== SETTLED_TEXT ? '✓ Something else' : '✓ discussed'
 }
 
 /** The right-hand part of a list row: wide panes say more. */
@@ -217,6 +233,16 @@ export function secondLine(d: Decision, isParkedTab: boolean): string | undefine
   return undefined
 }
 
+/** The line under a row with an unread reply: who, how long ago, and the first line of the newest one. */
+export function unreadLine(d: Decision, seen: Seen, now: Date = new Date()): string | undefined {
+  const last = unreadReplies(d, seen[d.id]).at(-1)
+  if (last === undefined) {
+    return undefined
+  }
+
+  return `${last.who} · ${ago(last.at, now)}: ${last.text.split('\n')[0]}`
+}
+
 /** One row, padded so the meta sits at the right edge. The meta is left out when the title wouldn't fit whole beside it (row 168). */
 export function rowText(d: Decision, width: number): string {
   const meta = rowMeta(d, width)
@@ -237,17 +263,12 @@ type ListProps = {
   rows?: number
   /** The pane has the keys, so the ring (and its `›`) is shown. */
   isFocused?: boolean
+  /** When each decision was last opened, for the ● and the reply line. */
+  seen?: Seen
+  /** The order to keep while the pane has the keys. */
+  frozen?: string[]
   onSend: () => void
   onHide: () => void
-}
-
-/**
- * Opens a decision with the ring on Discuss, so `enter` alone opens the discussion (D3) and never picks an option the ring
- * happened to land on. The tab it was opened from is kept, so answering the last decision there doesn't move the list.
- */
-async function openDecision($: any, id: string, tab: string | undefined): Promise<void> {
-  await setView($, v => ({ ...v, screen: 'decision', decisionId: id, tab: tab ?? v.tab, highlight: undefined, ring: 'discuss', compactPage: 0, isParking: false, notice: undefined }))
-  focusLater($, 'discuss')
 }
 
 /** Changes tab and, once it is drawn, puts the ring on its first row, so the ring is never left on a row that went. */
@@ -266,7 +287,8 @@ export function ListView($: any, props: ListProps): any {
   const rows = props.rows ?? 30
   const { Box, Text, Button } = ui
   const tab = activeTab(tabs, view)
-  const sections = tab ? sectionsFor(tab) : { needsYou: [], claudesCall: [], alreadyDecided: [], answered: [], parked: [] }
+  const seen = props.seen ?? {}
+  const sections = tab ? sectionsFor(tab, seen, props.frozen) : { needsYou: [], claudesCall: [], alreadyDecided: [], answered: [], parked: [] }
   const elsewhere = waitingElsewhere(tabs, tab)
   const isIdle = newestOpenTab(tabs) === undefined
   const first = elsewhere
@@ -283,15 +305,19 @@ export function ListView($: any, props: ListProps): any {
   const lookRows = compact ? -2 : 1 + cardFrame(false)
 
   const row = (d: Decision) => {
-    const second = secondLine(d, isParkedTab)
+    const isUnread = isWaiting(d) && hasUnread(d, seen)
+    const reply = isUnread && !compact ? unreadLine(d, seen) : undefined
+    const second = reply === undefined ? secondLine(d, isParkedTab) : undefined
     const isRinged = isFocused && view.ring === `row:${d.id}`
     const room = width - 2 - (isRinged ? cardInset(compact) : 0)
     const tint = isRinged && compact ? 'claude' : undefined
     const body = [
-      <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d.id, tab?.key)}>
+      <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d, tab?.key)}>
         {mark(`row:${d.id}`)}
-        {d.state === 'sent' ? <Text dimColor>{rowText(d, room)}</Text> : <Text color={tint}>{rowText(d, room)}</Text>}
+        {isUnread ? <Text color="claude">● </Text> : ''}
+        {d.state === 'sent' ? <Text dimColor>{rowText(d, room - (isUnread ? 2 : 0))}</Text> : <Text color={tint} bold={isUnread || undefined}>{rowText(d, room - (isUnread ? 2 : 0))}</Text>}
       </Button>,
+      reply !== undefined ? <Text key={`reply:${d.id}`} color="claude">{truncate(`     ${reply}`, room)}</Text> : null,
       second !== undefined ? <Text key={`second:${d.id}`} dimColor>{truncate(`     ${second}`, room)}</Text> : null,
     ]
 
@@ -313,7 +339,7 @@ export function ListView($: any, props: ListProps): any {
   const needsPaged = sections.needsYou.length > needsSize
   const needsPage = pageOf(sections.needsYou, view.openSection === undefined ? view.sectionPage : 0, needsSize)
   const needsShown = needsPaged ? needsPage.rows : sections.needsYou
-  const needsYouLines = needsShown.reduce((n, d) => n + (secondLine(d, isParkedTab) === undefined ? 1 : 2), 0)
+  const needsYouLines = needsShown.reduce((n, d) => n + (secondLine(d, isParkedTab) === undefined && (compact || !hasUnread(d, seen)) ? 1 : 2), 0)
   const answeredShown = sections.answered.slice(0, answeredRoom(rows, needsYouLines, view.openSection !== undefined))
   const answeredHidden = sections.answered.length - answeredShown.length
   const fixedRows = 9 + lookRows + elsewhereRows + needsYouLines + (answeredShown.length === 0 ? 0 : answeredShown.length + 1 + (answeredHidden > 0 ? 1 : 0)) + (batch.length >= 2 ? 1 : 0)
@@ -469,9 +495,73 @@ type ReviewProps = {
 /** Rows the compact Send screen keeps for itself: the pane's header, its heading and the key line. */
 const REVIEW_COMPACT_FIXED = 3
 
+/** "1 other answer stays ready and isn't sent.", or nothing when no other is ready. */
+export function othersLine(others: number): string | undefined {
+  if (others === 0) {
+    return undefined
+  }
+
+  return others === 1 ? "1 other answer stays ready and isn't sent." : `${others} other answers stay ready and aren't sent.`
+}
+
+/**
+ * The Send screen for one answered decision (221): exactly the block Claude gets, what stays behind, and
+ * send or back. The block is cut with `…` to fit the pane.
+ */
+function SendOneView($: any, props: ReviewProps, d: Decision): any {
+  const { ui, ready, view, width, onConfirm } = props
+  const { Box, Text, Button } = ui
+  const isFocused = props.isFocused === true
+  const rows = props.rows ?? 30
+  const compact = isCompact(rows)
+  const others = othersLine(ready.filter(x => x.id !== d.id).length)
+  const otherLines = others ? wrapLines(others, width) : []
+  // Pane header, title, "Exactly what" and the keys; tall adds two rules and the keys' own line.
+  const fixed = (compact ? 4 : 7) + (isFocused ? 0 : 1) + otherLines.length
+  const lines = previewLines(d).flatMap(line => wrapLines(line, width))
+  const room = Math.max(1, rows - fixed)
+  const shown = lines.length <= room ? lines : [...lines.slice(0, room - 1), `${truncate(lines[room - 1] ?? '', width - 1)}…`]
+  const back = async () => {
+    await setView($, v => ({ ...v, screen: 'decision', ticked: [], compactPage: 0, ring: v.highlight === undefined ? undefined : `opt:${v.highlight}` }))
+    const v = await readView($)
+    if (v.highlight !== undefined) {
+      focusLater($, `opt:${v.highlight}`)
+    }
+  }
+
+  return (
+    <Box flexDirection="column">
+      <Text bold>{truncate('Send this decision to Claude', width)}</Text>
+      {compact ? null : Rule(ui, width, 'rule:send')}
+      <Text>Exactly what Claude gets:</Text>
+      {shown.map((line, index) => (
+        <Text key={`preview:${index}`} dimColor>
+          {line}
+        </Text>
+      ))}
+      {otherLines.map((line, index) => (
+        <Text key={`others:${index}`}>{line}</Text>
+      ))}
+      {compact ? null : Rule(ui, width, 'rule:send-keys')}
+      <Box>
+        <Button key="confirm" variant="primary" autoFocus onPress={() => onConfirm([d.id])}>
+          {`${ringMark('confirm', view.ring, isFocused)}enter: send it  `}
+        </Button>
+        <Button key="b" hotkey="b" plain onPress={() => void back()}>
+          {'back'}
+        </Button>
+      </Box>
+    </Box>
+  )
+}
+
 /** The answers ready to send, each ticked; Confirm is last in the ring. Compact: keys under the heading, one line per tick, paged with `o`. Returns an element tree. */
 export function ReviewView($: any, props: ReviewProps): any {
   const { ui, ready, view, width, onConfirm, onLeave } = props
+  const one = view.decisionId === undefined ? undefined : ready.find(d => d.id === view.decisionId)
+  if (one) {
+    return SendOneView($, props, one)
+  }
   const { Box, Text, Button } = ui
   const ticked = ready.filter(d => view.ticked.includes(d.id)).map(d => d.id)
   const isFocused = props.isFocused === true

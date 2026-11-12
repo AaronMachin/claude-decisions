@@ -56,4 +56,69 @@ export function shifted(input: Record<string, any>, offset: number): Record<stri
   return input.dependsOn ? { ...input, dependsOn: input.dependsOn.map((id: string) => `d${Number(id.slice(1)) + offset}`) } : input
 }
 
-export const SEEDED: Record<string, any>[] = [...CHOICES, ...REVIEW_47.map(f => shifted(f, CHOICES.length)), ...EXTRA_FINDINGS, ...BACKUPS]
+/** What the seed does to an inbox decision after adding it: a reply nobody has read, or an answer saved without a turn. */
+export type InboxEntry = {
+  input: Record<string, any>
+  reply?: { question: string; answer: string }
+  answer?: { option?: number; condition?: string; text?: string }
+}
+
+/** The pane's inbox (205, 206, 208): one decision with an unread reply, one answered with a condition, one with Something else. */
+export const INBOX: InboxEntry[] = [
+  {
+    input: {
+      group: 'Recipe printing', kind: 'choice',
+      title: 'What a printed recipe shows at the top',
+      scenario: 'A cook prints "Lemon tart" to pin on the fridge. The top of the page has room for one thing.',
+      options: [
+        { label: 'The photo', changes: 'Looks good, costs ink.' },
+        { label: 'The ingredients', changes: 'Easier to shop from, no picture.' },
+      ],
+      recommendation: { option: 2, reason: 'Cooks print to shop and cook, not to look.' },
+    },
+    reply: { question: 'Would a small photo beside the ingredients fit?', answer: 'Yes: a thumbnail beside the list fits on A4 and costs little ink.' },
+  },
+  {
+    input: {
+      group: 'Recipe printing', kind: 'choice',
+      title: 'Whether to print in colour',
+      scenario: 'Most home printers are colour, but ink is dear and some cooks print often.',
+      options: [
+        { label: 'Colour', changes: 'Photos look right.' },
+        { label: 'Black and white', changes: 'Cheaper, photos look flat.' },
+      ],
+      recommendation: { option: 1, reason: 'Photos are why people share recipes.' },
+    },
+    answer: { option: 1, condition: 'only for recipes with photos' },
+  },
+  {
+    input: {
+      group: 'Recipe printing', kind: 'choice',
+      title: 'How a printed recipe links back to the app',
+      scenario: 'A cook with a printed card wants the full recipe, with its notes, on their phone.',
+      options: [
+        { label: 'The share link written out', changes: 'Long to type.' },
+        { label: 'No link', changes: 'Nothing to build.' },
+      ],
+      recommendation: { option: 1, reason: 'Every share already has a link.' },
+    },
+    answer: { text: 'a QR code on the printed recipe card' },
+  },
+]
+
+/** An inbox decision as the seed leaves it: the reply after it was made (so unread), or ready with its answer. */
+export function inboxState<D extends { createdAt: string; thread: any[] }>(d: D, entry: InboxEntry, at: string): D & Record<string, any> {
+  if (entry.reply) {
+    return { ...d, thread: [{ who: 'person', text: entry.reply.question, at }, { who: 'claude', text: entry.reply.answer, at }] }
+  }
+
+  return { ...d, state: 'ready', answer: { ...entry.answer, answeredAt: at } }
+}
+
+export const SEEDED: Record<string, any>[] = [
+  ...CHOICES,
+  ...REVIEW_47.map(f => shifted(f, CHOICES.length)),
+  ...EXTRA_FINDINGS,
+  ...BACKUPS,
+  ...INBOX.map(entry => entry.input),
+]

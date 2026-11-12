@@ -65,15 +65,17 @@ Every decision has the same parts in the same order: a plain title that makes se
 
 | Kind | What the person does | Keys |
 | --- | --- | --- |
-| choice | pick an option, accept the recommendation, or add a condition in the discussion | the option's number (`10` for a tenth) |
+| choice | pick an option, accept the recommendation, or add a condition with `c` | the option's number (`10` for a tenth) |
 | go-ahead | yes or no to an action with side effects (push, write to staging) | `1` yes, `2` no |
 | assumption | right or wrong, on something Claude already assumed and is carrying on with | `1` right, `2` wrong |
 | finding | a review finding | `1` agree, `2` already decided, `3` disagree, `4` not sure |
-| question | a fact only the person knows; typed in the discussion, then marked answered | `m` |
+| question | a fact only the person knows, typed in Something else | `1` |
 
-Choosing is two steps (Aaron, 6 November). Typing a number highlights that option without choosing it; typing more digits moves to the longer number (`1` then `0` highlights option 10), and up/down move the highlight. `enter` then confirms, saves the answer and takes you back to the list. `a` highlights the recommended option, also confirmed with `enter`. With nothing highlighted, `enter` opens the decision's discussion as before. **(my call)** `b` clears a highlight first, and goes back to the list when nothing is highlighted.
+Every kind ends with a numbered Something else row, drawn by the pane and never stored as an option (decisions 205, 207). Choosing it opens a box: `enter` saves the typed text as the answer and makes the decision ready, with no turn started. `c` on a highlighted option opens the same box for a condition, saved as the option plus a `Condition:` line (206). A question has only Something else. On the assumptions batch Something else is reached by opening the row, not with `3` (230).
 
-Every kind can be parked with a reason (`p`). A message in the discussion only discusses; it never answers the decision. Once the discussion has settled it, `d` (done) marks the decision answered, and Claude gets the answer together with the whole discussion. On the assumptions batch, `r` marks the rest right. Both are confirmed with `enter`.
+Choosing is two steps (Aaron, 6 November). Typing a number highlights that option without choosing it; typing more digits moves to the longer number (`1` then `0` highlights option 10), and up/down move the highlight. `enter` then confirms, saves the answer and takes you back to the list. A decision opens with the ring on the chosen option, else the recommended one, else option 1, so `enter` alone answers with the recommendation (219; an accidental answer is only ready, never sent before `s`). With ten or more rows the ring on option 1 holds a `1` for the digit gap, so `1` then `3` still reaches 13 (240). `a` highlights the recommended option. `b` goes back to the list.
+
+Every kind can be parked with a reason (`p`). A message in the conversation only discusses; it never answers the decision. On the assumptions batch, `r` marks the rest right, confirmed with `enter`.
 
 Since 10 November (decision 170) each option row carries its own number key: pressed with the ring elsewhere it highlights that option, pressed again (or `enter`) on the highlighted option it answers. Options that don't all fit are paged with `o`, and the numbers of options on other pages stay in the key line, so every number works on a 9-row pane (decisions 172, 179). Things the person has to do themselves (sign in, run a command) are not decisions and sit in a separate "For you to do" group.
 
@@ -140,7 +142,8 @@ This gets tested like the rest of the experience: replay sessions that produced 
 - **(my call)** A pane the person hid (`h` or `ctrl+x x`) stays hidden when Claude adds decisions. The status line count goes up, and `ctrl+q` / `/decisions` brings it back.
 - **One row of tabs, sections inside (Aaron, 6 November, after the prototype test).** Each tab is where decisions came from (a ticket's work, a PR review, Parked). Inside a tab, "Needs you" is open at the top, with "Claude's call" and "Already decided" as folded headings with counts beneath. Nothing needing the person is hidden behind a filter. In the prototype test the old two rows of tabs weren't seen as tabs, and their purpose wasn't clear.
 - Screens: the list, one decision with its discussion, assumptions batch, findings triage with "needs you" open at the top, and the main-screen layout. All prototyped privately, in their pre-findings form.
-- **The band (Aaron, 10 November, decision 157).** While decisions wait and the prompt has the keys, one line above the prompt names how many and the focus key: "3 decisions waiting · ctrl+x tab to answer, your draft stays". It names the key from the Focus key setting (decision 190), since the mod can't read a rebound key.
+- **The band (Aaron, 10 November, decision 157).** While decisions wait and the prompt has the keys, one line above the prompt names how many and the focus key: "3 decisions waiting · ctrl+x tab to answer, your draft stays". It names the key from the Focus key setting (decision 190), since the mod can't read a rebound key. An unread reply leads it ("● 1 new reply on d43 · ...") and shows even while the pane is hidden (223).
+- **The inbox (decisions 208 to 210, 222, 232).** Inside a tab, decisions with a reply the person hasn't read come first, marked `●` in the `claude` colour, with `claude · 2m ago: <first line>` under them on a tall pane. A tab holding one ends `●`. When each decision was last opened is kept in the mod's state, not the decision file. The order holds still while the pane has the keys (209).
 - **The look (Aaron, 10 November, decision 170).** The title in bold with keys on/off at the right, a dim crumb under it, thin rules between header, context, options and keys, the highlighted option or row as a card bordered in the `claude` colour, key hints as `k: label`, tabs as chips with the open one on the `claude` colour.
 - **Short panes (decisions 158, 161, 170 to 183).** Below 14 rows the pane is compact: no card borders (the ringed row is tinted and starts `›`), rules only where they fit, the keys under the title, and every screen paged with `o` so nothing scrolls and every number key stays armed. Taller panes page a decision's options too when they don't all fit.
 - **The ring (decision 159, 166, 167).** The row the ring is on starts with `›`, taken from the engine's `ui.focus` event. Up and down don't reach the tab strip; `t` changes tab.
@@ -150,14 +153,24 @@ This gets tested like the rest of the experience: replay sessions that produced 
 ### Keyboard
 
 - `ctrl+x tab` (Claude Code's `abovePrompt:focus` action, `ctrl+q` in Aaron's setup) moves into the pane, and pressed again goes back to the prompt. `esc` always goes straight back to the prompt, and whatever was half-typed there is still there. A mod can't take `esc`.
-- `enter` opens a discussion, `b` goes back to the list, `ctrl+x x` hides the pane, `/decisions` opens and focuses it.
+- `enter` answers with the highlighted option, `t` reaches the ask box, `o` opens the whole thread, `b` goes back to the list, `ctrl+x x` hides the pane, `/decisions` opens and focuses it.
 - Hotkeys are single letters or digits only (the mod API refuses anything else).
 - Inside an nvim terminal tab with Aaron's config, `ctrl+x` leaves typing mode, so no `ctrl+x` chord reaches Claude Code, `ctrl+x x` included. The pane needs its own hide key (`h`) so closing it never depends on `ctrl+x x`, and the README should mention that terminal multiplexers and editors can swallow `ctrl+x` chords.
 - The README shows how to move `abovePrompt:focus` to another key in `~/.claude/keybindings.json`.
 
+### The decision screen (decisions 205 to 243)
+
+Top to bottom on a pane 14 rows or taller: the title, then a crumb (`CHOICE · d41 · Code review · ●○ 1 of 2 answered`); the whole scenario with `⚑ Blocks ...`, dependencies and sources; each option with its text in full, `★ recommended` and its reason, `✓ your answer` and `⤷ only if ...` or `⤷ <typed answer>` once answered, and `↻ new` for two minutes on an option a discussion added; Something else; then "Talk it through with Claude" with the newest unread reply (or else the newest reply, at most 6 lines), how many earlier messages `o` opens, `✻ Claude is replying…` while a reply is coming, and the ask box; then the keys, on up to three lines.
+
+`m` hides the detail: the options show their label only, apart from the highlighted one, and the scenario keeps 3 lines. When everything doesn't fit the pane, the screen draws it that way anyway and `m` isn't offered (236). Below 14 rows the compact layout stays, with Something else added, the scenario line kept above the options (241), and the conversation on the thread screen (`t` or `o`, 228).
+
+`s` on an answered decision shows exactly the block Claude will get for it and which other answers stay ready; `enter` sends only that one, `b` goes back to the decision (221).
+
 ### Discussions
 
-A message typed in a decision's discussion goes straight to whoever replies (it never waits for `s`), and the reply always shows in that decision's thread. With the main session replying, it also shows in the chat.
+A question typed in a decision's ask box goes straight to whoever replies (it never waits for `s`), and the reply always shows in that decision's thread. With the main session replying, it also shows in the chat.
+
+The thread screen (`o`) holds the whole thread, with older and newer pages, the `↻` lines that open earlier versions, and `f` to send a waiting question to the fork instead. Answering happens on the decision screen, with an option or Something else (229).
 
 Every decision keeps its whole thread for good: questions, replies, revisions and the final answer. Switching between decisions, or going back to one that was answered, sent or closed days ago, shows the full discussion in the pane, whichever mode replied and however long ago it scrolled out of the chat or was compacted away (Aaron, 6 November). The reply can revise the decision: add an option, change the recommendation, re-open dependents.
 

@@ -1,3 +1,4 @@
+import { SETTLED_TEXT } from './discuss'
 import { readAll, readOne, write } from './store'
 import type { Decision, StoreCtx } from './store'
 
@@ -7,11 +8,20 @@ export function readyDecisions(all: Decision[]): Decision[] {
   return all.filter(d => d.state === 'ready')
 }
 
+/** A typed answer is "Something else: <text>"; the old discussion marker and no answer read as before. */
+function chosenText(text: string | undefined): string {
+  if (text === undefined) {
+    return 'nothing'
+  }
+
+  return text === SETTLED_TEXT ? text : `Something else: ${text}`
+}
+
 function block(d: Decision): string {
   const chosen = d.options.find(o => o.id === d.answer?.option)
   const lines = [
     `Decision ${d.id} · ${d.title} (${d.group ?? 'Other'})`,
-    `Chosen: ${chosen ? `${chosen.id}. ${chosen.label}` : (d.answer?.text ?? 'nothing')}`,
+    `Chosen: ${chosen ? `${chosen.id}. ${chosen.label}` : chosenText(d.answer?.text)}`,
     `Condition: ${d.answer?.condition ?? 'none'}`,
   ]
   if (d.thread.length === 0) {
@@ -21,6 +31,11 @@ function block(d: Decision): string {
   }
 
   return lines.join('\n')
+}
+
+/** One decision's block as the prompt carries it, line by line, for the preview before sending it alone (decision 221). */
+export function previewLines(d: Decision): string[] {
+  return block(d).split('\n')
 }
 
 /** The one prompt that carries the answers to Claude. */

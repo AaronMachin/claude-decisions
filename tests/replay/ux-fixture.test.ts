@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import { validateAdd } from '../../hooks/tool'
-import { CHOICES, SEEDED, shifted } from './ux-fixture'
+import { unreadReplies } from '../../hooks/pane/seen'
+import { CHOICES, INBOX, SEEDED, inboxState, shifted } from './ux-fixture'
 
 test('every seeded decision passes the tool\'s own validation, in order', () => {
   const ids: string[] = []
@@ -26,4 +27,18 @@ test('the review has an Image uploads finding and at least 30 findings needing t
   const needing = SEEDED.filter(i => i.kind === 'finding' && (i.section ?? 'needs-you') === 'needs-you')
   expect(needing.length).toBeGreaterThanOrEqual(30)
   expect(SEEDED.some(i => i.group === 'Image uploads')).toBe(true)
+})
+
+test('the inbox group has an unread reply, an answer with a condition and one with Something else, and they load', async () => {
+  const at = '2026-11-12T10:00:00.000Z'
+  const later = '2026-11-12T10:05:00.000Z'
+  expect(INBOX).toHaveLength(3)
+  const made = INBOX.map((entry, index) => ({ ...entry.input, id: `d${index + 1}`, createdAt: at, thread: [], options: (entry.input.options ?? []).map((o: any, i: number) => ({ id: i + 1, ...o })) }))
+  const [unread, condition, typed] = INBOX.map((entry, index) => inboxState(made[index] as any, entry, later))
+  expect(unreadReplies(unread as any, undefined)).toHaveLength(1)
+  expect(condition!.state).toBe('ready')
+  expect([condition!.answer?.option, condition!.answer?.condition]).toEqual([1, 'only for recipes with photos'])
+  expect(typed!.state).toBe('ready')
+  expect([typed!.answer?.option, typed!.answer?.text]).toEqual([undefined, 'a QR code on the printed recipe card'])
+  expect(SEEDED.slice(-3)).toEqual(INBOX.map(entry => entry.input))
 })

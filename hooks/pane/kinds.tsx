@@ -1,6 +1,6 @@
 import type { PaneView } from '../../types'
 import type { Decision, StoreCtx } from '../store'
-import { chooseAndReopen, focusLater, readView, ringMark, setView } from './decision'
+import { chooseAndReopen, focusLater, openDecision, readView, ringMark, setView } from './decision'
 import { truncate } from './list'
 import { KeyHints, Rule, isCompact } from './look'
 import type { Hint } from './look'
@@ -194,8 +194,7 @@ export function BatchView($: any, props: BatchProps): any {
         if (marks[d.id] !== undefined && isUnanswered(d)) {
           await confirmOne($, rows, d.id, props)
         } else if (isUnanswered(d)) {
-          await setView($, v => ({ ...v, screen: 'decision', decisionId: d.id, highlight: undefined, isParking: false, notice: undefined }))
-          focusLater($, 'discuss')
+          await openDecision($, d)
         }
       }}
     >

@@ -324,3 +324,78 @@ Five throwaway spikes tried the riskiest parts in real sessions (`findings/spike
 | 202 | When no tab has anything waiting for the person, the list shows "✓ Nothing needs you" (with "· N ready to send (s)" when answers are ready) in the success colour, in place of "Needs you  0". A tab with nothing waiting still shows "Needs you  0" while another tab has something **(Claude's call)** | Aaron, on a pane with one answered decision: "it's not clear here that nothing is pending my input". |
 | 203 | The status line leads with "nothing needs you" instead of "0 open" when only ready or parked decisions are left **(Claude's call)** | Same reason, for the line under the prompt. |
 | 204 | The header's "keys on/off" stops 3 columns short of the pane's right edge **(Claude's call)** | The engine draws the pane's close mark over the last columns, which cut it to "keys o" at Aaron's width. |
+
+## 12 November 2026: Aaron, typed answers and the inbox
+
+Aaron accepted Claude's recommendations on pane decisions d11 to d13, d30, d31 and d38 ("happy with your recommendations"), after using the pane on real work. The reasons are Claude's, as put to Aaron with each decision.
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 205 | Every decision ends with a numbered "Something else" row. Choosing it opens a one-line box; `enter` saves the text as the answer and marks the decision ready. No agent turn starts | The only place to type was the discussion, and every message there starts a turn. On a review decision Aaron typed "I agree, but...", Claude acted on it, then `d` sent the same text and Claude acted again. Answers in the pane are given by number (6 November), so this is a row, not a letter key |
+| 206 | A highlighted option takes a condition from a key: type it, `enter`, and it is sent as the option plus a `Condition:` line, with no agent turn | About 30% of Aaron's answers pick an option and add a condition, and the send format already has a Condition line that nothing filled without the agent |
+| 207 | Every kind gets "Something else", and a question's answer is typed in it instead of in the discussion | "Yes, but" comes up on go-aheads and findings as often as on choices, and one rule everywhere is easier to remember |
+| 208 | The list becomes an inbox: decisions with something new first, then open ones, then the rest, with the last line of each discussion under its title. Opening one goes to the new part of its thread | Coming back after a while, nothing showed that Claude had replied, so every decision had to be opened to find out |
+| 209 | The list keeps its order while the pane has the keys, and re-sorts when they leave **(Claude's call)** | A row moving under the ring mid-answer would send a number key to the wrong decision |
+| 210 | The pane records when each decision was last looked at; a row with anything newer gets a dot, and the band leads with "1 new reply · d12" | Same reason as 208, for when the pane is closed or hidden |
+| 211 | `m` also shows the highlighted option's text and reason in full, paging the other options with `o` when it doesn't fit | Each was cut at 2 lines and nothing showed the rest |
+| 212 | When the pane gets the keys, the real focus moves to wherever the `›` is drawn | `enter` did nothing on first switching in until an arrow key was pressed; most likely the pane drew a remembered `›` while the engine's focus was elsewhere (not yet reproduced) |
+| 213 | `s` on an answered decision sends only that decision, straight away; `s` on the list still opens the Send screen for everything ready | Looking at one decision, you mean that one; sending everything is one key away on the list |
+| 214 | Half a day on a spike: can a `prompt.submit` hook keep a line like `d11 1` from Claude and save it as an answer | If it can, answering needs no switch into the pane at all. Known: the hook runs on Aaron's machine; not known: whether it can stop a prompt |
+| 215 | The new screens are mocked up and tried before any of 205 to 213 is built | Aaron, 12 November: "mock it up first though" |
+
+## 12 November 2026: Aaron, after the first inbox mockup
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 216 | Talking a decision through with Claude is part of the decision screen, not a separate screen behind `enter`: the thread sits under the options and the box to ask is always there | Aaron: "should be easy to have a convo about the options/decisions with claude - right now it's the second-class citizen" |
+| 217 | A decision shows everything by default (the whole scenario, every option's text and the reason for the recommendation), and `m` hides the detail; this replaces 211 | Aaron: "the full info should show by default, with options to hide it" |
+| 218 | The pane gets visual touches that make it easier to use, within what a terminal can draw: kind labels, progress, key caps, a reply-in-progress spinner, revisions marked in the thread. Each one is tried in the mockup before it is built | Aaron: "be creative - we should add visual niceties to make this a simple to use tool" |
+
+## 12 November 2026: Aaron, after the review of 205 to 218
+
+A fresh reviewer checked 205 to 218 against 1 to 204 and the mod API. Aaron accepted Claude's recommendation on each of pane decisions d42 to d46 ("I like your suggestions"). The reasons are Claude's, as put to Aaron.
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 219 | Opening a decision puts the ring on the recommended option (on the chosen one once answered), so `enter` answers with it. This replaces 33's "enter with nothing highlighted opens the discussion" | The ask box can't hold the ring: while an Input has it, every printable key goes into it, so `1`, `a` and `m` would stop working. An accidental answer is only saved as ready, never sent before `s` |
+| 220 | Under the options the decision screen shows Claude's latest reply (or the newest unread one) and the ask box; the whole thread is a page away with `o`. This replaces 70's separate thread screen | The pane can't scroll a middle section or pin the key line, and a digit only works on a Button fully in view, so options plus a full thread would push the options or the keys off the pane |
+| 221 | `s` on an answered decision shows a preview of exactly what Claude gets and which other answers stay behind; `enter` sends it, `b` goes back. This replaces "straight away" in 213 | It matches the mockup Aaron liked and the last look before sending asked for on 6 November (16) |
+| 222 | The tabs stay (each group, For you to do, Parked, the assumptions batch). Inside a tab, rows go new replies, then needs you, then ready; a tab with a new reply gets a dot. Rows take two lines on tall panes and one on short ones. This narrows 208 | Nothing used today disappears, and review batches of 19 to 47 stay split by group; three-line rows broke the 9-row list budget (181) |
+| 223 | A new reply puts one line above the prompt until it has been read, even while the pane is hidden or inline in fullscreen. Waiting counts stay quiet while hidden. This replaces 162 and 199 for new replies only | The case Aaron hit: away, came back, nothing showed Claude had answered |
+| 224 | The cause behind 212 is a tab change while the prompt has the keys: the pane redraws without moving the ring (the API refuses focus calls then), leaving it on a row that's gone. When the pane gets the keys, the ring moves to the row the pane means **(Claude's call)** | Found by the review in render.tsx and the mod API types; 212's guess (a remembered `›`) does not fit, since `›` is drawn only on the stored ring |
+| 225 | `t` jumps to the ask box; `↓` past the last option also reaches it **(Claude's call)** | Hotkeys are single letters or digits, so `/` can't be one |
+| 226 | No inverse key caps: option numbers stay `1:` in the suggestion colour **(Claude's call)** | A hotkey Button already draws its own `1:` (197), so a key cap would show the number twice (173) |
+| 227 | The reply spinner and the flash on a changed option redraw only while a reply is coming or just landed **(Claude's call)** | Every redraw rereads every decision file (53) |
+| 228 | Full detail by default (217) applies only to panes 14 rows or taller; compact panes keep names plus the highlighted option's text **(Claude's call)** | On a 9-row pane full detail would page on almost every decision |
+| 229 | `m` hides and shows detail (217) and no longer re-asks the main session (84); `d` goes, since Something else answers from typed text; `f` (send to the fork) stays **(Claude's call)** | 217 needs `m`, and 205 makes `d`'s job a typed answer |
+| 230 | On the assumptions batch, Something else is opened from the row's own screen, not with `3` **(Claude's call)** | `1` and `2` already mark each row there (100, 112) |
+| 231 | The prompt spike (214) shrinks to an hour: confirm that returning `{ drop }` from the existing `prompt.submit` hook stops a prompt **(Claude's call)** | The mod API types already say it does; a second `prompt.submit` hook is refused (126) |
+| 232 | When each decision was last looked at is stored apart from the decision file **(Claude's call)** | Writing it into the decision would move `updatedAt` and a parked decision's date (148) |
+
+## 12 November 2026: Aaron, arrows across a row
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 233 | Left and right move between things drawn side by side in the pane (key hints, tab chips) and never take the keys out of the pane | Aaron: "when I press left/right arrows, it loses focus even though there are \"buttons\" that appear side-by-side". Cause not yet found: the mod API says only that the person's arrows move the ring and raise `ui.focus`, so it is reproduced first |
+
+## 12 November 2026: building workstream 8
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 234 | Left and right are not handled by the mod; 233 waits on Aaron **(Claude's call)** | In a real session neither arrow raised `ui.focus`: right did nothing and left opened Claude Code's background agents view. The pane never sees them, so it has nothing to refuse (`docs/findings/spikes.md`) |
+| 235 | Answering with a typed answer or a condition goes back to the list, as choosing an option does, with the notice `Saved dX · <answer> · s sends it` **(Claude's call)** | Keeps one rule for every way of answering (6 November design) |
+| 236 | Full detail (217) is drawn only when it fits the pane with the conversation and the key hints; otherwise the screen keeps the highlighted option's card, 2 lines each, and `m` is offered only when it changes something **(Claude's call)** | Fit beats full detail: the pane can't scroll a middle section (220), so overflowing would push the options or the keys off |
+| 237 | The reply line is a still `✻ Claude is replying…`, with no turning mark; this replaces the 250 ms spinner in 227 **(Claude's call)** | No timer means no extra redraws, and every redraw rereads every decision file (53) |
+| 238 | The crumb is plain dim text (`CHOICE · d41 · Code review · ●○ 1 of 2 answered`), the kind not bold or coloured **(Claude's call)** | The header draws its crumb as one cut-to-width line; colouring single words would mean building it by hand for little gain |
+| 239 | The tall decision screen's key hints may take three lines (compact keeps two) **(Claude's call)** | `c`, `t` and `o` joined the line; at 49 columns two lines dropped every label |
+| 240 | With ten or more rows drawn and the ring on option 1, a `1` waits the digit gap before it answers, so `1` then `3` still reaches 13; `enter` on option 1 answers after that gap **(Claude's call)** | 219 starts the ring on an option, often 1, and `enter` and a digit arrive as the same press, so without the wait `1` answered at once |
+| 241 | Compact panes keep their scenario line while an option is highlighted, at the cost of one option row per page **(Claude's call)** | The ring now always starts on an option (219), so the scenario line would otherwise never show on a compact pane |
+| 242 | The decision screen counts new replies from before the visit it is on, held in memory, so the reply that brought the person there still reads `● 1 new` while they read it **(Claude's call)** | Opening marks a decision seen at once (210), which would clear the count before it was ever drawn |
+| 243 | Mark answered goes from the thread with `d` (229); `t` and `o` appear in the decision screen's hints as `talk` and `thread` **(Claude's call)** | Something else answers from typed text (205); a hotkey needs a drawn Button |
+| 244 | The preview for one decision (221) is cut with `…` when its block doesn't fit the pane, the ring starts on send, and `s` reads `send this` on an answered decision **(Claude's call)** | A long discussion would push send and back off the pane; what is cut is still sent |
+| 245 | To keep the add description within 4,000 characters with the new question line, its example scenario is shortened and "The schema explains each" goes **(Claude's call)** | The question line had to say where the answer is typed (207); the example still shows a concrete scenario |
+| 246 | When the key hints don't fit, hints marked to keep their label (`enter`, `c`, Something else) keep it and the others lose theirs from the end of the line; a bare hotkey packs as `4: 5: 6:`; Something else past 10 and off the page is named as `13: something else` **(Claude's call)** | On a compact pane every label went at once, so nothing said what `enter` or `c` did or how to reach Something else |
+| 247 | When each decision was last opened moves from `$.state` to the mod's own `$.store`, so it lasts between sessions; it is still never written into a decision file (232 holds) **(Claude's call)** | `$.state` lasts one session, so after a restart every decision with a reply showed `●` |
+| 248 | Leaving a decision or its thread (back, the thread, send, hide, an answer, parking) marks it read as well as opening it **(Claude's call)** | A reply that landed while the person was looking at it still showed as new on the list |
+| 249 | Choosing an option reopens dependents whenever it changes the earlier answer, including replacing a typed answer or dropping a condition by choosing the plain option; any key but a digit, a ring move or leaving cancels a held `1` (240) **(Claude's call)** | A typed answer replaced by an option reopened nothing, and a held `1` could answer option 1 after another key |
+| 250 | The one-decision Send screen draws send first with the focus on it and sends only with `enter`; `b` goes back. It has no `c` **(Claude's call)** | `enter` went to back, the first thing drawn, and `c` means "add a condition" on the screen the person came from |

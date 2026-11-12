@@ -21,7 +21,7 @@ export function Rule(ui: { Text: any }, width: number, key?: string): any {
 /**
  * One key hint. With a `hotkey` and `onPress` it is a plain Button, which the engine
  * draws as `k: label` with the key in its accent colour; without a hotkey but with
- * `onPress` (Discuss), a Button drawn the same way by hand; without `onPress`, text.
+ * `onPress`, a Button drawn the same way by hand; without `onPress`, text.
  */
 export type Hint = {
   /** The element key. */
@@ -35,6 +35,11 @@ export type Hint = {
   autoFocus?: boolean
   /** `›` while the ring is on it; drawn before the hint. */
   mark?: string
+  /**
+   * Keeps its label when the hints don't fit: the others lose theirs from the end of the line first, so the keys
+   * that matter most stay named. Without any hint marked, the labels all go together, as they always have.
+   */
+  keepLabel?: boolean
 }
 
 const GAP = 2
@@ -47,23 +52,36 @@ function hintWidth(hint: Hint, withLabel: boolean): number {
   const label = withLabel ? hint.label : ''
   const mark = (hint.mark ?? '').length
   if (hint.onPress && hint.hotkey) {
-    return mark + hint.keyText.length + 2 + label.length + GAP
+    return mark + hint.keyText.length + 2 + label.length + padOf(hint, label)
   }
   if (hint.keyText === '') {
     return mark + (label === '' ? hint.label : label).length + GAP
   }
 
-  return mark + hint.keyText.length + 1 + (label === '' ? 0 : 1 + label.length) + GAP
+  return mark + hint.keyText.length + 1 + (label === '' ? 0 : 1 + label.length) + padOf(hint, label)
 }
 
-/** The hints split into lines of at most `width` columns. */
-export function hintRows(hints: Hint[], width: number, withLabel: boolean): Hint[][] {
+/**
+ * Spaces after a hint. A bare hotkey key packs tight: the engine already draws it as `k: `, space included, so a
+ * run of them reads `4: 5: 6:`. A bare key drawn by hand (`enter:`) keeps one space; a labelled one keeps the gap.
+ */
+function padOf(hint: Hint, label: string): number {
+  if (label !== '' || hint.keyText === '') {
+    return GAP
+  }
+
+  return hint.onPress && hint.hotkey ? 0 : 1
+}
+
+/** The hints split into lines of at most `width` columns; `withLabel` says which keep their label. */
+export function hintRows(hints: Hint[], width: number, withLabel: boolean | ((hint: Hint) => boolean)): Hint[][] {
+  const labelled = typeof withLabel === 'function' ? withLabel : () => withLabel
   const rows: Hint[][] = []
   // One column spare: a line that only just fits is wrapped by the terminal, not cut.
   const room = width - 1
   let used = 0
   for (const hint of hints) {
-    const cost = hintWidth(hint, withLabel)
+    const cost = hintWidth(hint, labelled(hint))
     if (rows.length === 0 || used + cost > room) {
       rows.push([hint])
       used = cost
@@ -76,14 +94,31 @@ export function hintRows(hints: Hint[], width: number, withLabel: boolean): Hint
   return rows
 }
 
-/** How the hints are laid out: with their labels when they fit in `maxLines`, otherwise the keys alone. */
-export function hintLayout(hints: Hint[], width: number, maxLines: number): { rows: Hint[][]; withLabel: boolean } {
+/**
+ * How the hints are laid out: with their labels when they fit in `maxLines`. Otherwise, when some hints keep their
+ * label, the others lose theirs from the end until the line fits; failing that, or with none marked, the keys alone.
+ */
+export function hintLayout(hints: Hint[], width: number, maxLines: number): { rows: Hint[][]; withLabel: boolean; labelled: Set<string> } {
+  const all = new Set(hints.map(h => h.id))
   const full = hintRows(hints, width, true)
   if (full.length <= maxLines) {
-    return { rows: full, withLabel: true }
+    return { rows: full, withLabel: true, labelled: all }
+  }
+  if (hints.some(h => h.keepLabel)) {
+    const labelled = new Set(all)
+    for (const hint of [...hints].reverse()) {
+      if (hint.keepLabel || hint.label === '') {
+        continue
+      }
+      labelled.delete(hint.id)
+      const rows = hintRows(hints, width, h => labelled.has(h.id))
+      if (rows.length <= maxLines) {
+        return { rows, withLabel: false, labelled }
+      }
+    }
   }
 
-  return { rows: hintRows(hints, width, false), withLabel: false }
+  return { rows: hintRows(hints, width, false), withLabel: false, labelled: new Set() }
 }
 
 /** The lines the hints take, for the row budget. */
@@ -94,7 +129,7 @@ export function hintLineCount(hints: Hint[], width: number, maxLines: number): n
 function hintElement(ui: { Text: any; Button: any }, hint: Hint, withLabel: boolean): any {
   const { Text, Button } = ui
   const label = withLabel && hint.label !== '' ? hint.label : ''
-  const pad = ' '.repeat(GAP)
+  const pad = ' '.repeat(padOf(hint, label))
   if (hint.onPress && hint.hotkey) {
     return (
       <Button key={hint.id} hotkey={hint.hotkey} plain autoFocus={hint.autoFocus} onPress={hint.onPress}>
@@ -125,13 +160,13 @@ export function KeyHints(ui: { Box: any; Text: any; Button: any }, hints: Hint[]
   if (hints.length === 0) {
     return null
   }
-  const { rows, withLabel } = hintLayout(hints, width, maxLines)
+  const { rows, labelled } = hintLayout(hints, width, maxLines)
 
   return (
     <Box key="hints" flexDirection="column">
       {rows.map((row, index) => (
         <Box key={`hints:${index}`}>
-          {row.map(hint => [hint.mark ? <Text key={`mark:${hint.id}`}>{hint.mark}</Text> : null, hintElement(ui, hint, withLabel)])}
+          {row.map(hint => [hint.mark ? <Text key={`mark:${hint.id}`}>{hint.mark}</Text> : null, hintElement(ui, hint, labelled.has(hint.id))])}
         </Box>
       ))}
     </Box>

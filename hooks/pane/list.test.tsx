@@ -4,8 +4,9 @@ import type { PaneView } from '../../types'
 import type { Decision } from '../store'
 import { REVIEW_47 } from './review-47'
 import { movePage, pageSize } from './sections'
+import { ago } from './seen'
 import { INITIAL_VIEW, ringMark } from './decision'
-import { ListView, ReviewView, counts, visibleTabs, nextTab, openReview, rowMeta, rowText, secondLine, sectionsFor, statusText, tabsFor, toggleTick, truncate } from './list'
+import { ListView, ReviewView, counts, tabChipText, visibleTabs, nextTab, openReview, rowMeta, rowText, secondLine, sectionsFor, statusText, tabsFor, toggleTick, truncate } from './list'
 
 let counter = 0
 
@@ -486,4 +487,80 @@ test('a tab with nothing waiting still shows "Needs you  0" while another tab ha
   const ui = await drawList($, on, [make({ group: 'A', state: 'sent' }), make({ group: 'B' })], { ...INITIAL_VIEW, tab: 'g:A' } as PaneView)
   expect(await ui.find({ type: 'Text', text: '✓ Nothing needs you' })).toBeUndefined()
   await ui.unmount()
+})
+
+const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toISOString()
+
+test('an unread row comes first and starts ●, with Claude\'s reply under it on a tall pane', async ($, on) => {
+  counter = 0
+  const quiet = make({ createdAt: minutesAgo(60) })
+  const replied = make({ createdAt: minutesAgo(60), thread: [{ who: 'claude', text: 'Yes, c works on findings.\nSecond line.', at: minutesAgo(2) }] })
+  const tabs = tabsFor([quiet, replied], {})
+  on('ui.render', ($$: any, e: any) => ListView($$, { ui: $$.ui.resolve(e), tabs, view: INITIAL_VIEW, width: 60, rows: 40, readyCount: 0, unreadable: 0, seen: {}, onSend: () => {}, onHide: () => {} }))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const rows = (await ui.findAll({ type: 'Button' })).map(b => b.props.key).filter(k => String(k).startsWith('row:'))
+  expect(rows).toEqual(['row:d2', 'row:d1'])
+  expect(await ui.find({ type: 'Text', text: '● ' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /claude · 2m ago: Yes, c works on findings\.$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Second line/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('once opened after the reply, the row is read: no ● and back in its place', () => {
+  counter = 0
+  const quiet = make({ createdAt: minutesAgo(60) })
+  const replied = make({ createdAt: minutesAgo(60), thread: [{ who: 'claude', text: 'Yes', at: minutesAgo(2) }] })
+  const tab = tabsFor([quiet, replied], { d2: minutesAgo(1) })[0]!
+  expect(sectionsFor(tab, { d2: minutesAgo(1) }).needsYou.map(d => d.id)).toEqual(['d1', 'd2'])
+  expect(tab.hasUnread).toBe(false)
+})
+
+test('a compact pane keeps one line per row, with the ●', async ($, on) => {
+  counter = 0
+  const replied = make({ createdAt: minutesAgo(60), thread: [{ who: 'claude', text: 'Yes', at: minutesAgo(2) }] })
+  const tabs = tabsFor([replied], {})
+  on('ui.render', ($$: any, e: any) => ListView($$, { ui: $$.ui.resolve(e), tabs, view: INITIAL_VIEW, width: 60, rows: 9, readyCount: 0, unreadable: 0, seen: {}, onSend: () => {}, onHide: () => {} }))
+  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 9 } }, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: '● ' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /claude · / })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a tab holding an unread reply ends with ●', () => {
+  counter = 0
+  const tabs = tabsFor([make({ group: 'A', createdAt: minutesAgo(9) }), make({ group: 'B', createdAt: minutesAgo(9), thread: [{ who: 'fork', text: 'done', at: minutesAgo(1) }] })], {})
+  expect(tabs.map(t => tabChipText(t))).toEqual([' A 1 ', ' B 1 ● '])
+})
+
+test('a frozen order keeps a row with a new reply where it was, and gives it its ●; thawed, it moves first', () => {
+  counter = 0
+  const a = make({ createdAt: minutesAgo(60) })
+  const b = make({ createdAt: minutesAgo(60), thread: [{ who: 'claude', text: 'new', at: minutesAgo(1) }] })
+  const tab = tabsFor([a, b], {})[0]!
+  expect(sectionsFor(tab, {}, ['d1', 'd2']).needsYou.map(d => d.id)).toEqual(['d1', 'd2'])
+  expect(tab.hasUnread).toBe(true)
+  expect(sectionsFor(tab, {}).needsYou.map(d => d.id)).toEqual(['d2', 'd1'])
+})
+
+test('ago reads as minutes and hours, then falls back to the clock time', () => {
+  const now = new Date('2026-11-12T12:00:00')
+  expect(ago(new Date('2026-11-12T11:59:40').toISOString(), now)).toBe('just now')
+  expect(ago(new Date('2026-11-12T11:58:00').toISOString(), now)).toBe('2m ago')
+  expect(ago(new Date('2026-11-12T09:00:00').toISOString(), now)).toBe('3h ago')
+  expect(ago(new Date('2026-11-10T09:05:00').toISOString(), now)).toBe('10 Nov 09:05')
+})
+
+test('review for one decision ticks only it and keeps which one, with the ring on send', () => {
+  const view = openReview({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd3' }, ['d1', 'd3'], 'd3')
+  expect(view.ticked).toEqual(['d3'])
+  expect(view.decisionId).toBe('d3')
+  expect(view.ring).toBe('confirm')
+  expect(openReview({ ...INITIAL_VIEW, decisionId: 'd3' }, ['d1', 'd3']).decisionId).toBeUndefined()
+})
+
+test('the list meta says Something else for a typed answer, and discussed only for the old settled answers', () => {
+  const typed = make({ state: 'ready', answer: { text: 'a QR code', answeredAt: 't' } })
+  expect(rowMeta(typed, 90)).toMatch(/^✓ Something else/)
+  const settled = make({ state: 'ready', answer: { text: 'settled in the discussion, see below', answeredAt: 't' } })
+  expect(rowMeta(settled, 90)).toMatch(/^✓ discussed/)
 })

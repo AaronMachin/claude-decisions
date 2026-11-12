@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { bandText } from './band'
+import { bandText, isBandShown } from './band'
 import { focusKeyName } from './focus-key'
 import { PANE_ID } from './pane/decision'
 import { ADD_TOOL } from './tool'
@@ -95,6 +95,20 @@ test('the band shows while a decision waits and the pane is open without the key
   expect(await ui.find({ type: 'Text', text: /1 decision waiting · ctrl\+x tab to answer, your draft stays/ })).toBeDefined()
   expect(await ui.find({ type: 'Button' })).toBeUndefined()
   await ui.unmount()
+})
+
+test('a new reply leads the band, and with nothing waiting it says how to read it', () => {
+  expect(bandText(2, true, 'ctrl+q', { count: 1, id: 'd43' })).toBe('● 1 new reply on d43 · 2 decisions waiting · ctrl+q to answer, your draft stays')
+  expect(bandText(0, true, 'ctrl+q', { count: 1, id: 'd43' })).toBe('● 1 new reply on d43 · ctrl+q to read it')
+  expect(bandText(0, false, 'ctrl+q', { count: 3, id: 'd9' })).toBe('● 3 new replies on d9 · ctrl+q then enter to read it')
+})
+
+test('a new reply shows even while the pane is hidden; waiting alone does not', () => {
+  expect(isBandShown({ isHidden: true, isFocused: false, waiting: 2, unread: 0 })).toBe(false)
+  expect(isBandShown({ isHidden: true, isFocused: false, waiting: 0, unread: 1 })).toBe(true)
+  expect(isBandShown({ isHidden: false, isFocused: true, waiting: 2, unread: 1 })).toBe(false)
+  expect(isBandShown({ isHidden: false, isFocused: false, waiting: 0, unread: 0 })).toBe(false)
+  expect(isBandShown({ isHidden: false, isFocused: false, waiting: 1, unread: 0 })).toBe(true)
 })
 
 test('the band hides once the pane has the keys', async ($, on) => {

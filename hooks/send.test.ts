@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { buildAnswerPrompt, readyDecisions, sendTicked } from './send'
+import { buildAnswerPrompt, previewLines, readyDecisions, sendTicked } from './send'
 import type { SendCtx } from './send'
 import { create, readAll, write } from './store'
 import type { Decision } from './store'
@@ -109,6 +109,15 @@ test('several answers, with a condition and a discussion', async () => {
   )
 })
 
+test('a typed answer is sent as Something else, and a condition on an option as its own line', async () => {
+  const { ctx } = fake(ok)
+  const made = await create(ctx, { ...BASE, title: 'Push the fix' })
+  const typed: Decision = { ...made, state: 'ready', answer: { text: 'yes, after CI is green', answeredAt: 't' } }
+  expect(buildAnswerPrompt([typed])).toContain('Chosen: Something else: yes, after CI is green\nCondition: none')
+  const conditioned: Decision = { ...made, state: 'ready', answer: { option: 1, condition: 'as PR comments', answeredAt: 't' } }
+  expect(buildAnswerPrompt([conditioned])).toContain('Chosen: 1. Project root\nCondition: as PR comments')
+})
+
 test('readyDecisions keeps only ready ones', () => {
   const d = (state: Decision['state']) => ({ state }) as Decision
   expect(readyDecisions([d('open'), d('ready'), d('sent'), d('parked')]).map(x => x.state)).toEqual(['ready'])
@@ -173,4 +182,10 @@ test('a failed submit keeps a thread entry written while it was waiting', async 
   const d = (await readAll(ctx)).decisions[0]!
   expect(d.state).toBe('ready')
   expect(d.thread.map(e => e.text)).toEqual(['asked while sending'])
+})
+
+test('previewLines is the decision block buildAnswerPrompt sends, line for line', () => {
+  const d = { id: 'd1', title: 'T', group: 'G', options: [{ id: 1, label: 'A' }], answer: { option: 1, condition: 'later', answeredAt: 't' }, thread: [] } as any
+  expect(previewLines(d)).toEqual(['Decision d1 · T (G)', 'Chosen: 1. A', 'Condition: later', 'Discussion: none'])
+  expect(buildAnswerPrompt([d])).toContain(previewLines(d).join('\n'))
 })

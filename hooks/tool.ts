@@ -17,7 +17,7 @@ REVIEWS: when asked to review, audit, check or find problems (even "tell me what
 
 THE FIELDS
 group (always give one): the piece of work, such as "Sharing links" or "Search review". Reuse the exact text for the same work.
-kind (required): choice, go-ahead, assumption, finding or question. Only choice takes options. section (optional): needs-you (default), claudes-call or already-decided. The schema explains each.
+kind (required): choice, go-ahead, assumption, finding or question. Only choice takes options; a question has none and the person types its answer in the pane's Something else row. section (optional): needs-you (default), claudes-call or already-decided.
 title (required): a short plain sentence for someone who has not read the conversation, such as "Where the config file lives". No ticket shorthand, no abbreviations you invented, no function or class names as the headline. A finding's title starts with the area it is about, such as "Image uploads: one user can use another's quota".
 scenario (required): a concrete example of what happens today, for someone who was not in the conversation. Not "the lookup could be slow" but "run from a subfolder, it takes eight seconds walking up to the root".
 options (choice only, 1 to 12): each is { label, changes }. label is a few words. changes says what it would take and what changes for the person or the work if chosen. They are numbered by position, 1 first.
@@ -31,7 +31,7 @@ REFUSALS
 A decision is refused, with the reason, when a field is missing or blank, an option or recommendation is wrong for the kind, or dependsOn names an unknown id. Fix the field and call again; do not ask in chat instead.
 
 EXAMPLE
-group "Config file plan", kind "choice", title "Where the config file lives", scenario "You run the tool from packages/api and it needs its settings. Either it finds one file at the project root by walking up, or each package has its own copy that you must keep in step.", options [{ label "Project root", changes "one file, found by walking up, shared by every package" }, { label "Per package", changes "a file in each package, so settings can differ" }], recommendation { option 1, reason "every other tool in this repository already reads from the root" }.`
+group "Config file plan", kind "choice", title "Where the config file lives", scenario "You run the tool from packages/api and it needs its settings: one file at the root, or a copy in each package.", options [{ label "Project root", changes "one file, found by walking up, shared by every package" }, { label "Per package", changes "a file in each package, so settings can differ" }], recommendation { option 1, reason "every other tool in this repository already reads from the root" }.`
 
 export const LIST_DESCRIPTION =
   'Lists the decisions in the decisions pane that are still open, answered but not yet sent, or parked. Call it at the start of a conversation and after /clear or compaction, and before adding a decision, so you never ask again what is already there. Answered and sent decisions are left out.'
@@ -44,7 +44,7 @@ export const ADD_INPUT_SCHEMA = {
       type: 'string',
       enum: ['choice', 'go-ahead', 'assumption', 'finding', 'question'],
       description:
-        'choice: pick between your numbered options. go-ahead: yes or no to an action with side effects (1 Yes, 2 No). assumption: something you assumed and are carrying on with (1 Right, 2 Wrong). finding: one finding of a review, title starting with the area it is about (1 Agree, 2 Already decided, 3 Disagree, 4 Not sure). question: a fact only the person knows, with no options; they answer in the discussion. Only choice takes options; the others get theirs from the tool and a call that gives options is refused.',
+        'choice: pick between your numbered options. go-ahead: yes or no to an action with side effects (1 Yes, 2 No). assumption: something you assumed and are carrying on with (1 Right, 2 Wrong). finding: one finding of a review, title starting with the area it is about (1 Agree, 2 Already decided, 3 Disagree, 4 Not sure). question: a fact only the person knows, with no options; the person types the answer in the pane\'s Something else row. Only choice takes options; the others get theirs from the tool and a call that gives options is refused.',
     },
     section: {
       type: 'string',

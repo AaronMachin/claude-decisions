@@ -2,11 +2,14 @@ import type { PaneView } from '../../types'
 import { notePaneFocus } from '../band'
 import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
-import { DecisionView, INITIAL_VIEW, PANE_ID, focusTo, keysOffLines, readView, setView } from './decision'
+import { DecisionView, INITIAL_VIEW, PANE_ID, cancelHeldDigit, focusLater, focusTo, keysOffLines, openingOption, readView, setView } from './decision'
 import { Header, isCompact } from './look'
 import { ThreadView } from './thread'
+import type { Tab } from './list'
 import { ListView, ReviewView, activeTab, newestOpenTab, openReview, statusText, tabsFor, waitingElsewhere } from './list'
-import { foldAll } from './sections'
+import { foldAll, sectionsFor } from './sections'
+import { freezeOrder, frozenOrder, readSeen, thawOrder, visitSeenAt } from './seen'
+import type { Seen } from './seen'
 import { BatchView, batchRows } from './kinds'
 import { firstKey } from './sections'
 
@@ -72,6 +75,9 @@ export function isTabKey(element: string | undefined): boolean {
 
 /** The `ui.focus` hook, once the ring has moved: records where it is for the `›`, and the highlight follows it. */
 export async function followFocus($: any, element: string | undefined): Promise<void> {
+  if (element !== 'opt:1') {
+    cancelHeldDigit()
+  }
   await setView($, v => ({ ...v, ring: element }))
   const batch = /^batch:(.+)$/.exec(element ?? '')
   const match = /^opt:(\d+)$/.exec(element ?? '')
@@ -79,12 +85,6 @@ export async function followFocus($: any, element: string | undefined): Promise<
     await setView($, v => ({ ...v, batchRow: batch[1] }))
   } else if (match) {
     await setView($, v => ({ ...v, highlight: Number(match[1]) }))
-  } else if (element === 'discuss') {
-    await setView($, v => ({ ...v, highlight: undefined }))
-  } else if (element === 'mark') {
-    await setView($, v => ({ ...v, isMarking: true }))
-  } else if (element === 'ask' || element === 'ask-input') {
-    await setView($, v => ({ ...v, isMarking: false }))
   }
 }
 
@@ -98,6 +98,35 @@ export function leaveToList($: any): void {
   })
 }
 
+/**
+ * Where the ring belongs when the pane gets the keys (decision 224): the answer box or the highlighted option on a decision, the
+ * list's own ring while its row is still drawn, else the first row of the open tab. A tab change while the prompt
+ * had the keys can't move the ring (the engine refuses focus calls then), so without this it is left on a row that went.
+ */
+export function ringTarget(view: PaneView, tabs: Tab[], seen: Seen = {}, frozen?: string[]): string | undefined {
+  if (view.screen === 'decision') {
+    if (view.answerBox !== undefined) {
+      return 'answer'
+    }
+    const d = tabs.flatMap(t => t.decisions).find(x => x.id === view.decisionId)
+
+    return `opt:${view.highlight ?? (d ? openingOption(d) : 1)}`
+  }
+  if (view.screen === 'review' && view.decisionId !== undefined) {
+    return 'confirm'
+  }
+  if (view.screen !== 'list') {
+    return undefined
+  }
+  const current = activeTab(tabs, view)
+  const ringed = /^row:(.+)$/.exec(view.ring ?? '')?.[1]
+  if (ringed !== undefined && current?.decisions.some(d => d.id === ringed)) {
+    return view.ring
+  }
+
+  return waitingElsewhere(tabs, current) ? 'goto-waiting' : firstKey(current, seen, frozen)
+}
+
 async function focusFirstRow($: any): Promise<void> {
   const tabs = tabsFor((await readAll($)).decisions)
   const current = activeTab(tabs, await readView($))
@@ -109,7 +138,7 @@ async function focusFirstRow($: any): Promise<void> {
 
 async function confirm($: any, ids: string[]): Promise<void> {
   const result = await sendTicked($, ids)
-  await setView($, v => ({ ...v, screen: 'list', ticked: [] }))
+  await setView($, v => ({ ...v, screen: 'list', decisionId: undefined, ticked: [] }))
   await changed($)
   leaveToList($)
   void result.settled.then(async notice => {
@@ -137,13 +166,23 @@ function header(ui: any, width: number, isFocused: boolean, crumb: string | unde
 
 /** The `ui.render` hook for the pane: reads the files and the view, then draws the screen the view names. */
 export async function renderPane($: any, e: any): Promise<any> {
-  notePaneFocus($, e.props.isFocused === true)
+  const keys = notePaneFocus($, e.props.isFocused === true)
   const ui = $.ui.resolve(e)
   const { Box, Text } = ui
   const width: number = e.props.bodyColumns
   const view: PaneView = await readView($)
   const { decisions, unreadable } = await readAll($)
-  const tabs = tabsFor(decisions)
+  const seen = await readSeen($)
+  const tabs = tabsFor(decisions, seen)
+  if (keys === 'gained') {
+    freezeOrder(tabs.flatMap(t => sectionsFor(t, seen).needsYou.map(d => d.id)))
+    const target = ringTarget(view, tabs, seen, frozenOrder())
+    if (target !== undefined) {
+      focusLater($, target)
+    }
+  } else if (keys === 'lost') {
+    thawOrder()
+  }
   const ready = readyDecisions(decisions)
   const common = {
     ui,
@@ -179,6 +218,11 @@ export async function renderPane($: any, e: any): Promise<any> {
       ...common,
       d: decision,
       all: decisions,
+      seenAt: visitSeenAt(decision.id, seen),
+      onSendThis: async () => {
+        await setView($, v => openReview(v, ready.map(d => d.id), decision.id))
+        focusLater($, 'confirm')
+      },
       view,
       rows: e.props.scroll?.bodyRows ?? 30,
       readyCount: ready.length,
@@ -210,7 +254,7 @@ export async function renderPane($: any, e: any): Promise<any> {
   return (
     <Box flexDirection="column">
       {top}
-      {ListView($, { ...common, tabs, view: { ...INITIAL_VIEW, ...view, tab: tab?.key }, readyCount: ready.length, unreadable, rows: e.props.scroll?.bodyRows })}
+      {ListView($, { ...common, tabs, view: { ...INITIAL_VIEW, ...view, tab: tab?.key }, readyCount: ready.length, unreadable, rows: e.props.scroll?.bodyRows, seen, frozen: frozenOrder() })}
       {view.notice ? <Text dimColor>{view.notice}</Text> : null}
     </Box>
   )

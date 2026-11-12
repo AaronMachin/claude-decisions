@@ -1,0 +1,5 @@
+{
+  "name": "prompt-drop-spike",
+  "version": "0.1.0",
+  "description": "Spike: can a prompt.submit hook keep a line like 'd1 2' from Claude by returning { drop }?"
+}

@@ -1,6 +1,8 @@
 import type { PaneView } from '../../types'
 import type { Decision } from '../store'
 import type { Tab } from './list'
+import { hasUnread } from './seen'
+import type { Seen } from './seen'
 
 export const isWaiting = (d: Decision) => d.state === 'open' || d.state === 'live'
 
@@ -10,7 +12,20 @@ export const isWaiting = (d: Decision) => d.state === 'open' || d.state === 'liv
  * there; "Answered" is ready and sent in any section. Parked decisions are the
  * Parked tab's rows.
  */
-export function sectionsFor(tab: Tab): {
+/** Unread first, keeping each group's own order; with a frozen order, that order instead (decision 209). */
+function inboxOrder(rows: Decision[], seen: Seen, frozen: string[] | undefined): Decision[] {
+  if (frozen !== undefined) {
+    const at = (d: Decision) => {
+      const i = frozen.indexOf(d.id)
+      return i === -1 ? frozen.length : i
+    }
+    return [...rows].sort((a, b) => at(a) - at(b))
+  }
+
+  return [...rows.filter(d => hasUnread(d, seen)), ...rows.filter(d => !hasUnread(d, seen))]
+}
+
+export function sectionsFor(tab: Tab, seen: Seen = {}, frozen?: string[]): {
   needsYou: Decision[]
   claudesCall: Decision[]
   alreadyDecided: Decision[]
@@ -18,7 +33,7 @@ export function sectionsFor(tab: Tab): {
   parked: Decision[]
 } {
   return {
-    needsYou: tab.decisions.filter(d => isWaiting(d) && d.section === 'needs-you'),
+    needsYou: inboxOrder(tab.decisions.filter(d => isWaiting(d) && d.section === 'needs-you'), seen, frozen),
     claudesCall: tab.decisions.filter(d => isWaiting(d) && d.section === 'claudes-call'),
     alreadyDecided: tab.decisions.filter(d => isWaiting(d) && d.section === 'already-decided'),
     answered: tab.decisions.filter(d => d.state === 'ready' || d.state === 'sent'),
@@ -85,11 +100,11 @@ export function assumptionsIn(tab: Tab): Decision[] {
 }
 
 /** Where the ring starts on the list: the first waiting decision, else a folded heading, else the first answered row. */
-export function firstKey(tab: Tab | undefined): string | undefined {
+export function firstKey(tab: Tab | undefined, seen: Seen = {}, frozen?: string[]): string | undefined {
   if (!tab) {
     return undefined
   }
-  const groups = sectionsFor(tab)
+  const groups = sectionsFor(tab, seen, frozen)
   const first = groups.needsYou[0] ?? groups.parked[0]
   if (first) {
     return `row:${first.id}`
