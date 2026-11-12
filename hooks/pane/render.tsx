@@ -1,3 +1,4 @@
+import { adoptSessions, otherSessions } from '../resume'
 import type { PaneView } from '../../types'
 import { notePaneFocus } from '../band'
 import { sendTicked, readyDecisions } from '../send'
@@ -283,6 +284,11 @@ export async function renderPane($: any, e: any): Promise<any> {
         seen,
         frozen: frozenOrder(),
         session: record,
+        others: decisions.length === 0 ? await otherSessions($).catch(() => []) : [],
+        onAdopt: async (session: string) => {
+          await adoptSessions($, [session])
+          await changed($)
+        },
         onOpenSession: async () => {
           await openSessionPage($)
           focusLater($, 'b')

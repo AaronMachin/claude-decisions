@@ -769,6 +769,25 @@ test('a question has only Something else, and no line about typing in the discus
 
 const at = (msAgo: number) => new Date(Date.now() - msAgo).toISOString()
 
+test('an empty pane offers another session with decisions waiting, and enter brings them here (row 291)', async ($, on) => {
+  const seen = await begin($, on)
+  edit(seen, 'd1', d => ({ ...d, session: 'old-id' }))
+  const ui = await mountHolding($, rowsOf(40))
+  const all = await texts(ui)
+  expect(all).toContain('Carry on from another session in this repository:')
+  expect(all.some((t: string) => /^↩ Code review · 1 waiting · just now$/.test(t))).toBe(true)
+  await ui.press({ key: 'adopt:old-id' })
+  for (let i = 0; i < 40; i++) {
+    await Promise.resolve()
+  }
+  const path = [...seen.files.keys()].find(p => p.endsWith('/d1.json'))!
+  expect(JSON.parse(seen.files.get(path)!).movedFrom).toBe('old-id')
+  await ui.unmount()
+  const again = await mountHolding($, rowsOf(40))
+  expect(await again.find({ key: 'row:d1' })).toBeTruthy()
+  await again.unmount()
+})
+
 test('the session card shows the summary, now, plan progress and links under its title (row 288)', async ($, on) => {
   await begin($, on)
   await $.tool.call({

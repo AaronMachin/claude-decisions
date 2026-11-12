@@ -25,6 +25,8 @@ The pane is one list of this session's decisions, grouped by the piece of work t
 
 A bar down the left of each row is coloured by its kind while it waits, green once answered and dim once sent. On a tall pane a row has a dim second line: the problem the decision is about (when it has one), its kind, how long ago it was asked and, once answered, your answer (`1 Red · only if in stock`).
 
+If you resume a session (`claude --resume`), the pane takes back the decisions the conversation already had, even though Claude Code gives the resumed session a new id. When the pane is empty it also offers other sessions in the same repository with decisions waiting, and enter brings one's decisions here.
+
 At the top, the session card shows `✻` and the session's title, the summary, `▶ now:` and what Claude is doing, how far through the plan it is and what's next, and its pull requests and pages (`#1 merged · 2 pages`). Enter on it opens the Session page (below). A short pane keeps only the title and the now line.
 
 <!-- GIF: findings triage with folded sections (shot 4) -->

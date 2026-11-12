@@ -85,6 +85,8 @@ export type Decision = {
    * a decision stored without one (before 10 November) is never shown.
    */
   session?: string
+  /** The session id it was stored under before a resumed conversation took it over (row 291). */
+  movedFrom?: string
 }
 
 /** The part of `$` the store uses, so tests can hand it a fake. */
@@ -181,6 +183,24 @@ export async function readAll($: StoreCtx): Promise<{ decisions: Decision[]; unr
   }
 
   return { decisions: decisions.sort((a, b) => a.number - b.number), unreadable }
+}
+
+/** Every decision in this repository's store, whichever session added it, oldest first. */
+export async function readEvery($: StoreCtx): Promise<Decision[]> {
+  const dir = await storeDir($)
+  const decisions: Decision[] = []
+  for (const name of await names($, dir)) {
+    if (!/^d\d+\.json$/.test(name)) {
+      continue
+    }
+    try {
+      decisions.push(JSON.parse(await $.fs.read(`${dir}/${name}`)) as Decision)
+    } catch {
+      // An unreadable file is counted by readAll; here it is left out.
+    }
+  }
+
+  return decisions.sort((a, b) => a.number - b.number)
 }
 
 /** One of this session's decisions by id; undefined for another session's, or one that can't be read. */
