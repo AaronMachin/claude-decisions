@@ -84,6 +84,14 @@ async function mountHolding<M extends (props: any) => Promise<any>>($: { ui: { m
     }
   }
   const press = async (args: any) => {
+    // One list (row 265): a group with nothing waiting is folded, so a row in it is reached by unfolding its heading.
+    if (/^row:/.test(String(args.key)) && !(await ui.find({ key: args.key }))) {
+      for (const heading of (await ui.findAll({ type: 'Button' })).filter((b: any) => /^group:/.test(String(b.props.key)))) {
+        if (!(await ui.find({ key: args.key }))) {
+          await ui.press({ key: heading.props.key })
+        }
+      }
+    }
     const result = await ui.press(args)
     if (args.key !== 'b' && args.key !== 'confirm') {
       await hold()
@@ -662,7 +670,7 @@ test('the last option is Something else; enter on it opens "Your answer ", and a
   expect((await texts(ui)).join(' ')).toContain("enter saves it, Claude isn't asked · empty enter cancels")
   await ui.input({ key: 'answer', text: 'after CI is green', kind: 'change' })
   await ui.input({ key: 'answer', text: 'after CI is green' })
-  expect(await ui.find({ key: 'row:d1' })).toBeDefined()
+  expect(await ui.find({ key: 'group:g:Code review' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Saved d1 · Something else: after CI is green · s sends it' })).toBeDefined()
   expect(seen.submitted).toEqual([])
   const stored = JSON.parse([...seen.files.entries()].find(([k]) => k.endsWith('/d1.json'))![1])

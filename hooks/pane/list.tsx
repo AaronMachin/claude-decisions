@@ -333,12 +333,13 @@ export function rowText(d: Decision, width: number): string {
 
 type ListProps = {
   ui: { Box: any; Text: any; Button: any }
+  /** The session's decisions grouped (one per group, then For you to do, then Parked), as `tabsFor` gives them. */
   tabs: Tab[]
   view: PaneView
   width: number
   readyCount: number
   unreadable: number
-  /** The pane's rows (`scroll.bodyRows`), so an open section can be paged to fit. */
+  /** The pane's rows (`scroll.bodyRows`), so a long group can be paged to fit. */
   rows?: number
   /** The pane has the keys, so the ring (and its `›`) is shown. */
   isFocused?: boolean
@@ -346,56 +347,103 @@ type ListProps = {
   seen?: Seen
   /** The order to keep while the pane has the keys. */
   frozen?: string[]
+  /** The session record, for the card at the top (row 265). */
+  session?: { title?: string; now?: { text: string } }
+  /** Enter on the session card. */
+  onOpenSession?: () => void
   onSend: () => void
   onHide: () => void
 }
 
-/** Changes tab and, once it is drawn, puts the ring on its first row, so the ring is never left on a row that went. */
-async function showTab($: any, tabs: Tab[], key: string | undefined): Promise<void> {
-  await setView($, v => ({ ...foldAll(v), tab: key }))
-  const target = tabs.find(t => t.key === key)
-  const first = waitingElsewhere(tabs, target) ? 'goto-waiting' : firstKey(target)
-  if (first) {
-    focusLater($, first)
-  }
+/** The groups that sit at the bottom of the list, folded when nothing in them waits. */
+const BOTTOM = new Set(['todo', 'parked'])
+
+/**
+ * The list's group order (row 265): groups with an unread reply first, then those with waiting decisions (newest first),
+ * then the folded ones, then For you to do and Parked at the bottom.
+ */
+export function groupOrder(tabs: Tab[]): Tab[] {
+  const newest = (t: Tab) => Math.max(0, ...t.decisions.filter(d => isWaiting(d) && d.section === 'needs-you').map(d => d.number))
+  const rank = (t: Tab) => (BOTTOM.has(t.key) ? 3 : t.hasUnread ? 0 : openCount(t) > 0 ? 1 : 2)
+
+  return [...tabs].sort((a, b) => rank(a) - rank(b) || (rank(a) <= 1 ? newest(b) - newest(a) : 0) || (a.key === 'todo' ? -1 : b.key === 'todo' ? 1 : 0))
 }
 
-/** The tab row and the open tab's decisions. Returns an element tree. */
+/** A group is drawn open while something in it waits, or the person unfolded it. */
+export function isGroupOpen(t: Tab, view: PaneView): boolean {
+  return openCount(t) > 0 || (view.openGroups ?? []).includes(t.key)
+}
+
+/** A group's heading: `◆ <group> · N waiting` (and `· ● 1 new`), or folded `▸ <group> · N answered` / `· nothing waiting`. */
+export function groupHeading(t: Tab, view: PaneView, seen: Seen = {}): { text: string; isWaiting: boolean; unread: number } {
+  const waiting = openCount(t)
+  const unread = t.decisions.filter(d => isWaiting(d) && hasUnread(d, seen)).length
+  if (waiting > 0) {
+    return { text: `◆ ${t.label} · ${waiting} waiting`, isWaiting: true, unread }
+  }
+  const answered = t.decisions.filter(d => d.state === 'ready' || d.state === 'sent').length
+  const mark = isGroupOpen(t, view) ? '▾' : '▸'
+  const rest = t.key === 'parked' ? `${t.decisions.length} parked` : answered > 0 ? `${answered} answered` : 'nothing waiting'
+
+  return { text: `${mark} ${t.label} · ${rest}`, isWaiting: false, unread }
+}
+
+/** `enter` on a folded group's heading unfolds it; again folds it. */
+export function toggleGroup(view: PaneView, key: string): PaneView {
+  const open = view.openGroups ?? []
+
+  return { ...view, openGroups: open.includes(key) ? open.filter(k => k !== key) : [...open, key] }
+}
+
+/** Where the ring starts on the list (row 265): the first waiting row, else the session card, else the first heading. */
+export function listFirstKey(tabs: Tab[], seen: Seen = {}, frozen?: string[], hasSession = false): string | undefined {
+  const ordered = groupOrder(tabs)
+  for (const t of ordered) {
+    const first = sectionsFor(t, seen, frozen).needsYou[0]
+    if (first) {
+      return `row:${first.id}`
+    }
+  }
+  if (hasSession) {
+    return 'session-card'
+  }
+  for (const t of ordered) {
+    const key = firstKey(t, seen, frozen)
+    if (key) {
+      return openCount(t) > 0 ? key : `group:${t.key}`
+    }
+  }
+
+  return undefined
+}
+
+/** One list for the session, grouped by headings, with the session card at the top (row 265). Returns an element tree. */
 export function ListView($: any, props: ListProps): any {
-  const { ui, tabs, view, width, readyCount, unreadable, onSend, onHide } = props
+  const { ui, view, width, readyCount, unreadable, onSend, onHide } = props
   const rows = props.rows ?? 30
   const { Box, Text, Button } = ui
-  const tab = activeTab(tabs, view)
   const seen = props.seen ?? {}
-  const sections = tab ? sectionsFor(tab, seen, props.frozen) : { needsYou: [], claudesCall: [], alreadyDecided: [], answered: [], parked: [] }
-  const elsewhere = waitingElsewhere(tabs, tab)
-  const isIdle = newestOpenTab(tabs) === undefined
-  const first = elsewhere
-    ? undefined
-    : (sections.needsYou[0] ?? sections.parked[0] ?? (sections.claudesCall.length + sections.alreadyDecided.length > 0 ? undefined : sections.answered[0]))
-  const isParkedTab = tab?.key === 'parked'
-  const batch = tab && !isParkedTab ? assumptionsIn(tab) : []
-  const tabRow = visibleTabs(tabs, tab?.key, width)
+  const groups = groupOrder(props.tabs)
+  const isIdle = newestOpenTab(groups) === undefined
   const isFocused = props.isFocused === true
   const compact = isCompact(rows)
   const mark = (key: string) => `${ringMark(key, view.ring, isFocused)} `
-  // Tall, the look adds a rule above the tabs and the ringed row is a card two rows taller. Compact, the rules
-  // and the blank line before the keys go, so the list fits 9 rows.
-  // Tall, the look adds a rule above the tabs. Compact, the rules and the blank line before the keys go, so the list fits 9 rows.
+  const first = listFirstKey(groups, seen, props.frozen, props.session !== undefined)
   const lookRows = compact ? -2 : 1
 
-  const row = (d: Decision) => {
+  const row = (d: Decision, tab: Tab) => {
     const isUnread = isWaiting(d) && hasUnread(d, seen)
     const isRinged = isFocused && view.ring === `row:${d.id}`
     const look = { ...(d.state === 'sent' ? { dimColor: true } : {}), ...(isRinged ? { backgroundColor: SELECTED_BG } : {}), bold: isUnread || undefined }
-    // The bar, the ring's mark and a space come before the text.
     const room = width - 3 - (isUnread ? 2 : 0)
     const dot = isUnread ? <Text color="claude">● </Text> : ''
+    const autoFocus = first === `row:${d.id}` ? true : undefined
+    const open = () => openDecision($, d, tab.key)
     if (compact) {
       return (
         <Box key={`box:${d.id}`}>
           {Bar(ui, barColour(d), `bar:${d.id}`)}
-          <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d, tab?.key)}>
+          <Button key={`row:${d.id}`} plain autoFocus={autoFocus} onPress={open}>
             {mark(`row:${d.id}`)}
             {dot}
             <Text {...look}>{rowText(d, room + 2)}</Text>
@@ -404,19 +452,18 @@ export function ListView($: any, props: ListProps): any {
       )
     }
     const lines = titleLines(d, room)
-    const firstLine = lines[0] ?? d.id
-    const second = rowSecondLine(d, seen, new Date(), isParkedTab)
+    const second = rowSecondLine(d, seen, new Date(), tab.key === 'parked')
 
     return (
       <Box key={`box:${d.id}`} flexDirection="column">
         <Box key={`line:${d.id}`}>
           {Bar(ui, barColour(d), `bar:${d.id}`)}
-          <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d, tab?.key)}>
+          <Button key={`row:${d.id}`} plain autoFocus={autoFocus} onPress={open}>
             {mark(`row:${d.id}`)}
             {dot}
             <Text {...look}>
               <Text bold>{d.id}</Text>
-              {firstLine.slice(d.id.length)}
+              {(lines[0] ?? d.id).slice(d.id.length)}
             </Text>
           </Button>
         </Box>
@@ -441,72 +488,49 @@ export function ListView($: any, props: ListProps): any {
       </Box>
     )
   }
-  const heading = (name: string, count: number, markText?: string, markColour?: string) => (
-    <Text key={`heading:${name}`}>
-      {markText ? <Text color={markColour}>{`${markText} `}</Text> : ''}
-      <Text bold>{name}</Text>
-      <Text dimColor>{` · ${count}`}</Text>
-    </Text>
-  )
   const lines = (d: Decision) => rowLines(d, width, compact)
-  const recent = isIdle ? allClear(tabs.flatMap(t => t.decisions)) : []
-  const recentIds = new Set(recent.map(d => d.id))
-  const answeredRows = sections.answered.filter(d => !recentIds.has(d.id))
-  const lastSent = isIdle ? lastSentLine(tabs.flatMap(t => t.decisions)) : undefined
-  const clearRows = isIdle ? (lastSent ? 1 : 0) + recent.reduce((n, d) => n + lines(d), 0) + 1 : 0
-  // Tall rows take two lines or three, so a page holds rows by their tallest.
   const perRow = (list: Decision[]) => (compact ? 1 : Math.max(2, ...list.map(lines)))
-  const elsewhereRows = elsewhere ? 1 : 0
-  const needsReserve = 13 + lookRows + elsewhereRows + clearRows + (view.openSection !== undefined ? 5 : 0)
-  const needsSize = Math.max(1, Math.floor(pageSize(rows, needsReserve) / perRow(sections.needsYou)))
-  const needsPaged = sections.needsYou.length > needsSize
-  const needsPage = pageOf(sections.needsYou, view.openSection === undefined ? view.sectionPage : 0, needsSize)
-  const needsShown = needsPaged ? needsPage.rows : sections.needsYou
-  const needsYouLines = needsShown.reduce((n, d) => n + lines(d), 0) + clearRows
-  const answeredRoomLines = answeredRoom(rows, needsYouLines, view.openSection !== undefined)
-  const answeredShown: Decision[] = []
-  for (let used = 0, i = 0; i < answeredRows.length && (answeredShown.length === 0 || used + lines(answeredRows[i]!) <= answeredRoomLines); i++) {
-    if (used + lines(answeredRows[i]!) > answeredRoomLines && answeredShown.length === 0 && !compact && answeredRoomLines < 2) {
-      break
-    }
-    answeredShown.push(answeredRows[i]!)
-    used += lines(answeredRows[i]!)
-  }
-  const answeredHidden = answeredRows.length - answeredShown.length
-  const answeredLines = answeredShown.reduce((n, d) => n + lines(d), 0)
-  const fixedRows = 9 + lookRows + elsewhereRows + needsYouLines + (answeredShown.length === 0 ? 0 : answeredLines + 1 + (answeredHidden > 0 ? 1 : 0)) + (batch.length >= 2 ? 1 : 0)
-  const size = (list: Decision[]) => Math.max(1, Math.floor(pageSize(rows, fixedRows) / perRow(list)))
-  const foldedHeading = (f: (typeof FOLDED)[number]) => {
-    const all = tab ? foldedRows(tab, f.section) : []
+  const recent = isIdle ? allClear(groups.flatMap(t => t.decisions)) : []
+  const recentIds = new Set(recent.map(d => d.id))
+  const lastSent = isIdle ? lastSentLine(groups.flatMap(t => t.decisions)) : undefined
+  const sessionRows = props.session ? (compact ? 1 : 2) : 0
+  const clearRows = isIdle ? 1 + (lastSent ? 1 : 0) + recent.reduce((n, d) => n + lines(d), 0) + 1 : 0
+  const headingRows = groups.length
+  const fixed = 5 + lookRows + sessionRows + clearRows + headingRows + (view.openSection !== undefined ? 5 : 0)
+  // The first group too long for the pane pages with n and o; the key line names it.
+  const pageRows = Math.max(1, Math.floor(pageSize(rows, fixed) / perRow(groups.flatMap(t => sectionsFor(t, seen, props.frozen).needsYou))))
+  const paged = groups.find(t => isGroupOpen(t, view) && sectionsFor(t, seen, props.frozen).needsYou.length > pageRows)
+  const pagedAll = paged ? sectionsFor(paged, seen, props.frozen).needsYou : []
+  const page = pageOf(pagedAll, view.openSection === undefined ? view.sectionPage : 0, pageRows)
+  let answeredBudget = answeredRoom(rows, fixed - 9, view.openSection !== undefined)
+
+  const subSection = (t: Tab, f: (typeof FOLDED)[number]) => {
+    const all = foldedRows(t, f.section)
     if (all.length === 0) {
       return null
     }
-    const isOpen = view.openSection === f.section
-    const sized = size(all)
-    const page = pageOf(all, view.sectionPage, sized)
+    const isOpen = view.openSection === f.section && view.tab === t.key
+    const size = Math.max(1, Math.floor(pageSize(rows, fixed + 4) / perRow(all)))
+    const sub = pageOf(all, view.sectionPage, size)
+    const key = `section:${t.key}:${f.section}`
 
     return (
-      <Box key={`fold:${f.section}`} flexDirection="column">
-        <Button
-          key={`section:${f.section}`}
-          plain
-          autoFocus={first === undefined && !elsewhere && f === FOLDED.find(x => tab && foldedRows(tab, x.section).length > 0) ? true : undefined}
-          onPress={() => setView($, v => toggleSection(v, f.section))}
-        >
-          {mark(`section:${f.section}`)}
-          <Text dimColor>{`${isOpen ? '▾' : '▸'} ${f.name} · ${all.length}`}</Text>
+      <Box key={`fold:${t.key}:${f.section}`} flexDirection="column">
+        <Button key={key} plain autoFocus={first === key ? true : undefined} onPress={() => setView($, v => ({ ...toggleSection({ ...v, openSection: v.tab === t.key ? v.openSection : undefined }, f.section), tab: t.key }))}>
+          {mark(key)}
+          <Text dimColor>{`  ${isOpen ? '▾' : '▸'} ${f.name} · ${all.length}`}</Text>
         </Button>
-        {isOpen ? page.rows.map(row) : null}
-        {isOpen && (page.hasEarlier || page.hasNext) ? (
+        {isOpen ? sub.rows.map(d => row(d, t)) : null}
+        {isOpen && (sub.hasEarlier || sub.hasNext) ? (
           <Box>
-            {page.hasEarlier ? (
-              <Button key="o" hotkey="o" plain onPress={() => setView($, v => movePage(v, -1, all.length, sized))}>
+            {sub.hasEarlier ? (
+              <Button key="o" hotkey="o" plain onPress={() => setView($, v => movePage(v, -1, all.length, size))}>
                 {'o earlier  '}
               </Button>
             ) : null}
-            {page.hasNext ? (
-              <Button key="n" hotkey="n" plain onPress={() => setView($, v => movePage(v, 1, all.length, sized))}>
-                {`n next ${Math.min(sized, page.remaining)} more`}
+            {sub.hasNext ? (
+              <Button key="n" hotkey="n" plain onPress={() => setView($, v => movePage(v, 1, all.length, size))}>
+                {`n next ${Math.min(size, sub.remaining)} more`}
               </Button>
             ) : null}
           </Box>
@@ -515,15 +539,97 @@ export function ListView($: any, props: ListProps): any {
     )
   }
 
+  // The first group's batch row keeps the key `batch`; `batch:` is the batch screen's own rows.
+  const batchGroups = groups.filter(t => t.key !== 'parked' && isGroupOpen(t, view) && assumptionsIn(t).length >= 2)
+  const batchKey = (t: Tab) => (batchGroups[0] === t ? 'batch' : `batch-${batchGroups.indexOf(t)}`)
+  const group = (t: Tab) => {
+    const head = groupHeading(t, view, seen)
+    const isOpen = isGroupOpen(t, view)
+    const sections = sectionsFor(t, seen, props.frozen)
+    const batch = t.key === 'parked' ? [] : assumptionsIn(t)
+    const needs = t === paged ? page.rows : sections.needsYou
+    const answered = sections.answered.filter(d => !recentIds.has(d.id))
+    const answeredShown: Decision[] = []
+    for (const d of answered) {
+      if (answeredShown.length > 0 && answeredBudget - lines(d) < 0) {
+        break
+      }
+      answeredShown.push(d)
+      answeredBudget -= lines(d)
+    }
+    const hidden = answered.length - answeredShown.length
+    const headKey = `group:${t.key}`
+    const headText = (
+      <Text key={`heading:${t.key}`}>
+        {head.isWaiting ? <Text bold>{head.text}</Text> : <Text dimColor>{head.text}</Text>}
+        {head.unread > 0 ? <Text color="claude">{` · ● ${head.unread} new`}</Text> : ''}
+      </Text>
+    )
+
+    return (
+      <Box key={`group-box:${t.key}`} flexDirection="column">
+        {head.isWaiting ? (
+          headText
+        ) : (
+          <Button key={headKey} plain autoFocus={first === headKey ? true : undefined} onPress={() => setView($, v => toggleGroup(v, t.key))}>
+            {mark(headKey)}
+            {headText}
+          </Button>
+        )}
+        {isOpen && batch.length >= 2 ? (
+          <Button
+            key={batchKey(t)}
+            plain
+            onPress={async () => {
+              await setView($, v => ({ ...v, tab: t.key, screen: 'batch', marks: {}, batchRow: undefined, compactPage: 0, ring: `batch:${batch[0]!.id}`, notice: undefined }))
+              focusLater($, `batch:${batch[0]!.id}`)
+            }}
+          >
+            {`${mark(batchKey(t))}Check ${batch.length} assumptions together (enter)`}
+          </Button>
+        ) : null}
+        {isOpen ? needs.map(d => row(d, t)) : null}
+        {isOpen && t === paged && (page.hasEarlier || page.hasNext) ? (
+          <Box>
+            {page.hasEarlier ? (
+              <Button key="o" hotkey="o" plain onPress={() => setView($, v => movePage(v, -1, pagedAll.length, pageRows))}>
+                {'o earlier  '}
+              </Button>
+            ) : null}
+            {page.hasNext ? (
+              <Button key="n" hotkey="n" plain onPress={() => setView($, v => movePage(v, 1, pagedAll.length, pageRows))}>
+                {`n next ${Math.min(pageRows, page.remaining)} more in ${truncate(t.label, 24)}`}
+              </Button>
+            ) : null}
+          </Box>
+        ) : null}
+        {isOpen ? FOLDED.map(f => subSection(t, f)) : null}
+        {isOpen ? sections.parked.map(d => row(d, t)) : null}
+        {isOpen ? answeredShown.map(d => row(d, t)) : null}
+        {isOpen && hidden > 0 ? <Text dimColor>{`     ${hidden} more answered`}</Text> : null}
+      </Box>
+    )
+  }
+
   const hints: Hint[] = [
-    { id: 't', keyText: 't', label: 'next tab', hotkey: 't', onPress: () => void showTab($, tabs, nextTab(tabs, tab?.key)) },
     ...(readyCount > 0 ? [{ id: 's', keyText: 's', label: `send ${readyCount}`, hotkey: 's', onPress: onSend }] : []),
     { id: 'h', keyText: 'h', label: 'hide', hotkey: 'h', onPress: onHide },
   ]
+  // A Button holds one line, so the now line sits under it, not inside it.
+  const card = props.session ? (
+    <Box key="session" flexDirection="column">
+      <Button key="session-card" plain autoFocus={first === 'session-card' ? true : undefined} onPress={() => props.onOpenSession?.()}>
+        {mark('session-card')}
+        <Text bold>{truncate(`✻ ${props.session.title ?? 'This session'}`, width - 2)}</Text>
+      </Button>
+      {!compact && props.session.now ? <Text dimColor>{truncate(`  ▶ now: ${props.session.now.text}`, width)}</Text> : null}
+    </Box>
+  ) : null
 
-  if (tabs.length === 0) {
+  if (groups.length === 0) {
     return (
       <Box flexDirection="column">
+        {card}
         <Text dimColor>No decisions yet. Claude adds them here when it needs you.</Text>
         {KeyHints(ui, hints.filter(hint => hint.id === 'h'), width, 1)}
       </Box>
@@ -532,29 +638,7 @@ export function ListView($: any, props: ListProps): any {
 
   return (
     <Box flexDirection="column">
-      {compact ? null : Rule(ui, width, 'rule:tabs')}
-      <Box>
-        {tabRow.hasLeft ? <Text dimColor>‹ </Text> : null}
-        {tabRow.shown.map(t => (
-          <Button
-            key={`tab:${t.key}`}
-            plain
-            onPress={() => void showTab($, tabs, t.key)}
-          >
-            {t.key === tab?.key ? (
-              <Text backgroundColor="claude" color="inverseText" bold>
-                {tabChipText(t)}
-              </Text>
-            ) : (
-              <Text backgroundColor="subtle" color="text">
-                {tabChipText(t)}
-              </Text>
-            )}
-            {' '}
-          </Button>
-        ))}
-        {tabRow.hasRight ? <Text dimColor>›</Text> : null}
-      </Box>
+      {card}
       {compact ? null : Rule(ui, width, 'rule:sections')}
       {isIdle ? (
         readyCount > 0 ? (
@@ -567,52 +651,11 @@ export function ListView($: any, props: ListProps): any {
             {truncate('✓ Nothing needs you', width)}
           </Text>
         )
-      ) : isParkedTab ? null : heading('Needs you', sections.needsYou.length, '◆')}
+      ) : null}
       {lastSent ? <Text key="last-sent" dimColor>{truncate(lastSent, width)}</Text> : null}
-      {recent.map(row)}
+      {recent.map(d => row(d, groups.find(t => t.decisions.includes(d)) ?? groups[0]!))}
       {isIdle ? <Text key="land-here" dimColor>New decisions land here.</Text> : null}
-      {elsewhere ? (
-        <Button key="goto-waiting" plain autoFocus onPress={() => void showTab($, tabs, elsewhere.tab.key)}>
-          {mark('goto-waiting')}
-          <Text color="claude">{truncate(`${elsewhere.count} waiting in ${elsewhere.tab.label} · enter`, width - 2)}</Text>
-        </Button>
-      ) : null}
-      {batch.length >= 2 ? (
-        <Button
-          key="batch"
-          plain
-          onPress={async () => {
-            await setView($, v => ({ ...v, screen: 'batch', marks: {}, batchRow: undefined, compactPage: 0, ring: `batch:${batch[0]!.id}`, notice: undefined }))
-            focusLater($, `batch:${batch[0]!.id}`)
-          }}
-        >
-          {`${mark('batch')}Check ${batch.length} assumptions together (enter)`}
-        </Button>
-      ) : null}
-      {needsShown.map(row)}
-      {needsPaged && view.openSection === undefined && (needsPage.hasEarlier || needsPage.hasNext) ? (
-        <Box>
-          {needsPage.hasEarlier ? (
-            <Button key="o" hotkey="o" plain onPress={() => setView($, v => movePage(v, -1, sections.needsYou.length, needsSize))}>
-              {'o earlier  '}
-            </Button>
-          ) : null}
-          {needsPage.hasNext ? (
-            <Button key="n" hotkey="n" plain onPress={() => setView($, v => movePage(v, 1, sections.needsYou.length, needsSize))}>
-              {`n next ${Math.min(needsSize, needsPage.remaining)} more`}
-            </Button>
-          ) : null}
-        </Box>
-      ) : null}
-      {needsPaged && view.openSection !== undefined ? (
-        <Text dimColor>{truncate(`     ${sections.needsYou.length - needsShown.length} more need you: fold the open section to page them`, width - 2)}</Text>
-      ) : null}
-      {FOLDED.map(foldedHeading)}
-      {sections.parked.length > 0 ? heading('Parked', sections.parked.length) : null}
-      {sections.parked.map(row)}
-      {answeredRows.length > 0 ? heading('Answered', answeredRows.length, '✓', 'success') : null}
-      {answeredShown.map(row)}
-      {answeredHidden > 0 ? <Text dimColor>{`     ${answeredHidden} more answered`}</Text> : null}
+      {groups.map(group)}
       {unreadable > 0 ? <Text dimColor>{`${unreadable} decision file${unreadable === 1 ? '' : 's'} couldn't be read`}</Text> : null}
       {compact ? null : Rule(ui, width, 'rule:keys')}
       {KeyHints(ui, hints, width, 1)}

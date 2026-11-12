@@ -7,7 +7,7 @@ import { movePage, pageSize } from './sections'
 import { ago, when } from './seen'
 import { HEADER_RIGHT_GAP } from './look'
 import { INITIAL_VIEW, ringMark } from './decision'
-import { ListView, ReviewView, allClear, counts, rowSecondLine, tabChipText, visibleTabs, nextTab, openReview, rowMeta, rowText, secondLine, sectionsFor, statusText, tabsFor, toggleTick, truncate } from './list'
+import { ListView, ReviewView, allClear, toggleGroup, counts, rowSecondLine, tabChipText, visibleTabs, nextTab, openReview, rowMeta, rowText, secondLine, sectionsFor, statusText, tabsFor, toggleTick, truncate } from './list'
 
 let counter = 0
 
@@ -112,21 +112,21 @@ const PANE = {
   props: { title: 'Decisions', isFocused: true, bodyColumns: 49, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
 } as const
 
-test('the list draws tabs and rows; the first row is on the ring so enter alone opens it', async ($, on) => {
+test('the list draws every group under its heading, newest waiting first; the first row is on the ring so enter alone opens it', async ($, on) => {
   counter = 0
   const all = [make(), make(), make({ state: 'ready', answer: { option: 2, answeredAt: 't' } }), make({ group: 'Sharing links' })]
   const tabs = tabsFor(all)
   on('ui.render', ($$, e) =>
-    ListView($$, { ui: $$.ui.resolve(e), tabs, view: { ...INITIAL_VIEW, tab: 'g:Config file plan' }, width: 49, readyCount: 1, unreadable: 0, onSend: () => {}, onHide: () => {} }),
+    ListView($$, { ui: $$.ui.resolve(e), tabs, view: INITIAL_VIEW, width: 49, readyCount: 1, unreadable: 0, onSend: () => {}, onHide: () => {} }),
   )
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
     const keys = (await ui.findAll({ type: 'Button' })).map(b => b.props.key)
-    expect(keys).toEqual(['tab:g:Config file plan', 'tab:g:Sharing links', 'row:d1', 'row:d2', 'row:d3', 't', 's', 'h'])
-    expect((await ui.find({ key: 'row:d1' }))?.props.autoFocus).toBe(true)
-    expect((await ui.find({ key: 'row:d2' }))?.props.autoFocus).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: '◆ Needs you · 2' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '✓ Answered · 1' })).toBeDefined()
+    expect(keys).toEqual(['row:d4', 'row:d1', 'row:d2', 'row:d3', 's', 'h'])
+    expect((await ui.find({ key: 'row:d4' }))?.props.autoFocus).toBe(true)
+    expect((await ui.find({ key: 'row:d1' }))?.props.autoFocus).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: '◆ Config file plan · 2 waiting' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '◆ Sharing links · 1 waiting' })).toBeDefined()
     await ui.unmount()
   }
 })
@@ -210,41 +210,44 @@ function bigReview(): Decision[] {
   ]
 }
 
-test('folded sections show a heading with a count and no rows; Needs you stays open', async ($, on) => {
+test("Claude's call and Already decided are folded sub-headings inside their group", async ($, on) => {
   const ui = await drawList($, on, bigReview())
   const keys = await keysOf(ui)
-  expect(keys).toEqual(['row:d1', 'row:d2', 'section:claudes-call', 'section:already-decided', 't', 'h'])
-  expect(await ui.find({ type: 'Text', text: '◆ Needs you · 2' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: "▸ Claude's call · 9" })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '▸ Already decided · 3' })).toBeDefined()
+  expect(keys).toEqual(['row:d1', 'row:d2', 'section:g:Config file plan:claudes-call', 'section:g:Config file plan:already-decided', 'h'])
+  expect(await ui.find({ type: 'Text', text: '◆ Config file plan · 2 waiting' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: "  ▸ Claude's call · 9" })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '  ▸ Already decided · 3' })).toBeDefined()
   await ui.unmount()
 })
 
-test('when nothing anywhere needs the person, the list says so instead of "Needs you 0", and the first heading takes the ring', async ($, on) => {
+test('when nothing anywhere needs the person, the list says so, the group folds, and its heading takes the ring', async ($, on) => {
   counter = 0
   const ui = await drawList($, on, [make({ section: 'claudes-call' })])
   expect(await ui.find({ type: 'Text', text: '✓ Nothing needs you' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Needs you · 0/ })).toBeUndefined()
-  expect((await ui.find({ key: 'section:claudes-call' }))?.props.autoFocus).toBe(true)
+  expect((await ui.find({ key: 'group:g:Config file plan' }))?.props.autoFocus).toBe(true)
+  expect(await ui.find({ type: 'Text', text: '▸ Config file plan · nothing waiting' })).toBeDefined()
   await ui.unmount()
 })
 
-test('an open section shows one page of rows with n, and o appears on the next page', async ($, on) => {
+test('an open sub-section shows one page of rows with n, and o appears on the next page', async ($, on) => {
   const all = bigReview()
-  let ui = await drawList($, on, all, { ...INITIAL_VIEW, openSection: 'claudes-call' }, 19)
-  let keys = await keysOf(ui)
-  expect(keys.filter((k: string) => k.startsWith('row:'))).toEqual(['row:d1', 'row:d2', 'row:d3', 'row:d4'])
+  const view = { ...INITIAL_VIEW, openSection: 'claudes-call' as const, tab: 'g:Config file plan' }
+  const ui = await drawList($, on, all, view, 19)
+  const keys = await keysOf(ui)
+  const rows = keys.filter((k: string) => k.startsWith('row:'))
+  expect(rows.slice(0, 3)).toEqual(['row:d1', 'row:d2', 'row:d3'])
+  expect(rows.length).toBeLessThan(11)
   expect(keys).toContain('n')
   expect(keys).not.toContain('o')
-  expect(await ui.find({ type: 'Text', text: "▾ Claude's call · 9" })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: "  ▾ Claude's call · 9" })).toBeDefined()
   await ui.unmount()
 })
 
-test('the next page has o and, at the end, no n', async ($, on) => {
+test('the last page of a sub-section has o and no n', async ($, on) => {
   const all = bigReview()
-  const ui = await drawList($, on, all, { ...INITIAL_VIEW, openSection: 'claudes-call', sectionPage: 4 }, 19)
+  const ui = await drawList($, on, all, { ...INITIAL_VIEW, openSection: 'claudes-call', tab: 'g:Config file plan', sectionPage: 20 }, 19)
   const keys = await keysOf(ui)
-  expect(keys.filter((k: string) => k.startsWith('row:'))).toEqual(['row:d1', 'row:d2', 'row:d11'])
+  expect(keys.filter((k: string) => k.startsWith('row:'))).toContain('row:d11')
   expect(keys).toContain('o')
   expect(keys).not.toContain('n')
   await ui.unmount()
@@ -264,11 +267,19 @@ test('parked and reopened rows carry a dim second line, with the group in the Pa
   expect(secondLine(make(), false)).toBeUndefined()
 })
 
-test('the Parked tab has no Needs you heading and the second line is drawn', async ($, on) => {
+test('Parked is a heading at the bottom, folded while nothing in it waits; unfolded, its rows carry the parked line', async ($, on) => {
   counter = 0
-  const ui = await drawList($, on, [make({ state: 'parked', parkedReason: 'later' })], { ...INITIAL_VIEW, tab: 'parked' })
-  expect(await ui.find({ type: 'Text', text: /Needs you/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: 'Parked · 1' })).toBeDefined()
+  const all = [make({ state: 'parked', parkedReason: 'later' })]
+  let ui = await drawList($, on, all)
+  expect(await ui.find({ type: 'Text', text: '▸ Parked · 1 parked' })).toBeDefined()
+  expect(await ui.find({ key: 'row:d1' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('an unfolded Parked heading shows its rows with the group and the reason', async ($, on) => {
+  counter = 0
+  const ui = await drawList($, on, [make({ state: 'parked', parkedReason: 'later' })], { ...INITIAL_VIEW, openGroups: ['parked'] })
+  expect(await ui.find({ type: 'Text', text: '▾ Parked · 1 parked' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Config file plan · later/ })).toBeDefined()
   await ui.unmount()
 })
@@ -303,7 +314,6 @@ test('with the 47-finding review in a short pane the answered rows give way, so 
   const buttons = (await ui.findAll({ type: 'Button' })).map((b: any) => b.props.key as string)
   const rowCount = buttons.filter((k: string) => k.startsWith('row:')).length
   expect(rowCount).toBeLessThanOrEqual(24 - 8)
-  expect(buttons).toContain('t')
   expect(buttons).toContain('h')
   await ui.unmount()
 })
@@ -322,7 +332,6 @@ test('30 findings for the person in a short pane are paged, the key row stays in
     const keys = await keysOf(ui)
     const rows = keys.filter((k: string) => k.startsWith('row:'))
     expect(rows.length).toBeLessThanOrEqual(23 - 12)
-    expect(keys).toContain('t')
     expect(keys).toContain('h')
     rows.forEach((k: string) => seen.add(k))
     await ui.unmount()
@@ -335,14 +344,11 @@ test('30 findings for the person in a short pane are paged, the key row stays in
   expect(seen.has('row:d30')).toBe(true)
 })
 
-test('an open folded section leaves a paged Needs you on its first page, with a line saying how to see the rest', async ($, on) => {
+test('a long group with a sub-section open keeps the key line', async ($, on) => {
   counter = 0
   const all = [...Array.from({ length: 30 }, () => make({ kind: 'finding' })), make({ kind: 'finding', section: 'claudes-call' })]
-  const ui = await drawList($, on, all, { ...INITIAL_VIEW, openSection: 'claudes-call' }, 20)
-  const keys = await keysOf(ui)
-  expect(keys).toContain('t')
-  expect(keys).not.toContain('n')
-  expect(await ui.find({ type: 'Text', text: /more need you/ })).toBeDefined()
+  const ui = await drawList($, on, all, { ...INITIAL_VIEW, openSection: 'claudes-call', tab: 'g:Config file plan' }, 20)
+  expect(await keysOf(ui)).toContain('h')
   await ui.unmount()
 })
 
@@ -397,31 +403,46 @@ async function drawFocused($: any, on: any, all: Decision[], view: PaneView, row
   return $.ui.mount({ ...PANE, surface: 'terminal' })
 }
 
-test('tabs are chips, the open one on a claude background', async ($, on) => {
+test('there is no tab strip: each group is a bold heading with how many wait', async ($, on) => {
   counter = 0
-  const ui = await drawList($, on, [make(), make({ group: 'Sharing links' })], { ...INITIAL_VIEW, tab: 'g:Config file plan' })
-  const open = (await ui.find({ key: 'tab:g:Config file plan' }))!
-  const other = (await ui.find({ key: 'tab:g:Sharing links' }))!
-  expect(JSON.stringify(open)).toContain('"backgroundColor":"claude"')
-  expect(JSON.stringify(other)).not.toContain('"backgroundColor":"claude"')
-  expect(open.text).toMatch(/^ Config file plan 1 /)
+  const ui = await drawList($, on, [make(), make({ group: 'Sharing links' })])
+  expect((await ui.findAll({ type: 'Button' })).some((b: any) => /^tab:/.test(String(b.props.key)))).toBe(false)
+  expect(await ui.find({ key: 't' })).toBeUndefined()
+  const heading = (await ui.find({ type: 'Text', text: '◆ Config file plan · 1 waiting' }))!
+  expect(JSON.stringify(heading)).toContain('"bold":true')
   await ui.unmount()
 })
 
-test('section headings are bold with a dim count; folded ones are dim with ▸', async ($, on) => {
+test('a waiting group heading is bold; folded sub-headings are dim with ▸', async ($, on) => {
   const ui = await drawList($, on, bigReview())
-  const heading = (await ui.find({ type: 'Text', text: '◆ Needs you · 2' }))!
-  expect(JSON.stringify(heading)).toMatch(/"bold":true.*"Needs you"/)
-  expect(JSON.stringify(heading)).toMatch(/"dimColor":true.*" · 2"/)
-  expect((await ui.find({ type: 'Text', text: "▸ Claude's call · 9" }))?.props.dimColor).toBe(true)
+  const heading = (await ui.find({ type: 'Text', text: '◆ Config file plan · 2 waiting' }))!
+  expect(JSON.stringify(heading)).toMatch(/"bold":true.*"◆ Config file plan · 2 waiting"/)
+  expect((await ui.findAll({ type: 'Text' })).find((t: any) => t.text === "  ▸ Claude's call · 9")?.props.dimColor).toBe(true)
   await ui.unmount()
 })
 
-test('rules sit between the header and tabs, the tabs and sections, and the sections and keys', async ($, on) => {
+test('a group with an unread reply comes first and its heading says how many are new', async ($, on) => {
+  counter = 0
+  const minutes = (n: number) => new Date(Date.now() - n * 60_000).toISOString()
+  const all = [make({ group: 'Quiet', createdAt: minutes(60) }), make({ group: 'Busy', createdAt: minutes(60), thread: [{ who: 'claude', text: 'yes', at: minutes(1) }] }), make({ group: 'Newest', createdAt: minutes(60) })]
+  const ui = await drawList($, on, all)
+  const headings = [...new Set((await ui.findAll({ type: 'Text' })).map((t: any) => t.text as string).filter((t: string) => /^◆ \w+ · 1 waiting$/.test(t)))]
+  expect(headings).toEqual(['◆ Busy · 1 waiting', '◆ Newest · 1 waiting', '◆ Quiet · 1 waiting'])
+  expect(JSON.stringify(await ui.drawn())).toContain(' · ● 1 new')
+  await ui.unmount()
+})
+
+test('enter on a folded group heading unfolds it, and again folds it', () => {
+  const once = toggleGroup(INITIAL_VIEW, 'g:Shed')
+  expect(once.openGroups).toEqual(['g:Shed'])
+  expect(toggleGroup(once, 'g:Shed').openGroups).toEqual([])
+})
+
+test('rules sit above the groups and above the keys', async ($, on) => {
   counter = 0
   const ui = await drawList($, on, [make()])
   const rules = (await ui.findAll({ type: 'Text' })).filter((t: any) => /^─+$/.test(t.text))
-  expect(rules).toHaveLength(3)
+  expect(rules).toHaveLength(2)
   await ui.unmount()
 })
 
@@ -450,7 +471,7 @@ test('30 findings on a 9-row pane fit, with the key row in', async ($, on) => {
   const ui = await drawFocused($, on, thirty, { ...INITIAL_VIEW, ring: 'row:d1' }, 9)
   // The pane's own header takes one more row above the list.
   expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(8)
-  expect(await ui.find({ key: 't' })).toBeDefined()
+  expect(await ui.find({ key: 'h' })).toBeDefined()
   expect(await ui.find({ key: 'n' })).toBeDefined()
   await ui.unmount()
 })
@@ -651,7 +672,6 @@ test('at 49x9 with long titles the key line is in the tree and the list fits', a
   const long = Array.from({ length: 6 }, () => make({ title: 'A title long enough to need two lines at forty-nine columns wide' }))
   const ui = await drawFocused($, on, long, { ...INITIAL_VIEW, ring: 'row:d1' }, 9, 49)
   expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(8)
-  expect(await ui.find({ key: 't' })).toBeDefined()
   expect(await ui.find({ key: 'h' })).toBeDefined()
   await ui.unmount()
 })
@@ -661,6 +681,6 @@ test('a tall list with long titles keeps its key line within the rows', async ($
   const long = Array.from({ length: 12 }, () => make({ title: 'A title long enough to need two lines at forty-nine columns wide' }))
   const ui = await drawFocused($, on, long, { ...INITIAL_VIEW, ring: 'row:d1' }, 20, 49)
   expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(19)
-  expect(await ui.find({ key: 't' })).toBeDefined()
+  expect(await ui.find({ key: 'h' })).toBeDefined()
   await ui.unmount()
 })

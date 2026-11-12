@@ -108,6 +108,14 @@ async function mountHolding<M extends (props: any) => Promise<any>>($: { ui: { m
     }
   }
   const press = async (args: any) => {
+    // One list (row 265): a group with nothing waiting is folded, so a row in it is reached by unfolding its heading.
+    if (/^row:/.test(String(args.key)) && !(await ui.find({ key: args.key }))) {
+      for (const heading of (await ui.findAll({ type: 'Button' })).filter((b: any) => /^group:/.test(String(b.props.key)))) {
+        if (!(await ui.find({ key: args.key }))) {
+          await ui.press({ key: heading.props.key })
+        }
+      }
+    }
     const result = await ui.press(args)
     if (args.key !== 'b' && args.key !== 'confirm') {
       await hold()
@@ -236,7 +244,7 @@ test('the thread no longer answers: a typed answer goes in Something else, and b
   await ($ as any).ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'opt:3', origin: { kind: 'plugin' } })
   await ui.press({ key: 'opt:3' })
   await ui.input({ key: 'answer', text: 'from the root, after the move' })
-  expect(await ui.find({ key: 'row:d1' })).toBeDefined()
+  expect(await ui.find({ key: 'group:g:Config file plan' })).toBeDefined()
   expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 not sent')
   expect(seen.submitted).toEqual([])
   await ui.unmount()

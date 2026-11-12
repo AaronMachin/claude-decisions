@@ -57,6 +57,8 @@ export type PaneView = {
   answerDrafts: Record<string, string>
   /** Decision screen: `m` hides every option's detail but the highlighted one's (decision 217). */
   isDetailHidden: boolean
+  /** List: the groups with nothing waiting that the person unfolded (row 265). */
+  openGroups?: string[]
   /** Send screen: opened because the person answered the last waiting decision (row 270). */
   isLastOne?: boolean
   /** Session page: `m` folds done plan items to `✓ N done`. */
