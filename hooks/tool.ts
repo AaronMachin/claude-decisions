@@ -63,12 +63,14 @@ export const ADD_INPUT_SCHEMA = {
       type: 'array',
       minItems: 1,
       maxItems: 12,
-      description: 'Required for choice only; refused for every other kind.',
+      description: 'Required for choice only; refused for every other kind. Each may add why and whyNot, a sentence for and against it.',
       items: {
         type: 'object',
         properties: {
           label: { type: 'string' },
           changes: { type: 'string', description: 'What it would take and what changes if chosen.' },
+          why: { type: 'string', description: 'Optional: the case for it.' },
+          whyNot: { type: 'string', description: 'Optional: the case against it.' },
         },
         required: ['label'],
       },
@@ -119,7 +121,7 @@ export const UPDATE_INPUT_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        properties: { label: { type: 'string' }, changes: { type: 'string' } },
+        properties: { label: { type: 'string' }, changes: { type: 'string' }, why: { type: 'string' }, whyNot: { type: 'string' } },
         required: ['label'],
       },
     },
@@ -143,6 +145,27 @@ const LIST_INPUT_SCHEMA = { type: 'object', properties: {} }
 
 function isBlank(value: unknown): boolean {
   return typeof value !== 'string' || value.trim() === ''
+}
+
+/** The refusal for an option whose why or whyNot is not a string, or undefined. */
+function caseRefusal(tool: string, options: any[], firstNumber: number): string | undefined {
+  for (const [index, option] of options.entries()) {
+    for (const field of ['why', 'whyNot']) {
+      if (option?.[field] !== undefined && typeof option[field] !== 'string') {
+        return `${tool} refused: option ${firstNumber + index} ${field} must be a sentence (a string), or left out.`
+      }
+    }
+  }
+
+  return undefined
+}
+
+/** An option's why and whyNot, trimmed, the empty ones dropped. */
+function cases(option: any): { why?: string; whyNot?: string } {
+  return {
+    ...(isBlank(option?.why) ? {} : { why: String(option.why).trim() }),
+    ...(isBlank(option?.whyNot) ? {} : { whyNot: String(option.whyNot).trim() }),
+  }
 }
 
 const KINDS: Kind[] = ['choice', 'go-ahead', 'assumption', 'finding', 'question']
@@ -198,6 +221,10 @@ export function validateAdd(input: Record<string, any>, existingIds: string[]): 
       if (isBlank(option?.label)) {
         return `decisions_add refused: option ${index + 1} has no label.`
       }
+    }
+    const badCase = caseRefusal('decisions_add', options, 1)
+    if (badCase !== undefined) {
+      return badCase
     }
     const recommendation = input.recommendation
     const number = recommendation?.option
@@ -287,6 +314,10 @@ export function validateUpdate(input: Record<string, any>, d: Decision | undefin
       return `decisions_update refused: option ${d.options.length + index + 1} has no label.`
     }
   }
+  const badCase = caseRefusal('decisions_update', added, d.options.length + 1)
+  if (badCase !== undefined) {
+    return badCase
+  }
   const total = d.options.length + added.length
   if (total > 12) {
     return 'decisions_update refused: a decision has at most 12 options.'
@@ -318,6 +349,7 @@ export async function updateDecision($: StoreCtx, input: Record<string, any>): P
     id: d.options.length + index + 1,
     label: String(o.label).trim(),
     ...(isBlank(o.changes) ? {} : { changes: String(o.changes).trim() }),
+    ...cases(o),
     fromDiscussion: true,
   }))
   await write($, {
@@ -355,6 +387,7 @@ export async function addDecision($: StoreCtx, input: Record<string, any>): Prom
           id: index + 1,
           label: o.label.trim(),
           ...(isBlank(o.changes) ? {} : { changes: o.changes.trim() }),
+          ...cases(o),
         }))
   const made = await create($, {
     group: isBlank(input.group) ? undefined : String(input.group).trim(),

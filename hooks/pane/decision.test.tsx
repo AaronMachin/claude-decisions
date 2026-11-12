@@ -1251,3 +1251,52 @@ test('an open condition box is a bordered box indented under its option, with it
   expect(JSON.stringify(box)).toContain("enter saves it, Claude isn't asked")
   await ui.unmount()
 })
+
+const WITH_WHY = {
+  ...CHOICE,
+  options: [
+    { label: 'In the chat', changes: 'the comments stay here', why: 'nothing to set up', whyNot: 'nobody else sees them' },
+    { label: 'As PR comments', changes: 'each finding sits on its line' },
+  ],
+}
+
+test('why and why not draw under an option in full detail, in success and warning, through the inline renderer', async ($, on) => {
+  await begin($, on, { ...WITH_WHY, options: [{ ...WITH_WHY.options[0]!, why: 'nothing to `set up`' }, WITH_WHY.options[1]!] })
+  const ui = await $.ui.mount(rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const spans = (await ui.findAll({ type: 'Text' })) as any[]
+  const plus = spans.find(t => /^\+ nothing to set up$/.test(t.text))
+  const minus = spans.find(t => /^− nobody else sees them$/.test(t.text))
+  expect(plus?.props.color).toBe('success')
+  expect(minus?.props.color).toBe('warning')
+  expect(spans.find(t => t.text === 'set up')?.props.color).toBe('suggestion')
+  await ui.unmount()
+})
+
+test('an option without why or why not draws neither', async ($, on) => {
+  await begin($, on)
+  const ui = await $.ui.mount(rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect(await allTexts(ui)).not.toMatch(/^[+−] /m)
+  await ui.unmount()
+})
+
+test('with the detail hidden, why and why not show only under the highlighted option', async ($, on) => {
+  await begin($, on, { ...WITH_WHY, recommendation: { option: 2, reason: 'r' } })
+  const ui = await $.ui.mount(rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'm' })
+  expect(await allTexts(ui)).not.toContain('nothing to set up')
+  await ui.press({ key: 'opt:1' })
+  expect(await allTexts(ui)).toContain('+ nothing to set up')
+  await ui.unmount()
+})
+
+test('compact at 49x9 with why and why not keeps the key line at the top', async ($, on) => {
+  await begin($, on, WITH_WHY)
+  const ui = await $.ui.mount({ ...SCREEN, props: { ...SCREEN.props, bodyColumns: 49, scroll: { offset: 0, bodyRows: 9 } }, surface: 'terminal' as const })
+  await ui.press({ key: 'row:d1' })
+  const keys = await keysInOrder(ui)
+  expect(keys.indexOf('b')).toBeLessThan(keys.indexOf('opt:1'))
+  await ui.unmount()
+})

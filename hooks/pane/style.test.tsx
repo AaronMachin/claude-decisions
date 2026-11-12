@@ -84,6 +84,7 @@ test('wrapping at a marker leaves no marker on either line, and nothing is swall
   const code = wrapInline('run `npm test` now', 8)
   expect(code.map(textOf)).toEqual(['run npm', 'test now'])
   expect(code.flat().some(s => s.text.includes('`'))).toBe(false)
+  expect(wrapInline('run `npm test` now', 40)[0]).toEqual([{ text: 'run ' }, { text: 'npm test', code: true }, { text: ' now' }])
   const typed = wrapInline('an `unbalanced backtick here', 14)
   expect(typed.map(textOf).join(' ')).toBe('an `unbalanced backtick here')
 })

@@ -345,3 +345,29 @@ test('the tool text says a question is answered in the pane, in its Something el
   }
   expect(ADD_DESCRIPTION.slice(0, 4096)).toContain("Something else row")
 })
+
+test('an option may carry why and why not: stored trimmed, empty ones dropped, on add and on update', async () => {
+  const $ = fake()
+  const options = [
+    { label: 'Project root', changes: 'one file', why: '  every tool reads it  ', whyNot: 'a monorepo wants one per package' },
+    { label: 'Per package', why: '', whyNot: '   ' },
+  ]
+  expect(await addDecision($, { ...GOOD, options })).toHaveProperty('result')
+  const [d] = (await readAll($)).decisions
+  expect(d!.options[0]).toMatchObject({ why: 'every tool reads it', whyNot: 'a monorepo wants one per package' })
+  expect(d!.options[1]).not.toHaveProperty('why')
+  expect(d!.options[1]).not.toHaveProperty('whyNot')
+  await updateDecision($, { id: 'd1', summary: 'Added option 3, Both', addOptions: [{ label: 'Both', why: 'no move needed', whyNot: 'two places to look' }] })
+  expect((await readAll($)).decisions[0]!.options[2]).toMatchObject({ why: 'no move needed', whyNot: 'two places to look' })
+})
+
+test('why and why not must be strings', async () => {
+  const $ = fake()
+  expect(validateAdd({ ...GOOD, options: [{ label: 'A', why: 3 }] }, [])).toMatch(/why/)
+  expect(validateAdd({ ...GOOD, options: [{ label: 'A', whyNot: ['x'] }] }, [])).toMatch(/whyNot/)
+  await addDecision($, GOOD)
+  expect(await updateDecision($, { id: 'd1', summary: 's', addOptions: [{ label: 'B', why: true }] })).toHaveProperty('deny')
+  const schema = (ADD_INPUT_SCHEMA.properties.options.items as any).properties
+  expect(schema.why.type).toBe('string')
+  expect(schema.whyNot.type).toBe('string')
+})

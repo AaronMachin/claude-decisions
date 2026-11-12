@@ -280,7 +280,9 @@ export function wrapInline(text: string, width: number): Segment[][] {
       if (line.length === 0) {
         line = [...w]
       } else if (widthOf(line) + 1 + widthOf(w) <= room) {
-        line = [...line, { text: ' ' }, ...w]
+        // A space inside code keeps the code's look, so `set up` stays one run.
+        const joiner: Segment = line.at(-1)?.code && w[0]?.code ? { text: ' ', code: true } : { text: ' ' }
+        line = [...line, joiner, ...w]
       } else {
         lines.push(line)
         line = [...w]

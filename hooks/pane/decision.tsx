@@ -579,15 +579,20 @@ export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
   return hints
 }
 
-/** One paragraph under an option: its changes dim, the recommendation's reason in `success`. Drawn through the inline renderer. */
-export type DetailPart = { text: string; color?: string; key: string }
+/** One paragraph under an option: its changes dim, why and why not, the recommendation's reason in `success`. Drawn through the inline renderer. */
+export type DetailPart = { text: string; color?: string; dim?: boolean; key: string }
 
 /** Everything under an option, in full (decisions 217, 262): its changes and, on the recommended one, why. */
 export function detailParts(d: Decision, option: number): DetailPart[] {
   const o = drawnOptions(d).find(x => x.id === option)
   const why = d.recommendation?.option === option && !o?.isSomethingElse ? `Why: ${d.recommendation.reason}` : undefined
 
-  return [...(o?.changes ? [{ text: o.changes, key: 'changes' }] : []), ...(why ? [{ text: why, color: 'success', key: 'why' }] : [])]
+  return [
+    ...(o?.changes ? [{ text: o.changes, key: 'changes' }] : []),
+    ...(o?.why ? [{ text: `+ ${o.why}`, color: 'success', dim: true, key: 'for' }] : []),
+    ...(o?.whyNot ? [{ text: `− ${o.whyNot}`, color: 'warning', dim: true, key: 'against' }] : []),
+    ...(why ? [{ text: why, color: 'success', key: 'why' }] : []),
+  ]
 }
 
 /** An option's detail as the lines drawn at `width`, markers gone. */
@@ -1126,7 +1131,7 @@ export function DecisionView($: any, props: Props): any {
       lineColour,
       DETAIL_INDENT - 1,
       layout.isFull || isHighlighted
-        ? detailParts(d, o.id).flatMap(part => InlineLines(ui, part.text, width - DETAIL_INDENT, part.color ? { color: part.color } : { dimColor: true }, `detail:${o.id}:${part.key}`))
+        ? detailParts(d, o.id).flatMap(part => InlineLines(ui, part.text, width - DETAIL_INDENT, part.color ? { color: part.color, ...(part.dim ? { dimColor: true } : {}) } : { dimColor: true }, `detail:${o.id}:${part.key}`))
         : [],
     )
     const answerBox =

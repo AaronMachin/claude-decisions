@@ -10,6 +10,10 @@ export type Option = {
   label: string
   /** What it would take and what changes if chosen. */
   changes?: string
+  /** The case for it, drawn `+ …` under its changes (row 260). */
+  why?: string
+  /** The case against it, drawn `− …` under its changes. */
+  whyNot?: string
   fromDiscussion?: boolean
 }
 
