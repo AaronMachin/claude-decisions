@@ -57,14 +57,14 @@ The kind's own colour also marks the kind word in the decision's header: an inve
 
 ### The list
 
-- Rows are two lines on tall panes: the title (the id in bold before it), then a dim line with the kind, the id's age (`asked 4m ago`) and, when answered, the answer in the person's words (`1 Red · only if in stock`, `Something else: …`). A row with an unread reply keeps 0.2.0's reply line in place of the dim line. Compact panes keep one line per row.
+- Rows are two lines on tall panes: the title (the id in bold before it, wrapped onto one more line when it doesn't fit, 258), then a dim line with the kind, the id's age (`asked 4m ago`) and, when answered, the answer in the person's words (`1 Red · only if in stock`, `Something else: …`). A row with an unread reply keeps 0.2.0's reply line in place of the dim line. Compact panes keep one line per row.
 - Section headings get marks: `◆ Needs you`, `✓ Answered`, `▸ Claude's call` (folded), with the count dim after a ` · `.
 - The keys-off line is one line: `<focus key> to use`, at the right of the header, not a sentence under it.
 - The all-clear (extra 6): with nothing waiting, under `✓ Nothing needs you`, `Last sent <time> · <n> answers` and up to three of the latest sent decisions as rows, then `New decisions land here.` dim.
 
 ### The decision screen
 
-- Header: the bar, the inverse kind label, the title in bold. Under it a dim line: id, group, and `asked 4m ago`. The "N of M answered" count shows only when the group has two or more decisions.
+- Header: the bar, the inverse kind label, the title in bold, wrapped in full onto as many lines as it needs (258); `keys on` / `ctrl+q to use` moves to the right of the crumb line. Under it a dim line: id, group, and `asked 4m ago`. The "N of M answered" count shows only when the group has two or more decisions.
 - What it waits on and holds up (extra 5), under the header when either exists: `waits on` then each id, title and state mark (`✓` answered, `◆` waiting), and `holds up` then the decisions that depend on it and the decision's `blocks` text. These move out of the `m` context lines.
 - Options keep 0.2.0's content. The ringed option has the selection background across the row, not a bordered card, so the bar can show. Something else lines up with the options (same number column).
 - The ask box has a border, its placeholder dim, and the cursor after the placeholder, not on it.

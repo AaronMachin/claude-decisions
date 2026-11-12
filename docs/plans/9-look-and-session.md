@@ -45,7 +45,7 @@
 
 **Interfaces:** Consumes Task 1. Produces `rowSecondLine(d, seen, now): { text: string; colour?: string }` (kind · asked Nm ago · answer, or the unread reply, or `↗ sent HH:MM · <answer>`), `allClear(all: Decision[]): Decision[]` (up to three latest sent).
 
-- [ ] Tests first: a row starts `▌` in its bar colour; the id is bold; the second line on a tall pane, none on compact; headings `◆ Needs you · 1`, `✓ Answered · 2`; header right reads `ctrl+q to use` and there is no keys-off sentence; with nothing waiting, `Last sent 12:04 · 2 answers` and the rows; at 49x9 the key line is in the tree (review focus 1). Fail, implement, pass, commit.
+- [ ] Tests first: a long title on a tall pane wraps onto a second line, cut with `…` only on compact (258); a row starts `▌` in its bar colour; the id is bold; the second line on a tall pane, none on compact; headings `◆ Needs you · 1`, `✓ Answered · 2`; header right reads `ctrl+q to use` and there is no keys-off sentence; with nothing waiting, `Last sent 12:04 · 2 answers` and the rows; at 49x9 the key line is in the tree (review focus 1). Fail, implement, pass, commit.
 
 ## Task 3: the decision screen in direction B (251, 252 extras 1, 2, 5)
 
@@ -53,7 +53,7 @@
 
 **Interfaces:** Consumes Task 1. Produces `relations(d, all): { waitsOn: { id: string; title: string; state: string }[]; holdsUp: { id: string; title: string }[]; blocks?: string }`.
 
-- [ ] Tests first: the inverse kind label in its colour; `asked 4m ago`; no "N of M answered" for a one-decision group; `waits on` and `holds up` lines from `dependsOn`, dependents and `blocks`, and no longer in the `m` lines; the ringed option has a background and no card border; Something else's number column matches the options; the ask box has a border and its placeholder isn't under the cursor; thread entries `you · 2m  text`; sources are `Link` elements with a `file://` href for paths; backticks in a scenario draw as code; 12 options at 49x9 keep every number and the key line (review focus 1). Fail, implement, pass, commit.
+- [ ] Tests first: a 120-character title is drawn in full across lines in the header, with `keys on` on the crumb line (258); the inverse kind label in its colour; `asked 4m ago`; no "N of M answered" for a one-decision group; `waits on` and `holds up` lines from `dependsOn`, dependents and `blocks`, and no longer in the `m` lines; the ringed option has a background and no card border; Something else's number column matches the options; the ask box has a border and its placeholder isn't under the cursor; thread entries `you · 2m  text`; sources are `Link` elements with a `file://` href for paths; backticks in a scenario draw as code; 12 options at 49x9 keep every number and the key line (review focus 1). Fail, implement, pass, commit.
 
 ## Task 4: what changed (252 extra 3)
 
