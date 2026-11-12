@@ -646,7 +646,8 @@ export function decisionLayout(
 ): DecisionLayout {
   const compact = isCompact(rows)
   const inner = width - cardInset(compact)
-  const keysOff = isFocused ? [] : keysOffLines(width, compact)
+  // The keys-off sentence became `<key> to use` at the header's right (row 251).
+  const keysOff: string[] = []
   const drawn = drawnOptions(d)
   const count = drawn.length
   const scenario = wrapLines(d.scenario, width)

@@ -32,6 +32,9 @@ export function barColour(d: Pick<Decision, 'kind' | 'state'>): string | undefin
   return kindColour(d.kind)
 }
 
+/** The background of the row or option the ring is on (row 251): the theme has no selection colour, so the chips' grey. */
+export const SELECTED_BG = 'subtle'
+
 /** Text props for a colour that may be `dim` or the plain text colour. */
 export function colourProps(colour: string | undefined): { color?: string; dimColor?: boolean } {
   if (colour === 'dim') {

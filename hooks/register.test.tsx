@@ -5,6 +5,7 @@ import { tabsFor } from './pane/list'
 import { ringTarget } from './pane/render'
 import { NUDGE } from './integrate'
 import { ADD_TOOL, LIST_TOOL, UPDATE_TOOL } from './tool'
+import { focusKeyName } from './focus-key'
 
 type On = (event: string, hook: (...args: any[]) => any) => unknown
 
@@ -191,10 +192,10 @@ test('the header says keys on or keys off, on every screen', async ($, on) => {
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
   for (const isFocused of [true, false]) {
     const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, isFocused }, surface: 'terminal' })
-    expect(await ui.find({ type: 'Text', text: isFocused ? 'keys on' : 'keys off' })).toBeDefined()
-    expect(!!(await ui.find({ type: 'Text', text: /pane focus key/ }))).toBe(!isFocused)
+    expect(await ui.find({ type: 'Text', text: isFocused ? 'keys on' : `${focusKeyName()} to use` })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /pane focus key/ })).toBeUndefined()
     await ui.press({ key: 'row:d1' })
-    expect(await ui.find({ type: 'Text', text: isFocused ? 'keys on' : 'keys off' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: isFocused ? 'keys on' : `${focusKeyName()} to use` })).toBeDefined()
     await ui.press({ key: 'b' })
     await ui.unmount()
   }
@@ -215,7 +216,7 @@ test('enter on the first row opens the decision; a number highlights, the same n
   await ringOn($, 'opt:2')
   await ui.press({ key: 'opt:2' })
   expect(await ui.find({ key: 'row:d1' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'Answered  1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '✓ Answered · 1' })).toBeDefined()
   expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 ready')
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/Per package {2}✓ your answer/)
@@ -264,7 +265,7 @@ test('a parked draft survives hiding the pane, and an empty enter cancels', asyn
   expect(await ui.find({ key: 'park' })).toBeUndefined()
   await ui.press({ key: 'p' })
   await ui.input({ key: 'park', text: 'waiting on design' })
-  expect(await ui.find({ type: 'Text', text: 'Parked  1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Parked · 1' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -678,7 +679,7 @@ test('compact: a digit for an option on another page draws its page and highligh
   expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
   await ringOn($, 'opt:9')
   await ui.press({ key: 'opt:9' })
-  expect(await ui.find({ type: 'Text', text: 'Answered  1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '✓ Answered · 1' })).toBeDefined()
   await ui.unmount()
 })
 

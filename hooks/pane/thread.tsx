@@ -2,7 +2,9 @@ import type { PaneView, PendingQuestion } from '../../types'
 import { RUN, askQuestion, currentMode, resendToFork } from '../discuss'
 import type { Decision, ThreadEntry } from '../store'
 import { focusLater, focusTo, openingOption, setView } from './decision'
-import { markSeen } from './seen'
+import { markSeen, when } from './seen'
+
+export { when }
 import { truncate } from './list'
 import { Rule } from './look'
 
@@ -15,7 +17,6 @@ const STATE_TEXT: Record<string, string> = {
   sent: 'answered and sent',
   parked: 'parked',
 }
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const FIXED_ROWS = 18
 
 /** The dim line under a question that has no reply yet. */
@@ -39,18 +40,6 @@ export function noteFor(p: PendingQuestion, run: string): string {
 /** True when `f` can send this question to the fork. */
 export function isResendable(p: PendingQuestion, run: string): boolean {
   return p.status === 'queued' || p.status === 'failed' || p.run !== run
-}
-
-/** `10:42` for today, `4 Nov 10:42` for any other day. */
-export function when(at: string, now: Date = new Date()): string {
-  const t = new Date(at)
-  if (Number.isNaN(t.getTime())) {
-    return ''
-  }
-  const hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
-  const isToday = t.getFullYear() === now.getFullYear() && t.getMonth() === now.getMonth() && t.getDate() === now.getDate()
-
-  return isToday ? hm : `${t.getDate()} ${MONTHS[t.getMonth()]} ${hm}`
 }
 
 /** Rows an entry takes: its label and wrapped text, or one row for a ↻ line. */

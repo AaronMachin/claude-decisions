@@ -2,7 +2,7 @@ import type { PaneView } from '../../types'
 import { notePaneFocus } from '../band'
 import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
-import { DecisionView, INITIAL_VIEW, PANE_ID, cancelHeldDigit, focusLater, focusTo, keysOffLines, openingOption, readView, setView } from './decision'
+import { DecisionView, INITIAL_VIEW, PANE_ID, cancelHeldDigit, focusLater, focusTo, openingOption, readView, setView } from './decision'
 import { Header, isCompact } from './look'
 import { ThreadView } from './thread'
 import type { Tab } from './list'
@@ -155,11 +155,6 @@ function header(ui: any, width: number, isFocused: boolean, crumb: string | unde
   return (
     <Box key="top" flexDirection="column">
       {Header(ui, 'Decisions', isFocused, crumb, width)}
-      {(isFocused ? [] : keysOffLines(width, isCompact(rows))).map((line, index) => (
-        <Text key={`keys-off:${index}`} dimColor>
-          {line}
-        </Text>
-      ))}
     </Box>
   )
 }

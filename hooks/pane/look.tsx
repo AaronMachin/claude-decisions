@@ -1,3 +1,5 @@
+import { focusKeyName } from '../focus-key'
+
 /** The pieces of the pane's look (row 170) every screen shares: rules, key hints, the header, the card. */
 
 /** Below this many rows (`scroll.bodyRows`) the pane draws the compact layout (row 161). */
@@ -180,9 +182,14 @@ export function KeyHints(ui: { Box: any; Text: any; Button: any }, hints: Hint[]
 /** Columns left clear at the header's right edge, where the engine draws the pane's close mark. */
 export const HEADER_RIGHT_GAP = 3
 
+/** What the header's right says: `keys on`, or the focus key and `to use` while the prompt has the keys (row 251). */
+export function keysState(isFocused: boolean): string {
+  return isFocused ? 'keys on' : `${focusKeyName()} to use`
+}
+
 export function Header(ui: { Box: any; Text: any }, title: string, isFocused: boolean, crumb: string | undefined, width: number): any {
   const { Box, Text } = ui
-  const state = isFocused ? 'keys on' : 'keys off'
+  const state = keysState(isFocused)
   const usable = width - HEADER_RIGHT_GAP
   const room = Math.max(1, usable - state.length - 1)
   const shown = cut(title, room)

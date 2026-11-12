@@ -189,7 +189,7 @@ test('with the Focus key setting the band and the keys-off line name that key', 
   expect(await band.find({ type: 'Text', text: /^1 decision waiting · ctrl\+q to answer, your draft stays/ })).toBeDefined()
   await band.unmount()
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await pane.find({ type: 'Text', text: /Press the pane focus key \(ctrl\+q unless/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'ctrl+q to use' })).toBeDefined()
   await pane.unmount()
 })
 

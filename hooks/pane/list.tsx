@@ -3,10 +3,11 @@ import type { Decision } from '../store'
 import { focusLater, openDecision, readView, ringMark, setView } from './decision'
 import { previewLines } from '../send'
 import { SETTLED_TEXT } from '../discuss'
-import { Card, KeyHints, Rule, cardFrame, cardInset, isCompact, wrapLines } from './look'
+import { KeyHints, Rule, capLines, isCompact, wrapLines } from './look'
 import type { Hint } from './look'
-import { ago, hasUnread, unreadReplies } from './seen'
+import { ago, hasUnread, unreadReplies, when } from './seen'
 import type { Seen } from './seen'
+import { Bar, SELECTED_BG, barColour, colourProps } from './style'
 import { FOLDED, answeredRoom, assumptionsIn, firstKey, foldAll, foldedRows, isWaiting, movePage, pageOf, pageSize, sectionsFor, toggleSection } from './sections'
 
 /** `hasUnread`: a decision in it has a reply from Claude the person hasn't opened (its chip ends ●). */
@@ -243,6 +244,74 @@ export function unreadLine(d: Decision, seen: Seen, now: Date = new Date()): str
   return `${last.who} · ${ago(last.at, now)}: ${last.text.split('\n')[0]}`
 }
 
+/** The answer in the person's words: `1 Red · only if in stock`, `Something else: …`, or `discussed`. */
+export function answerWords(d: Decision): string {
+  const o = d.options.find(x => x.id === d.answer?.option)
+  if (o) {
+    return d.answer?.condition !== undefined ? `${o.id} ${o.label} · only if ${d.answer.condition}` : `${o.id} ${o.label}`
+  }
+  if (d.answer?.text === undefined) {
+    return ''
+  }
+
+  return d.answer.text === SETTLED_TEXT ? 'discussed' : `${SOMETHING_ELSE_WORDS}: ${d.answer.text}`
+}
+
+const SOMETHING_ELSE_WORDS = 'Something else'
+
+/**
+ * A row's second line on a tall pane (row 251): the unread reply in `claude`; a parked or reopened row's own line;
+ * a sent row's `↗ sent 12:04 · <answer>`; else the kind, how long ago it was asked and, once answered, the answer.
+ */
+export function rowSecondLine(d: Decision, seen: Seen, now: Date = new Date(), isParkedTab = false): { text: string; colour?: string } {
+  const reply = isWaiting(d) && hasUnread(d, seen) ? unreadLine(d, seen, now) : undefined
+  if (reply !== undefined) {
+    return { text: reply, colour: 'claude' }
+  }
+  const own = secondLine(d, isParkedTab)
+  if (own !== undefined) {
+    return { text: own }
+  }
+  const answer = answerWords(d)
+  if (d.state === 'sent') {
+    return { text: [`↗ sent${d.sentAt ? ` ${when(d.sentAt, now)}` : ''}`, answer].filter(Boolean).join(' · ') }
+  }
+  const age = ago(d.createdAt, now)
+
+  return { text: [d.isTask ? 'to do' : d.kind, age === '' ? '' : `asked ${age}`, d.state === 'ready' ? answer : ''].filter(Boolean).join(' · ') }
+}
+
+/** Up to three of the latest sent decisions, newest first, for the all-clear (row 252, extra 6). */
+export function allClear(all: Decision[]): Decision[] {
+  return all
+    .filter(d => d.state === 'sent' && d.sentAt !== undefined)
+    .map((d, index) => ({ d, index }))
+    .sort((a, b) => (a.d.sentAt === b.d.sentAt ? a.index - b.index : a.d.sentAt! < b.d.sentAt! ? 1 : -1))
+    .slice(0, 3)
+    .map(x => x.d)
+}
+
+/** `Last sent 12:04 · 2 answers`: the newest send and how many answers went with it. */
+export function lastSentLine(all: Decision[]): string | undefined {
+  const latest = allClear(all)[0]
+  if (latest === undefined) {
+    return undefined
+  }
+  const count = all.filter(d => d.state === 'sent' && d.sentAt === latest.sentAt).length
+
+  return `Last sent ${when(latest.sentAt!)} · ${count} ${count === 1 ? 'answer' : 'answers'}`
+}
+
+/** The title lines a tall row draws: the id and title wrapped onto at most two lines, cut with `…` past that (row 258). */
+export function titleLines(d: Decision, room: number): string[] {
+  return capLines(`${d.id} ${d.title}`, room, 2).lines
+}
+
+/** Lines a row takes: one on a compact pane; tall, its title lines and the second line. */
+export function rowLines(d: Decision, width: number, compact: boolean): number {
+  return compact ? 1 : titleLines(d, width - 5).length + 1
+}
+
 /** One row, padded so the meta sits at the right edge. The meta is left out when the title wouldn't fit whole beside it (row 168). */
 export function rowText(d: Decision, width: number): string {
   const meta = rowMeta(d, width)
@@ -302,55 +371,103 @@ export function ListView($: any, props: ListProps): any {
   const mark = (key: string) => `${ringMark(key, view.ring, isFocused)} `
   // Tall, the look adds a rule above the tabs and the ringed row is a card two rows taller. Compact, the rules
   // and the blank line before the keys go, so the list fits 9 rows.
-  const lookRows = compact ? -2 : 1 + cardFrame(false)
+  // Tall, the look adds a rule above the tabs. Compact, the rules and the blank line before the keys go, so the list fits 9 rows.
+  const lookRows = compact ? -2 : 1
 
   const row = (d: Decision) => {
     const isUnread = isWaiting(d) && hasUnread(d, seen)
-    const reply = isUnread && !compact ? unreadLine(d, seen) : undefined
-    const second = reply === undefined ? secondLine(d, isParkedTab) : undefined
     const isRinged = isFocused && view.ring === `row:${d.id}`
-    const room = width - 2 - (isRinged ? cardInset(compact) : 0)
-    const tint = isRinged && compact ? 'claude' : undefined
-    const body = [
-      <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d, tab?.key)}>
-        {mark(`row:${d.id}`)}
-        {isUnread ? <Text color="claude">● </Text> : ''}
-        {d.state === 'sent' ? <Text dimColor>{rowText(d, room - (isUnread ? 2 : 0))}</Text> : <Text color={tint} bold={isUnread || undefined}>{rowText(d, room - (isUnread ? 2 : 0))}</Text>}
-      </Button>,
-      reply !== undefined ? <Text key={`reply:${d.id}`} color="claude">{truncate(`     ${reply}`, room)}</Text> : null,
-      second !== undefined ? <Text key={`second:${d.id}`} dimColor>{truncate(`     ${second}`, room)}</Text> : null,
-    ]
+    const look = { ...(d.state === 'sent' ? { dimColor: true } : {}), ...(isRinged ? { backgroundColor: SELECTED_BG } : {}), bold: isUnread || undefined }
+    // The bar, the ring's mark and a space come before the text.
+    const room = width - 3 - (isUnread ? 2 : 0)
+    const dot = isUnread ? <Text color="claude">● </Text> : ''
+    if (compact) {
+      return (
+        <Box key={`box:${d.id}`}>
+          {Bar(ui, barColour(d), `bar:${d.id}`)}
+          <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d, tab?.key)}>
+            {mark(`row:${d.id}`)}
+            {dot}
+            <Text {...look}>{rowText(d, room + 2)}</Text>
+          </Button>
+        </Box>
+      )
+    }
+    const lines = titleLines(d, room)
+    const firstLine = lines[0] ?? d.id
+    const second = rowSecondLine(d, seen, new Date(), isParkedTab)
 
-    return isRinged ? Card(ui, compact, `box:${d.id}`, body) : (
+    return (
       <Box key={`box:${d.id}`} flexDirection="column">
-        {body}
+        <Box key={`line:${d.id}`}>
+          {Bar(ui, barColour(d), `bar:${d.id}`)}
+          <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d, tab?.key)}>
+            {mark(`row:${d.id}`)}
+            {dot}
+            <Text {...look}>
+              <Text bold>{d.id}</Text>
+              {firstLine.slice(d.id.length)}
+            </Text>
+          </Button>
+        </Box>
+        {lines.slice(1).map((line, index) => (
+          <Box key={`more:${d.id}:${index}`}>
+            {Bar(ui, barColour(d))}
+            <Text {...look}>{`  ${isUnread ? '  ' : ''}${line}`}</Text>
+          </Box>
+        ))}
+        <Box key={`under:${d.id}`}>
+          {Bar(ui, barColour(d))}
+          <Text key={`second:${d.id}`} {...colourProps(second.colour ?? 'dim')}>
+            {truncate(`  ${second.text}`, width - 1)}
+          </Text>
+        </Box>
       </Box>
     )
   }
-  const heading = (name: string, count: number) => (
+  const heading = (name: string, count: number, markText?: string, markColour?: string) => (
     <Text key={`heading:${name}`}>
+      {markText ? <Text color={markColour}>{`${markText} `}</Text> : ''}
       <Text bold>{name}</Text>
-      <Text dimColor>{`  ${count}`}</Text>
+      <Text dimColor>{` · ${count}`}</Text>
     </Text>
   )
+  const lines = (d: Decision) => rowLines(d, width, compact)
+  const recent = isIdle ? allClear(tabs.flatMap(t => t.decisions)) : []
+  const recentIds = new Set(recent.map(d => d.id))
+  const answeredRows = sections.answered.filter(d => !recentIds.has(d.id))
+  const lastSent = isIdle ? lastSentLine(tabs.flatMap(t => t.decisions)) : undefined
+  const clearRows = isIdle ? (lastSent ? 1 : 0) + recent.reduce((n, d) => n + lines(d), 0) + 1 : 0
+  // Tall rows take two lines or three, so a page holds rows by their tallest.
+  const perRow = (list: Decision[]) => (compact ? 1 : Math.max(2, ...list.map(lines)))
   const elsewhereRows = elsewhere ? 1 : 0
-  const needsReserve = 13 + lookRows + elsewhereRows + (view.openSection !== undefined ? 5 : 0)
-  const needsSize = pageSize(rows, needsReserve)
+  const needsReserve = 13 + lookRows + elsewhereRows + clearRows + (view.openSection !== undefined ? 5 : 0)
+  const needsSize = Math.max(1, Math.floor(pageSize(rows, needsReserve) / perRow(sections.needsYou)))
   const needsPaged = sections.needsYou.length > needsSize
   const needsPage = pageOf(sections.needsYou, view.openSection === undefined ? view.sectionPage : 0, needsSize)
   const needsShown = needsPaged ? needsPage.rows : sections.needsYou
-  const needsYouLines = needsShown.reduce((n, d) => n + (secondLine(d, isParkedTab) === undefined && (compact || !hasUnread(d, seen)) ? 1 : 2), 0)
-  const answeredShown = sections.answered.slice(0, answeredRoom(rows, needsYouLines, view.openSection !== undefined))
-  const answeredHidden = sections.answered.length - answeredShown.length
-  const fixedRows = 9 + lookRows + elsewhereRows + needsYouLines + (answeredShown.length === 0 ? 0 : answeredShown.length + 1 + (answeredHidden > 0 ? 1 : 0)) + (batch.length >= 2 ? 1 : 0)
-  const size = pageSize(rows, fixedRows)
+  const needsYouLines = needsShown.reduce((n, d) => n + lines(d), 0) + clearRows
+  const answeredRoomLines = answeredRoom(rows, needsYouLines, view.openSection !== undefined)
+  const answeredShown: Decision[] = []
+  for (let used = 0, i = 0; i < answeredRows.length && (answeredShown.length === 0 || used + lines(answeredRows[i]!) <= answeredRoomLines); i++) {
+    if (used + lines(answeredRows[i]!) > answeredRoomLines && answeredShown.length === 0 && !compact && answeredRoomLines < 2) {
+      break
+    }
+    answeredShown.push(answeredRows[i]!)
+    used += lines(answeredRows[i]!)
+  }
+  const answeredHidden = answeredRows.length - answeredShown.length
+  const answeredLines = answeredShown.reduce((n, d) => n + lines(d), 0)
+  const fixedRows = 9 + lookRows + elsewhereRows + needsYouLines + (answeredShown.length === 0 ? 0 : answeredLines + 1 + (answeredHidden > 0 ? 1 : 0)) + (batch.length >= 2 ? 1 : 0)
+  const size = (list: Decision[]) => Math.max(1, Math.floor(pageSize(rows, fixedRows) / perRow(list)))
   const foldedHeading = (f: (typeof FOLDED)[number]) => {
     const all = tab ? foldedRows(tab, f.section) : []
     if (all.length === 0) {
       return null
     }
     const isOpen = view.openSection === f.section
-    const page = pageOf(all, view.sectionPage, size)
+    const sized = size(all)
+    const page = pageOf(all, view.sectionPage, sized)
 
     return (
       <Box key={`fold:${f.section}`} flexDirection="column">
@@ -361,19 +478,19 @@ export function ListView($: any, props: ListProps): any {
           onPress={() => setView($, v => toggleSection(v, f.section))}
         >
           {mark(`section:${f.section}`)}
-          <Text dimColor>{`${isOpen ? '▾' : '▸'} ${f.name}  ${all.length}`}</Text>
+          <Text dimColor>{`${isOpen ? '▾' : '▸'} ${f.name} · ${all.length}`}</Text>
         </Button>
         {isOpen ? page.rows.map(row) : null}
         {isOpen && (page.hasEarlier || page.hasNext) ? (
           <Box>
             {page.hasEarlier ? (
-              <Button key="o" hotkey="o" plain onPress={() => setView($, v => movePage(v, -1, all.length, size))}>
+              <Button key="o" hotkey="o" plain onPress={() => setView($, v => movePage(v, -1, all.length, sized))}>
                 {'o earlier  '}
               </Button>
             ) : null}
             {page.hasNext ? (
-              <Button key="n" hotkey="n" plain onPress={() => setView($, v => movePage(v, 1, all.length, size))}>
-                {`n next ${Math.min(size, page.remaining)} more`}
+              <Button key="n" hotkey="n" plain onPress={() => setView($, v => movePage(v, 1, all.length, sized))}>
+                {`n next ${Math.min(sized, page.remaining)} more`}
               </Button>
             ) : null}
           </Box>
@@ -427,7 +544,10 @@ export function ListView($: any, props: ListProps): any {
         <Text key="idle" color="success">
           {truncate(readyCount > 0 ? `✓ Nothing needs you · ${readyCount} ready to send (s)` : '✓ Nothing needs you', width)}
         </Text>
-      ) : isParkedTab ? null : heading('Needs you', sections.needsYou.length)}
+      ) : isParkedTab ? null : heading('Needs you', sections.needsYou.length, '◆')}
+      {lastSent ? <Text key="last-sent" dimColor>{truncate(lastSent, width)}</Text> : null}
+      {recent.map(row)}
+      {isIdle ? <Text key="land-here" dimColor>New decisions land here.</Text> : null}
       {elsewhere ? (
         <Button key="goto-waiting" plain autoFocus onPress={() => void showTab($, tabs, elsewhere.tab.key)}>
           {mark('goto-waiting')}
@@ -467,7 +587,7 @@ export function ListView($: any, props: ListProps): any {
       {FOLDED.map(foldedHeading)}
       {sections.parked.length > 0 ? heading('Parked', sections.parked.length) : null}
       {sections.parked.map(row)}
-      {sections.answered.length > 0 ? heading('Answered', sections.answered.length) : null}
+      {answeredRows.length > 0 ? heading('Answered', answeredRows.length, '✓', 'success') : null}
       {answeredShown.map(row)}
       {answeredHidden > 0 ? <Text dimColor>{`     ${answeredHidden} more answered`}</Text> : null}
       {unreadable > 0 ? <Text dimColor>{`${unreadable} decision file${unreadable === 1 ? '' : 's'} couldn't be read`}</Text> : null}

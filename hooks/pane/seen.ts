@@ -75,6 +75,18 @@ export function ago(at: string, now: Date = new Date()): string {
   return `${t.getDate()} ${MONTHS[t.getMonth()]} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
 }
 
+/** `10:42` for today, `4 Nov 10:42` for any other day. */
+export function when(at: string, now: Date = new Date()): string {
+  const t = new Date(at)
+  if (Number.isNaN(t.getTime())) {
+    return ''
+  }
+  const hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
+  const isToday = t.getFullYear() === now.getFullYear() && t.getMonth() === now.getMonth() && t.getDate() === now.getDate()
+
+  return isToday ? hm : `${t.getDate()} ${MONTHS[t.getMonth()]} ${hm}`
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 let frozen: string[] | undefined
