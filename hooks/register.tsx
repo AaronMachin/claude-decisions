@@ -6,6 +6,7 @@ import { changed, followFocus, isTabKey, openFocused, openForNewDecision, refres
 import { configure, onTurnComplete, onTurnStart } from './discuss'
 import { addContextBlock, addRulesSection, answerAskUserQuestion, noteAtSessionStart, noteOnSubmit, nudgeAfterTurn, onCompact, refuseSubagent } from './integrate'
 import { PANE_ID } from './pane/decision'
+import { startProblem } from './problem'
 import { SESSION_TOOL, addCapturedLinks, captureLinks, carryOver, sessionTool } from './session'
 import { ADD_TOOL, ANSWER_TOOL, LIST_TOOL, UPDATE_TOOL, addDecision, answerDecision, listDecisions, registerTools, updateDecision } from './tool'
 
@@ -29,7 +30,7 @@ export const register: Register = (on, options) => {
     if (refused) {
       return refused
     }
-    const answer = await addDecision($, e)
+    const answer = await addDecision($, e, d => startProblem($, d))
     if ('result' in answer) {
       await openForNewDecision($)
     }
@@ -44,7 +45,7 @@ export const register: Register = (on, options) => {
     if (refused) {
       return refused
     }
-    const answer = await updateDecision($, e)
+    const answer = await updateDecision($, e, d => startProblem($, d))
     if ('result' in answer) {
       await changed($)
     }

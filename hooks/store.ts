@@ -34,6 +34,8 @@ export type ThreadEntry = {
   at: string
   /** On a ↻ line: the index into `Decision.revisions` of the version it replaced. */
   revision?: number
+  /** On a `quick` reply: the small model answered it under `auto` (question triage), so the pane offers the main session instead. */
+  via?: 'triage'
 }
 
 export type Revision = {
@@ -51,6 +53,10 @@ export type Decision = {
   section: Section
   kind: Kind
   title: string
+  /** One line, at most 140 characters, saying what the decision is about. */
+  problem?: string
+  /** Who wrote `problem`: Claude through a tool, or the small model. The model never replaces Claude's. */
+  problemBy?: 'claude' | 'model'
   scenario: string
   options: Option[]
   recommendation?: { option: number; reason: string }

@@ -10,9 +10,10 @@
     "discussionReplies": {
       "type": "string",
       "title": "Discussion replies",
-      "description": "Who answers a question asked in a decision's discussion.",
-      "default": "main session",
+      "description": "Who answers a question asked in a decision's discussion. auto: a small model answers what the decision itself covers and hands the rest to the main session.",
+      "default": "auto",
       "options": [
+        "auto",
         "main session",
         "fork",
         "quick model"
