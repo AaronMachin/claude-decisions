@@ -1,6 +1,6 @@
 import type { PaneView, PendingQuestion } from '../../types'
 import { RUN, askQuestion, currentMode, resendToFork } from '../discuss'
-import type { Decision, ThreadEntry } from '../store'
+import type { Decision, Revision, ThreadEntry } from '../store'
 import { focusLater, focusTo, openingOption, setView } from './decision'
 import { markSeen, when } from './seen'
 
@@ -18,6 +18,40 @@ const STATE_TEXT: Record<string, string> = {
   parked: 'parked',
 }
 const FIXED_ROWS = 18
+
+/** One thing a revision changed, as the thread draws it under its ↻ line (row 252, extra 3). */
+export type RevisionChange =
+  | { kind: 'added'; text: string }
+  | { kind: 'recommendation'; text: string }
+  | { kind: 'renamed'; text: string; old: string; number: number; label: string }
+
+/** What changed from the version before a revision to the one after it: options added or renamed, the recommendation moving. */
+export function revisionChanges(before: Revision['before'], after: Pick<Decision, 'options' | 'recommendation'>): RevisionChange[] {
+  const added: RevisionChange[] = after.options
+    .filter(o => !before.options.some(b => b.id === o.id))
+    .map(o => ({ kind: 'added', text: `+ ${o.id}  ${o.label}` }))
+  const renamed: RevisionChange[] = after.options.flatMap(o => {
+    const was = before.options.find(b => b.id === o.id)
+    return was && was.label !== o.label ? [{ kind: 'renamed' as const, text: `~ ${o.id}  ${was.label} → ${o.label}`, old: was.label, number: o.id, label: o.label }] : []
+  })
+  const from = before.recommendation?.option
+  const to = after.recommendation?.option
+  const moved: RevisionChange[] = from !== to && to !== undefined ? [{ kind: 'recommendation', text: `★ recommendation ${from ?? 'none'} → ${to}` }] : []
+
+  return [...added, ...renamed, ...moved]
+}
+
+/** The version a revision led to: the next revision's `before`, or the decision as it is now. */
+export function versionAfter(d: Decision, index: number): Pick<Decision, 'options' | 'recommendation'> {
+  return d.revisions[index + 1]?.before ?? d
+}
+
+/** The changes under a ↻ line, or none when it is not one or nothing visible changed. */
+export function changesOf(d: Decision, e: ThreadEntry): RevisionChange[] {
+  const revision = e.revision === undefined ? undefined : d.revisions[e.revision]
+
+  return revision === undefined ? [] : revisionChanges(revision.before, versionAfter(d, e.revision!))
+}
 
 /** The dim line under a question that has no reply yet. */
 export function noteFor(p: PendingQuestion, run: string): string {
@@ -181,7 +215,7 @@ export function ThreadView($: any, props: Props): any {
   const pendingFor = (e: ThreadEntry) => mine.filter(p => p.asked === e.at)
   const resendable = mine.find(p => isResendable(p, RUN))
   const budget = Math.max(4, rows - FIXED_ROWS)
-  const visible = visibleEntries(d.thread, view.threadSkip, budget, width, e => pendingFor(e).length * 2)
+  const visible = visibleEntries(d.thread, view.threadSkip, budget, width, e => pendingFor(e).length * 2 + changesOf(d, e).length)
   const { olderHidden, newerHidden } = visible
   const shown = visible.shown.length === 1 ? [clipToBudget(visible.shown[0]!, budget, width)] : visible.shown
   const draft = view.drafts[d.id] ?? ''
@@ -194,9 +228,30 @@ export function ThreadView($: any, props: Props): any {
       {olderHidden > 0 ? <Text dimColor>{`${olderHidden} earlier ${olderHidden === 1 ? 'entry' : 'entries'} · o`}</Text> : null}
       {shown.map(e =>
         e.revision !== undefined ? (
-          <Button key={`rev:${e.revision}`} plain onPress={() => setView($, v => ({ ...v, revisionIndex: e.revision }))}>
-            {truncate(e.text, width)}
-          </Button>
+          <Box key={`revision:${e.revision}`} flexDirection="column">
+            <Button key={`rev:${e.revision}`} plain onPress={() => setView($, v => ({ ...v, revisionIndex: e.revision }))}>
+              {truncate(e.text, width)}
+            </Button>
+            {changesOf(d, e).length > 0 ? (
+              <Box key={`changes:${e.revision}`} flexDirection="column">
+                {changesOf(d, e).map((c, index) =>
+                  c.kind === 'renamed' ? (
+                    <Text key={`change:${index}`}>
+                      {`  ~ ${c.number}  `}
+                      <Text strikethrough dimColor>
+                        {c.old}
+                      </Text>
+                      {` → ${c.label}`}
+                    </Text>
+                  ) : (
+                    <Text key={`change:${index}`} color={c.kind === 'added' ? 'success' : 'warning'}>
+                      {`  ${c.text}`}
+                    </Text>
+                  ),
+                )}
+              </Box>
+            ) : null}
+          </Box>
         ) : (
           <Box key={`entry:${e.at}:${e.who}`} flexDirection="column">
             {ChatEntry(ui, e, width, `chat:${e.at}:${e.who}`)}

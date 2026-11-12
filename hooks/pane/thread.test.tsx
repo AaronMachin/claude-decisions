@@ -4,8 +4,8 @@ import { RUN } from '../discuss'
 import { ChatEntry } from './style'
 import { INITIAL_VIEW, PANE_ID } from './decision'
 import { UPDATE_TOOL, ADD_TOOL } from '../tool'
-import { backFromThread, clipToBudget, isResendable, leaveThread, noteFor, rowsOf, visibleEntries, when } from './thread'
-import type { ThreadEntry } from '../store'
+import { backFromThread, clipToBudget, revisionChanges, isResendable, leaveThread, noteFor, rowsOf, visibleEntries, when } from './thread'
+import type { Decision, ThreadEntry } from '../store'
 
 type On = (event: string, hook: (...args: any[]) => any) => unknown
 
@@ -347,5 +347,52 @@ test('thread entries read as a chat: speaker and age, then the text on the same 
   const ui = await $.ui.mount({ plugin: 'decisions', component: 'Pane', requestId: 'x', surface: 'terminal', props: { title: 't', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 10 }, view: {} } } as any)
   expect((await ui.find({ key: 'chat' }))?.text).toBe('you · 2m  would c work on findings too?')
   expect(JSON.stringify(await ui.find({ key: 'chat' }))).toContain('"color":"suggestion"')
+  await ui.unmount()
+})
+
+function decision(over: Partial<Decision> = {}): Decision {
+  return {
+    version: 1, id: 'd1', number: 1, section: 'needs-you', kind: 'choice', title: 't', scenario: 's',
+    options: [{ id: 1, label: 'Red' }, { id: 2, label: 'Blue' }],
+    recommendation: { option: 1, reason: 'r' },
+    sources: [], dependsOn: [], state: 'open', thread: [], revisions: [], createdAt: 't', updatedAt: 't',
+    ...over,
+  }
+}
+
+test('what changed: an added option, a moved recommendation and a renamed option; none when nothing visible changed', () => {
+  const before = decision()
+  const { revisions: _r, thread: _t, ...was } = before
+  const after = decision({ options: [{ id: 1, label: 'Red' }, { id: 2, label: 'Navy' }, { id: 3, label: 'Green' }], recommendation: { option: 3, reason: 'r' } })
+  expect(revisionChanges(was, after)).toEqual([
+    { kind: 'added', text: '+ 3  Green' },
+    { kind: 'renamed', text: '~ 2  Blue → Navy', old: 'Blue', number: 2, label: 'Navy' },
+    { kind: 'recommendation', text: '★ recommendation 1 → 3' },
+  ])
+  expect(revisionChanges(was, decision({ blocks: 'the plan' }))).toEqual([])
+})
+
+test('a ↻ line in the thread is followed by what changed, the old label struck through', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  await $.tool.call({ tool: UPDATE_TOOL, id: 'd1', summary: 'Added option 3, Third', addOptions: [{ label: 'Third' }], recommendation: { option: 3, reason: 'fits' } })
+  await $.tool.call({ tool: UPDATE_TOOL, id: 'd1', summary: 'Blocks the plan', blocks: 'the plan' })
+  const path = [...seen.files.keys()].find(p => p.endsWith('/d1.json'))!
+  const stored = JSON.parse(seen.files.get(path)!)
+  stored.options[1].label = 'Each package'
+  stored.revisions.push({ at: new Date().toISOString(), summary: 'Renamed 2', before: { ...stored, options: stored.options.map((o: any) => (o.id === 2 ? { ...o, label: 'Per package' } : o)), revisions: undefined, thread: undefined } })
+  stored.thread.push({ who: 'claude', text: '↻ Renamed 2', at: new Date().toISOString(), revision: stored.revisions.length - 1 })
+  seen.files.set(path, JSON.stringify(stored))
+  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 40 } }, surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'o' })
+  const spans = (await ui.findAll({ type: 'Text' })) as any[]
+  expect(spans.find(t => t.text === '  + 3  Third')?.props.color).toBe('success')
+  expect(spans.find(t => t.text === '  ★ recommendation 1 → 3')?.props.color).toBe('warning')
+  expect(spans.find(t => t.text === 'Per package')?.props.strikethrough).toBe(true)
+  expect(spans.some(t => /^ {2}~ 2 {2}Per package → Each package$/.test(t.text))).toBe(true)
+  // The blocks change shows nothing under its ↻ line.
+  expect((await ui.find({ key: 'changes:1' }))).toBeUndefined()
   await ui.unmount()
 })
