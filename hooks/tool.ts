@@ -149,7 +149,7 @@ export const UPDATE_INPUT_SCHEMA = {
 
 const LIST_INPUT_SCHEMA = { type: 'object', properties: {} }
 
-export const ANSWER_DESCRIPTION = `Records an answer the person gave in the chat instead of the pane (row 263). Use it only when their own message answers a decision that is in the pane: for example "happy with your recommendations" answers every open decision you had recommended for, each with its recommended option. Give the option they chose, or text with their answer in their words, an optional condition, and quote: their message, verbatim. The decision is marked sent, since you already have the answer, and the pane shows it with the quote. Never use it to answer on the person's behalf without their words, or for a decision their message doesn't answer.`
+export const ANSWER_DESCRIPTION = `Records an answer the person gave in the chat instead of the pane. Use it only when their own message answers a decision that is in the pane: for example "happy with your recommendations" answers every open decision you had recommended for, each with its recommended option. Give the option they chose, or text with their answer in their words, an optional condition, and quote: their message, verbatim. The decision is marked sent, since you already have the answer, and the pane shows it with the quote. Never use it to answer on the person's behalf without their words, or for a decision their message doesn't answer.`
 
 export const ANSWER_INPUT_SCHEMA = {
   type: 'object',
@@ -284,7 +284,9 @@ export function validateUpdate(input: Record<string, any>, d: Decision | undefin
     return problem
   }
   const added: any[] = input.addOptions ?? []
-  if (added.length === 0 && ['recommendation', 'dependsOn', 'blocks', 'section', 'problem'].every(f => input[f] === undefined)) {
+  // A blank problem counts as not given (row 287), so it is no change on its own.
+  const hasProblem = typeof input.problem === 'string' && input.problem.trim() !== ''
+  if (added.length === 0 && !hasProblem && ['recommendation', 'dependsOn', 'blocks', 'section'].every(f => input[f] === undefined)) {
     return 'decisions_update refused: nothing to change. Give addOptions, recommendation, dependsOn, blocks or section.'
   }
   const isFixed = fixedOptionsFor(d.kind, d.isTask === true) !== undefined || d.kind === 'question'

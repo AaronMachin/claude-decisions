@@ -1344,9 +1344,10 @@ test('while the ring is in the ask box the key line shows only what works there'
   const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ring($, 'ask-inline')
-  const hintKeys = (await ui.findAll({ type: 'Button' })).map((b: any) => String(b.props.key)).filter((k: string) => !/^(opt|row):/.test(k))
+  // The keys stay drawn, dim and without their hotkeys, so the engine's ring index still lands on the box (row 285).
   for (const key of ['o', 'b', 'm', 't', 'a', 'c', 'p', 'h']) {
-    expect(hintKeys).not.toContain(key)
+    expect(await ui.find({ key })).toBeDefined()
+    expect((await ui.find({ key }))?.props.hotkey).toBeUndefined()
   }
   const all = await allTexts(ui)
   expect(all).toMatch(/enter: send to Claude/)
@@ -1488,5 +1489,18 @@ test('the problem line sits under the title in bold, with ◇ when the small mod
   ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'header' }))!.text.replace(/[▌\s]+/g, ' ')).toContain('◇ Review comments need a home the team reads')
+  await ui.unmount()
+})
+
+test('the focusable keys above the ask box are the same before and after the ring moves into it', async ($, on) => {
+  await begin($, on)
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const before = await keysInOrder(ui)
+  const inputsBefore = (await ui.findAll({ type: 'Input' })).map((i: any) => String(i.props.key))
+  expect(inputsBefore).toEqual(['ask-inline'])
+  await ring($, 'ask-inline')
+  expect(await keysInOrder(ui)).toEqual(before)
+  expect((await ui.findAll({ type: 'Input' })).map((i: any) => String(i.props.key))).toEqual(inputsBefore)
   await ui.unmount()
 })

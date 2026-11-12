@@ -103,6 +103,9 @@ export function ringTarget(view: PaneView, tabs: Tab[], seen: Seen = {}, frozen?
     if (view.answerBox !== undefined) {
       return 'answer'
     }
+    if (view.ring === 'ask-inline') {
+      return 'ask-inline'
+    }
     const d = tabs.flatMap(t => t.decisions).find(x => x.id === view.decisionId)
 
     return `opt:${view.highlight ?? (d ? openingOption(d) : 1)}`
@@ -119,6 +122,16 @@ export function ringTarget(view: PaneView, tabs: Tab[], seen: Seen = {}, frozen?
   }
 
   return listFirstKey(tabs, seen, frozen, hasSession)
+}
+
+/** Sends the refresh prompt; when it can't be sent the page says so, and `r` works again (row 286). */
+async function sendRefresh($: any): Promise<void> {
+  try {
+    await $.prompt.submit({ text: REFRESH_PROMPT })
+  } catch {
+    await setView($, v => ({ ...v, sessionRefresh: { askedAt: new Date().toISOString(), status: 'failed' } }))
+    $.ui.invalidate('ui.render')
+  }
 }
 
 async function focusFirstRow($: any): Promise<void> {
@@ -242,7 +255,7 @@ export async function renderPane($: any, e: any): Promise<any> {
           rows,
           isFocused: e.props.isFocused === true,
           onLeave: () => leaveToList($),
-          onRefresh: () => void $.prompt.submit({ text: REFRESH_PROMPT }).catch(() => undefined),
+          onRefresh: () => void sendRefresh($),
         })}
       </Box>
     )
@@ -272,7 +285,7 @@ export async function renderPane($: any, e: any): Promise<any> {
         session: record,
         onOpenSession: async () => {
           await openSessionPage($)
-          focusLater($, 'r')
+          focusLater($, 'b')
         },
       })}
       {view.notice ? <Text dimColor>{view.notice}</Text> : null}

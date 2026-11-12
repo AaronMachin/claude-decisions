@@ -73,10 +73,42 @@ export function refreshLine(refresh: PaneView['sessionRefresh'], record: Session
     return undefined
   }
 
+  if (refresh.status === 'failed') {
+    return "Couldn't ask Claude to refresh"
+  }
+
   return refresh.status === 'asked' ? '✻ asked Claude to refresh' : "Claude didn't update it"
 }
 
+/** How long an unanswered refresh holds `r` back when no refresh turn is running (row 286). */
+export const REFRESH_STALE_MS = 2 * 60_000
+
+/** Whether `r` sends the refresh prompt: not while one is out and fresh, or while its turn runs; again after a failure or once it's gone stale. */
+export function canRefresh(refresh: PaneView['sessionRefresh'], now: Date, isTurnRunning: boolean): boolean {
+  if (refresh?.status !== 'asked') {
+    return true
+  }
+
+  return !isTurnRunning && now.getTime() - Date.parse(refresh.askedAt) > REFRESH_STALE_MS
+}
+
 let refreshTurn: string | undefined
+
+/** Whether the refresh prompt's turn has started and not ended. */
+export function isRefreshTurnRunning(): boolean {
+  return refreshTurn !== undefined
+}
+
+/** `/clear` or `/resume`: the refresh turn belongs to the session that went, so its end is never taken for this one's. */
+export function forgetRefreshTurn(): void {
+  refreshTurn = undefined
+}
+
+/** On `/clear` or `/resume`: forget the refresh turn and drop a refresh still out, so the page doesn't stay on asked (row 286). */
+export async function dropRefresh($: any): Promise<void> {
+  forgetRefreshTurn()
+  await setView($, v => (v.sessionRefresh === undefined ? v : { ...v, sessionRefresh: undefined }))
+}
 
 /**
  * The turn hooks' part for a refresh: `start` claims the turn whose text is the refresh prompt; `complete` answers
@@ -159,7 +191,7 @@ export function SessionView($: any, props: Props): any {
   const compact = isCompact(rows)
   const foldDone = compact || view.isDoneFolded === true
   const now = new Date()
-  const clearRefresh = () => (view.sessionRefresh?.status === 'no-update' ? setView($, v => ({ ...v, sessionRefresh: undefined })) : Promise.resolve())
+  const clearRefresh = () => (view.sessionRefresh?.status === 'no-update' || view.sessionRefresh?.status === 'failed' ? setView($, v => ({ ...v, sessionRefresh: undefined })) : Promise.resolve())
   const hints: Hint[] = [
     {
       id: 'r',
@@ -168,7 +200,7 @@ export function SessionView($: any, props: Props): any {
       hotkey: 'r',
       onPress: async () => {
         const current = await readView($)
-        if (current.sessionRefresh?.status === 'asked') {
+        if (!canRefresh(current.sessionRefresh, new Date(), isRefreshTurnRunning())) {
           return
         }
         await setView($, v => ({ ...v, sessionRefresh: { askedAt: new Date().toISOString(), status: 'asked' } }))
@@ -183,6 +215,8 @@ export function SessionView($: any, props: Props): any {
       keyText: 'b',
       label: 'back',
       hotkey: 'b',
+      // The ring starts on back, never on r: a second enter must not send the refresh prompt.
+      autoFocus: true,
       onPress: async () => {
         await setView($, v => ({ ...v, screen: 'list', sessionLinksOpen: false, sessionRefresh: v.sessionRefresh?.status === 'asked' ? v.sessionRefresh : undefined }))
         onLeave()
@@ -248,7 +282,7 @@ export function SessionView($: any, props: Props): any {
   )
 }
 
-/** Puts the ring on the page's first key once it is drawn. */
+/** Puts the ring on the page's back key once it is drawn. */
 export function focusSessionPage($: any): void {
-  focusLater($, 'r')
+  focusLater($, 'b')
 }

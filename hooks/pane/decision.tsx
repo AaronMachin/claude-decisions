@@ -540,10 +540,17 @@ const NO_HANDLERS: Handlers = {
 export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
   const { d, view } = c
   if (view.ring === 'ask-inline') {
-    // Any other key types into the box (row 261), so the line names only what works there; the engine's ↑ leaves it for the last option.
+    // Any other key types into the box (row 261), so the line names what works there. The other keys stay drawn, dim and
+    // without hotkeys (row 285): the engine lands the ring by its place among the focusable elements, and taking them away
+    // above the box moved that place past it, so typing went to the main prompt.
+    const inert = decisionHints({ ...c, view: { ...view, ring: undefined } }, on)
+      .filter(hint => hint.onPress !== undefined)
+      .map(hint => ({ ...hint, hotkey: undefined, label: '', isInert: true }))
+
     return [
       { id: 'enter-send', keyText: 'enter', label: 'send to Claude', keepLabel: true },
       { id: 'up', keyText: '↑', label: 'back to the options', keepLabel: true },
+      ...inert,
     ]
   }
   const isSent = d.state === 'sent'
@@ -1064,7 +1071,17 @@ export function DecisionView($: any, props: Props): any {
         await openBox('condition', option)
       }
     },
-    talk: () => void (compact ? openThread() : focusTo($, 'ask-inline')),
+    talk: async () => {
+      if (compact) {
+        await openThread()
+
+        return
+      }
+      // Asked again once the box is drawn with the ring in it, in case the first call landed before that draw.
+      if (await focusTo($, 'ask-inline')) {
+        focusLater($, 'ask-inline')
+      }
+    },
     moreOptions: async () => {
       typing.typed = undefined
       const next = (layout.page + 1) % layout.pages

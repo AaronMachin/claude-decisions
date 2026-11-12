@@ -66,7 +66,7 @@ export type PaneView = {
   /** Session page, compact: `o` shows the links instead of the plan. */
   sessionLinksOpen?: boolean
   /** Session page: `r` asked Claude to refresh at `askedAt`; `no-update` once that turn ended without a new record (row 256). */
-  sessionRefresh?: { askedAt: string; status: 'asked' | 'no-update' }
+  sessionRefresh?: { askedAt: string; status: 'asked' | 'no-update' | 'failed' }
 }
 
 declare module 'claude-code' {

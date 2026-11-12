@@ -770,7 +770,7 @@ export function ReviewView($: any, props: ReviewProps): any {
     return (
       <Box flexDirection="column">
         <Text bold>That was the last one.</Text>
-        <Text>{`enter sends ${count} answer${count === 1 ? '' : 's'} to Claude, b to hold them.`}</Text>
+        <Text>{`enter sends ${count} answer${count === 1 ? '' : 's'} to Claude, b to hold ${count === 1 ? 'it' : 'them'}.`}</Text>
         <Button key="confirm" variant="primary" autoFocus onPress={send}>
           {`${ringMark('confirm', view.ring, isFocused)}enter: send ${count}  `}
         </Button>
@@ -780,7 +780,7 @@ export function ReviewView($: any, props: ReviewProps): any {
           </Button>
         ))}
         <Button key="b" hotkey="b" plain onPress={back}>
-          {'hold them'}
+          {count === 1 ? 'hold it' : 'hold them'}
         </Button>
       </Box>
     )

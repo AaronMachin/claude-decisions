@@ -234,3 +234,14 @@ test('a revision rewrites a problem the model wrote, but not one Claude wrote', 
   expect(seen.asked).toHaveLength(asked)
   expect(seen.stored('d1')).toMatchObject({ problem: 'Claude line', problemBy: 'claude' })
 })
+
+test('decisions_update with a blank problem and nothing else is refused as nothing to change', async () => {
+  const $ = fakeStore()
+  await addDecision($, GOOD)
+  const d = (await readOne($, 'd1'))!
+  expect(validateUpdate({ id: 'd1', summary: 's', problem: '' }, d, [d])).toMatch(/nothing to change/)
+  expect(validateUpdate({ id: 'd1', summary: 's', problem: '   ' }, d, [d])).toMatch(/nothing to change/)
+  const answer = await updateDecision($, { id: 'd1', summary: 's', problem: '' })
+  expect('deny' in answer).toBe(true)
+  expect((await readOne($, 'd1'))!.revisions).toHaveLength(0)
+})

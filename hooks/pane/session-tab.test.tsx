@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { writeSession } from '../session'
 import type { SessionRecord } from '../session'
 import { INITIAL_VIEW } from './decision'
-import { REFRESH_PROMPT, SessionView, checkOnOpen, noteRefreshTurn, planLines, refreshPrompt, refreshLine } from './session-tab'
+import { REFRESH_PROMPT, SessionView, canRefresh, checkOnOpen, forgetRefreshTurn, noteRefreshTurn, planLines, refreshPrompt, refreshLine } from './session-tab'
 
 const now = new Date()
 const ago = (minutes: number) => new Date(now.getTime() - minutes * 60_000).toISOString()
@@ -159,5 +159,29 @@ test('drawing the page runs no command', async ($, on) => {
   })
   const ui = await draw($, on, record({ links: [{ url: 'https://github.com/o/pantry/pull/9', label: '#9', kind: 'pr', state: 'open', addedBy: 'mod' }] }))
   expect(runs).toHaveLength(0)
+  await ui.unmount()
+})
+
+test("r can ask again after a failed send, or once a refresh has been out over 2 minutes with no turn running", () => {
+  const at = new Date()
+  const minutes = (n: number) => new Date(at.getTime() - n * 60_000).toISOString()
+  expect(canRefresh(undefined, at, false)).toBe(true)
+  expect(canRefresh({ askedAt: minutes(1), status: 'asked' }, at, false)).toBe(false)
+  expect(canRefresh({ askedAt: minutes(3), status: 'asked' }, at, false)).toBe(true)
+  expect(canRefresh({ askedAt: minutes(3), status: 'asked' }, at, true)).toBe(false)
+  expect(canRefresh({ askedAt: minutes(0), status: 'failed' }, at, false)).toBe(true)
+  expect(refreshLine({ askedAt: minutes(0), status: 'failed' }, record({ updatedAt: minutes(5) }))).toBe("Couldn't ask Claude to refresh")
+})
+
+test('a /clear forgets the refresh turn, so its end is never taken for the refresh', () => {
+  expect(noteRefreshTurn({ text: REFRESH_PROMPT, turnId: 'c1' }, 'start')).toBe(true)
+  forgetRefreshTurn()
+  expect(noteRefreshTurn({ turnId: 'c1' }, 'complete')).toBe(false)
+})
+
+test('the page puts its first ring on b, not r', async ($, on) => {
+  const ui = await draw($, on, record())
+  expect((await ui.find({ key: 'b' }))?.props.autoFocus).toBe(true)
+  expect((await ui.find({ key: 'r' }))?.props.autoFocus).toBeUndefined()
   await ui.unmount()
 })

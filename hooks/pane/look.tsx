@@ -42,6 +42,8 @@ export type Hint = {
    * that matter most stay named. Without any hint marked, the labels all go together, as they always have.
    */
   keepLabel?: boolean
+  /** Drawn dim with no hotkey: the key is still there to keep the focusable elements in place, but does nothing by key. */
+  isInert?: boolean
 }
 
 const GAP = 2
@@ -132,6 +134,14 @@ function hintElement(ui: { Text: any; Button: any }, hint: Hint, withLabel: bool
   const { Text, Button } = ui
   const label = withLabel && hint.label !== '' ? hint.label : ''
   const pad = ' '.repeat(padOf(hint, label))
+  if (hint.isInert && hint.onPress) {
+    return (
+      <Button key={hint.id} plain onPress={hint.onPress}>
+        <Text dimColor>{hint.keyText}</Text>
+        {pad}
+      </Button>
+    )
+  }
   if (hint.onPress && hint.hotkey) {
     return (
       <Button key={hint.id} hotkey={hint.hotkey} plain autoFocus={hint.autoFocus} onPress={hint.onPress}>

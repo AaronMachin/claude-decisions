@@ -431,3 +431,15 @@ test('the answer description is short and says to use it only with the person\'s
   expect(ANSWER_DESCRIPTION).toMatch(/happy with your recommendations/)
   expect(ANSWER_DESCRIPTION).toMatch(/Never/)
 })
+
+test("no tool's description or schema Claude sees names a decision row", async () => {
+  const registered: any[] = []
+  const $: any = { tool: { register: async (t: any) => (registered.push(t), {}) } }
+  await registerTools($)
+  expect(registered.length).toBeGreaterThanOrEqual(5)
+  for (const t of registered) {
+    const text = JSON.stringify([t.description, t.inputSchema])
+    expect(text).not.toMatch(/\brows? \d+/)
+    expect(text).not.toMatch(/\(\d{3}\)/)
+  }
+})

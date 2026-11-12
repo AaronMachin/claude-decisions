@@ -7,6 +7,7 @@ import { configure, onTurnComplete, onTurnStart } from './discuss'
 import { addContextBlock, addRulesSection, answerAskUserQuestion, noteAtSessionStart, noteOnSubmit, nudgeAfterTurn, onCompact, refuseSubagent } from './integrate'
 import { PANE_ID } from './pane/decision'
 import { startProblem } from './problem'
+import { dropRefresh } from './pane/session-tab'
 import { SESSION_TOOL, addCapturedLinks, captureLinks, carryOver, sessionTool } from './session'
 import { ADD_TOOL, ANSWER_TOOL, LIST_TOOL, UPDATE_TOOL, addDecision, answerDecision, listDecisions, registerTools, updateDecision } from './tool'
 
@@ -135,6 +136,7 @@ export const register: Register = (on, options) => {
     const from = await $.session.id().catch(() => undefined)
     const done = await next(e)
     if (e.reason === 'clear' || e.reason === 'resume') {
+      await dropRefresh($).catch(() => undefined)
       $.clock.after(250, () => {
         void (async () => {
           const to = await $.session.id()
