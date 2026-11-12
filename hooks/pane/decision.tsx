@@ -526,6 +526,13 @@ const NO_HANDLERS: Handlers = {
 /** The decision screen's key hints. */
 export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
   const { d, view } = c
+  if (view.ring === 'ask-inline') {
+    // Any other key types into the box (row 261), so the line names only what works there; the engine's ↑ leaves it for the last option.
+    return [
+      { id: 'enter-send', keyText: 'enter', label: 'send to Claude', keepLabel: true },
+      { id: 'up', keyText: '↑', label: 'back to the options', keepLabel: true },
+    ]
+  }
   const isSent = d.state === 'sent'
   const highlight = view.highlight
   const isSomethingElse = highlight === somethingElseNumber(d)
@@ -1216,6 +1223,11 @@ export function DecisionView($: any, props: Props): any {
             if (text.trim() === '') {
               return
             }
+            // Out of the box once it is sent, so the hotkeys work again and stop typing into it (row 261). The view takes the
+            // ring at once, so the key line is the options' again on the next draw; the engine's ring follows.
+            const option = `opt:${view.highlight ?? openingOption(d)}`
+            await setView($, v => ({ ...v, ring: option }))
+            focusLater($, option)
             await askQuestion($, currentMode(), d.id, text.trim())
             onChanged()
           }}

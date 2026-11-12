@@ -1300,3 +1300,39 @@ test('compact at 49x9 with why and why not keeps the key line at the top', async
   expect(keys.indexOf('b')).toBeLessThan(keys.indexOf('opt:1'))
   await ui.unmount()
 })
+
+test('while the ring is in the ask box the key line shows only what works there', async ($, on) => {
+  await begin($, on)
+  const ui = await $.ui.mount(rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  await ring($, 'ask-inline')
+  const hintKeys = (await ui.findAll({ type: 'Button' })).map((b: any) => String(b.props.key)).filter((k: string) => !/^(opt|row):/.test(k))
+  for (const key of ['o', 'b', 'm', 't', 'a', 'c', 'p', 'h']) {
+    expect(hintKeys).not.toContain(key)
+  }
+  const all = await allTexts(ui)
+  expect(all).toMatch(/enter: send to Claude/)
+  expect(all).toMatch(/↑: back to the options/)
+  await ui.unmount()
+})
+
+test('after a question is sent from the ask box the ring goes back to the highlighted option', async ($, on) => {
+  const clock = mock.clock(on as any)
+  const seen = await begin($, on)
+  const ui = await $.ui.mount(rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  await clock.advance(100)
+  await ring($, 'ask-inline')
+  await ui.input({ key: 'ask-inline', text: 'would c work on findings too?' })
+  for (let i = 0; i < 5; i++) {
+    for (let j = 0; j < 30; j++) {
+      await Promise.resolve()
+    }
+    await clock.advance(100)
+  }
+  expect(seen.submitted).toHaveLength(1)
+  expect(await allTexts(ui)).not.toMatch(/send to Claude/)
+  expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/^▌›/)
+  expect(await ui.find({ key: 'b' })).toBeDefined()
+  await ui.unmount()
+})
