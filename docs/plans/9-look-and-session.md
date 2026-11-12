@@ -89,7 +89,7 @@
 
 ## Task 8: docs, version, real session, review, PR
 
-- [ ] README (keys, the Session tab, the tool), `docs/design.md`, `docs/gif-shot-list.md`; replay seed gains a session record. Version 0.3.0 in `plugin.json` and `marketplace.json`.
+- [x] README (keys, the Session tab, the tool), `docs/design.md`, `docs/gif-shot-list.md`; replay seed gains a session record. Version 0.3.0 in `plugin.json` and `marketplace.json`.
 - [ ] Real session in tmux at 150x40 and 110x14: the list and a decision in each kind, a revision, sending one (receipt), the Session tab after publishing an artifact and creating a test PR on a scratch repo, `r`, `/clear`.
 - [ ] One fresh reviewer over the whole branch; fix Critical and Important with a failing test first.
 - [ ] Push `ws/pane-look`, open the PR ready for review, stop.

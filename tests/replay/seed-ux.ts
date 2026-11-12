@@ -5,14 +5,17 @@
  * recommendation, decision 2 has twelve options), six assumptions, a Pantry review
  * (the 47 findings plus 20 more needing the person, with an "Image uploads" group),
  * one parked decision and one answered decision with a discussion, then a "Recipe printing"
- * group: one decision with a reply not yet read, one answered with a condition and one
- * answered with Something else.
+ * group: one decision with a reply not yet read, one answered with a condition, one
+ * answered with Something else and one with a quick answer from the small model. The first
+ * decision has a problem line the small model wrote, and the session has a record for the
+ * list's session card and the Session page.
  *
  *   cd "$(mktemp -d)" && git init -q && npx -y tsx <repo>/tests/replay/seed-ux.ts
  */
 import { addDecision } from '../../hooks/tool'
 import { readOne, write } from '../../hooks/store'
-import { INBOX, SEEDED, inboxState } from './ux-fixture'
+import { sessionTool } from '../../hooks/session'
+import { INBOX, MODEL_PROBLEM, SEEDED, SESSION_RECORD, inboxState } from './ux-fixture'
 import { store } from '../../hooks/pane/seed-review'
 
 async function add(input) {
@@ -43,6 +46,12 @@ async function main() {
   for (const [index, entry] of INBOX.entries()) {
     const id = `d${total + 3 + index}`
     await write(store, inboxState(await readOne(store, id), entry, later))
+  }
+  const first = await readOne(store, 'd1')
+  await write(store, { ...first, problem: MODEL_PROBLEM, problemBy: 'model' })
+  const recorded = await sessionTool(store, SESSION_RECORD)
+  if ('deny' in recorded) {
+    throw new Error(recorded.deny)
   }
   console.log(`Seeded ${SEEDED.length} decisions.`)
 }
