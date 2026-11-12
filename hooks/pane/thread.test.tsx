@@ -1,10 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
-import { RUN } from '../discuss'
+import { RUN, configure } from '../discuss'
+import { ChatEntry } from './style'
 import { INITIAL_VIEW, PANE_ID } from './decision'
 import { UPDATE_TOOL, ADD_TOOL } from '../tool'
-import { backFromThread, clipToBudget, isResendable, leaveThread, noteFor, rowsOf, visibleEntries, when } from './thread'
-import type { ThreadEntry } from '../store'
+import { backFromThread, clipToBudget, revisionChanges, isResendable, leaveThread, noteFor, rowsOf, visibleEntries, when } from './thread'
+import type { Decision, ThreadEntry } from '../store'
 
 type On = (event: string, hook: (...args: any[]) => any) => unknown
 
@@ -95,6 +96,42 @@ const PANE = {
   props: { title: 'Decisions', isFocused: true, bodyColumns: 49, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
 } as const
 
+/**
+ * Answering the last waiting decision opens the Send screen (row 270). The tests that mount through this are about
+ * what follows on the list or the decision, so the mount holds the answers there with b, as the person would.
+ */
+async function mountHolding<M extends (props: any) => Promise<any>>($: { ui: { mount: M } }, props: Parameters<M>[0]): Promise<Awaited<ReturnType<M>>> {
+  const ui = await $.ui.mount(props)
+  const hold = async () => {
+    if (await ui.find({ type: 'Text', text: 'That was the last one.' })) {
+      await ui.press({ key: 'b' })
+    }
+  }
+  const press = async (args: any) => {
+    // One list (row 265): a group with nothing waiting is folded, so a row in it is reached by unfolding its heading.
+    if (/^row:/.test(String(args.key)) && !(await ui.find({ key: args.key }))) {
+      for (const heading of (await ui.findAll({ type: 'Button' })).filter((b: any) => /^group:/.test(String(b.props.key)))) {
+        if (!(await ui.find({ key: args.key }))) {
+          await ui.press({ key: heading.props.key })
+        }
+      }
+    }
+    const result = await ui.press(args)
+    if (args.key !== 'b' && args.key !== 'confirm') {
+      await hold()
+    }
+    return result
+  }
+  const input = async (args: any) => {
+    const result = await ui.input(args)
+    await hold()
+    return result
+  }
+
+  // The kit's handle is frozen, so the wrapper is a view over it with press and input replaced.
+  return new Proxy({}, { get: (_target, key) => (key === 'press' ? press : key === 'input' ? input : typeof ui[key] === 'function' ? ui[key].bind(ui) : ui[key]) }) as Awaited<ReturnType<M>>
+}
+
 async function start($: any): Promise<void> {
   await $.session.start({ cwd: '/work/pantry', surface: 'terminal', isInteractive: true })
 }
@@ -108,7 +145,7 @@ const pass = (on: any) => {
 async function openThread($: any) {
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'o' })
 
@@ -125,7 +162,7 @@ test('o opens the thread, with Ask and the keys, and no Mark answered, d or m', 
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'o' })
   expect((await ui.find({ key: 'ask' }))?.props.autoFocus).toBe(true)
@@ -189,7 +226,7 @@ test('a half-typed question survives hiding the pane and reopening the thread', 
   await ui.press({ key: 'ask' })
   await ui.input({ key: 'ask-input', text: 'half a thou', kind: 'change' })
   await ui.unmount()
-  const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const again = await mountHolding($, { ...PANE, surface: 'terminal' })
   expect((await again.find({ key: 'ask-input' }))?.text).toContain('half a thou')
   await again.input({ key: 'ask-input', text: '' })
   expect(await again.find({ key: 'ask-input' })).toBeUndefined()
@@ -207,8 +244,8 @@ test('the thread no longer answers: a typed answer goes in Something else, and b
   await ($ as any).ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'opt:3', origin: { kind: 'plugin' } })
   await ui.press({ key: 'opt:3' })
   await ui.input({ key: 'answer', text: 'from the root, after the move' })
-  expect(await ui.find({ key: 'row:d1' })).toBeDefined()
-  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 ready')
+  expect(await ui.find({ key: 'group:g:Config file plan' })).toBeDefined()
+  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 not sent')
   expect(seen.submitted).toEqual([])
   await ui.unmount()
 })
@@ -218,7 +255,7 @@ test('a ↻ line opens the earlier version and b returns to the thread', async (
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
   await $.tool.call({ tool: UPDATE_TOOL, id: 'd1', summary: 'Added option 3, Third', addOptions: [{ label: 'Third' }], recommendation: { option: 3, reason: 'fits' } })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'o' })
   expect((await ui.find({ key: 'rev:0' }))?.text).toContain('↻ Added option 3, Third')
@@ -239,7 +276,7 @@ test('a long thread in a short pane keeps only the newest entries and the key ro
   const d = JSON.parse(seen.files.get(file)!)
   d.thread = Array.from({ length: 60 }, (_, i) => ({ who: i % 2 ? 'claude' : 'person', text: `entry number ${i}`, at: `2026-11-05T10:${String(i).padStart(2, '0')}:00.000Z` }))
   seen.files.set(file, JSON.stringify(d))
-  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 24 } }, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 24 } }, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'o' })
   expect(await ui.find({ type: 'Text', text: 'entry number 59' })).toBeDefined()
@@ -256,11 +293,12 @@ const entry = (text: string, who: ThreadEntry['who'] = 'person'): ThreadEntry =>
 
 test('visibleEntries keeps the newest that fit, pages with skip and always shows one', () => {
   const thread = Array.from({ length: 10 }, (_, i) => entry(`e${i}`))
-  const first = visibleEntries(thread, 0, 6, 40)
+  // A chat line is one row: the speaker and the text share it (row 251).
+  const first = visibleEntries(thread, 0, 3, 40)
   expect(first.shown.map(e => e.text)).toEqual(['e7', 'e8', 'e9'])
   expect(first.olderHidden).toBe(7)
-  expect(visibleEntries(thread, 3, 6, 40).shown.map(e => e.text)).toEqual(['e4', 'e5', 'e6'])
-  expect(visibleEntries(thread, 3, 6, 40).newerHidden).toBe(3)
+  expect(visibleEntries(thread, 3, 3, 40).shown.map(e => e.text)).toEqual(['e4', 'e5', 'e6'])
+  expect(visibleEntries(thread, 3, 3, 40).newerHidden).toBe(3)
   expect(visibleEntries(thread, 0, 0, 40).shown).toHaveLength(1)
   expect(visibleEntries([entry('x'.repeat(200))], 0, 4, 20).shown).toHaveLength(1)
 })
@@ -296,7 +334,7 @@ test('under a fork reply there is no m: it hides and shows detail on the decisio
     { who: 'fork', text: 'No, I cannot read files.', at: '2026-11-07T10:00:05.000Z' },
   ]
   seen.files.set(file, JSON.stringify(d))
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'o' })
   expect(await ui.find({ key: 'm' })).toBeUndefined()
@@ -337,4 +375,83 @@ test('leaving the thread changes only the screen fields of the view it is given'
   const live = { ...INITIAL_VIEW, screen: 'thread' as const, pending: [{ asked: 'a', decisionId: 'd1', mode: 'main' as const, status: 'answering' as const, run: RUN }] }
   expect(leaveThread(live).pending).toEqual(live.pending)
   expect(leaveThread(live).screen).toBe('decision')
+})
+
+test('thread entries read as a chat: speaker and age, then the text on the same line', async ($, on) => {
+  const at = new Date(Date.now() - 2 * 60_000).toISOString()
+  on('ui.render', ($$: any, e: any) => ChatEntry($$.ui.resolve(e), { who: 'person', at, text: 'would c work on findings too?' }, 60, 'chat'))
+  const ui = await mountHolding($, { plugin: 'decisions', component: 'Pane', requestId: 'x', surface: 'terminal', props: { title: 't', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 10 }, view: {} } } as any)
+  expect((await ui.find({ key: 'chat' }))?.text).toBe('you · 2m  would c work on findings too?')
+  expect(JSON.stringify(await ui.find({ key: 'chat' }))).toContain('"color":"suggestion"')
+  await ui.unmount()
+})
+
+function decision(over: Partial<Decision> = {}): Decision {
+  return {
+    version: 1, id: 'd1', number: 1, section: 'needs-you', kind: 'choice', title: 't', scenario: 's',
+    options: [{ id: 1, label: 'Red' }, { id: 2, label: 'Blue' }],
+    recommendation: { option: 1, reason: 'r' },
+    sources: [], dependsOn: [], state: 'open', thread: [], revisions: [], createdAt: 't', updatedAt: 't',
+    ...over,
+  }
+}
+
+test('what changed: an added option, a moved recommendation and a renamed option; none when nothing visible changed', () => {
+  const before = decision()
+  const { revisions: _r, thread: _t, ...was } = before
+  const after = decision({ options: [{ id: 1, label: 'Red' }, { id: 2, label: 'Navy' }, { id: 3, label: 'Green' }], recommendation: { option: 3, reason: 'r' } })
+  expect(revisionChanges(was, after)).toEqual([
+    { kind: 'added', text: '+ 3  Green' },
+    { kind: 'renamed', text: '~ 2  Blue → Navy', old: 'Blue', number: 2, label: 'Navy' },
+    { kind: 'recommendation', text: '★ recommendation 1 → 3' },
+  ])
+  expect(revisionChanges(was, decision({ blocks: 'the plan' }))).toEqual([])
+})
+
+test('a ↻ line in the thread is followed by what changed, the old label struck through', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  await $.tool.call({ tool: UPDATE_TOOL, id: 'd1', summary: 'Added option 3, Third', addOptions: [{ label: 'Third' }], recommendation: { option: 3, reason: 'fits' } })
+  await $.tool.call({ tool: UPDATE_TOOL, id: 'd1', summary: 'Blocks the plan', blocks: 'the plan' })
+  const path = [...seen.files.keys()].find(p => p.endsWith('/d1.json'))!
+  const stored = JSON.parse(seen.files.get(path)!)
+  stored.options[1].label = 'Each package'
+  stored.revisions.push({ at: new Date().toISOString(), summary: 'Renamed 2', before: { ...stored, options: stored.options.map((o: any) => (o.id === 2 ? { ...o, label: 'Per package' } : o)), revisions: undefined, thread: undefined } })
+  stored.thread.push({ who: 'claude', text: '↻ Renamed 2', at: new Date().toISOString(), revision: stored.revisions.length - 1 })
+  seen.files.set(path, JSON.stringify(stored))
+  const ui = await mountHolding($, { ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 40 } }, surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'o' })
+  const spans = (await ui.findAll({ type: 'Text' })) as any[]
+  expect(spans.find(t => t.text === '  + 3  Third')?.props.color).toBe('success')
+  expect(spans.find(t => t.text === '  ★ recommendation 1 → 3')?.props.color).toBe('warning')
+  expect(spans.find(t => t.text === 'Per package')?.props.strikethrough).toBe(true)
+  expect(spans.some(t => /^ {2}~ 2 {2}Per package → Each package$/.test(t.text))).toBe(true)
+  // The blocks change shows nothing under its ↻ line.
+  expect((await ui.find({ key: 'changes:1' }))).toBeUndefined()
+  await ui.unmount()
+})
+
+test('auto: a question asked on the thread screen goes to the small model first, and its answer reads "quick answer"', async ($, on) => {
+  const seen = engine(on)
+  pass(on)
+  const asked: any[] = []
+  on('model.complete', (_: any, e: any) => {
+    asked.push(e)
+    return { value: { isAnswered: true, text: /HAND OVER/.test(e.system ?? '') ? 'ANSWER\nIt checks each parent folder.' : 'Where settings live' } } as any
+  })
+  configure({ discussionReplies: 'auto' })
+  try {
+    const ui = await openThread($)
+    await ui.press({ key: 'ask' })
+    await ui.input({ key: 'ask-input', text: 'What does walking up mean?' })
+    await settle()
+    expect(asked.some(e => /HAND OVER/.test(e.system ?? ''))).toBe(true)
+    expect(seen.submitted).toEqual([])
+    expect(await ui.find({ type: 'Text', text: 'quick answer' })).toBeDefined()
+    await ui.unmount()
+  } finally {
+    configure({})
+  }
 })

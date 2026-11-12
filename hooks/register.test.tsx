@@ -1,10 +1,12 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 import { PANE_ID, INITIAL_VIEW } from './pane/decision'
 import { tabsFor } from './pane/list'
 import { ringTarget } from './pane/render'
 import { NUDGE } from './integrate'
 import { ADD_TOOL, LIST_TOOL, UPDATE_TOOL } from './tool'
+import { focusKeyName } from './focus-key'
+import { REFRESH_PROMPT } from './pane/session-tab'
 
 type On = (event: string, hook: (...args: any[]) => any) => unknown
 
@@ -111,6 +113,42 @@ async function answer($: any, ui: any, option: number): Promise<void> {
   }
 }
 
+/**
+ * Answering the last waiting decision opens the Send screen (row 270). The tests that mount through this are about
+ * what follows on the list or the decision, so the mount holds the answers there with b, as the person would.
+ */
+async function mountHolding<M extends (props: any) => Promise<any>>($: { ui: { mount: M } }, props: Parameters<M>[0]): Promise<Awaited<ReturnType<M>>> {
+  const ui = await $.ui.mount(props)
+  const hold = async () => {
+    if (await ui.find({ type: 'Text', text: 'That was the last one.' })) {
+      await ui.press({ key: 'b' })
+    }
+  }
+  const press = async (args: any) => {
+    // One list (row 265): a group with nothing waiting is folded, so a row in it is reached by unfolding its heading.
+    if (/^row:/.test(String(args.key)) && !(await ui.find({ key: args.key }))) {
+      for (const heading of (await ui.findAll({ type: 'Button' })).filter((b: any) => /^group:/.test(String(b.props.key)))) {
+        if (!(await ui.find({ key: args.key }))) {
+          await ui.press({ key: heading.props.key })
+        }
+      }
+    }
+    const result = await ui.press(args)
+    if (args.key !== 'b' && args.key !== 'confirm') {
+      await hold()
+    }
+    return result
+  }
+  const input = async (args: any) => {
+    const result = await ui.input(args)
+    await hold()
+    return result
+  }
+
+  // The kit's handle is frozen, so the wrapper is a view over it with press and input replaced.
+  return new Proxy({}, { get: (_target, key) => (key === 'press' ? press : key === 'input' ? input : typeof ui[key] === 'function' ? ui[key].bind(ui) : ui[key]) }) as Awaited<ReturnType<M>>
+}
+
 async function start($: any): Promise<void> {
   await $.session.start({ cwd: '/work/pantry', surface: 'terminal', isInteractive: true })
 }
@@ -119,7 +157,7 @@ test('session.start registers /decisions and both tools and sets the status line
   const seen = engine(on)
   await start($)
   expect(seen.commands).toContain('decisions')
-  expect(seen.tools).toEqual(['decisions_add', 'decisions_list', 'decisions_update'])
+  expect(seen.tools).toEqual(['decisions_add', 'decisions_list', 'decisions_update', 'decisions_answer', 'decisions_session'])
   expect(seen.statuses.at(-1)).toBeUndefined()
   expect(seen.statuses).toHaveLength(1)
 })
@@ -137,7 +175,7 @@ test('adding a decision stores it, opens the pane unfocused and updates the stat
 test('a hidden pane stays hidden when Claude adds a decision, but the count still goes up', async ($, on) => {
   const seen = engine(on)
   await start($)
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'h' })
   await ui.unmount()
   expect(seen.closed).toHaveLength(1)
@@ -163,7 +201,7 @@ test('decisions_list returns what was added', async ($, on) => {
 test('/decisions opens the pane with the keys and clears hidden', async ($, on) => {
   const seen = engine(on)
   await start($)
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'h' })
   await $.command.run({ command: 'decisions', args: '' } as any)
   expect(seen.opened.at(-1)).toMatchObject({ id: PANE_ID, focus: true })
@@ -176,7 +214,7 @@ test('a ring move onto an option or the ask box is taken by the pane without err
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await $.ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'opt:2', origin: { kind: 'person' } })
   // The highlight itself is state the kit can't read back and `b` then needs $.ui.focus, which the kit refuses; the real session covers both.
@@ -190,11 +228,11 @@ test('the header says keys on or keys off, on every screen', async ($, on) => {
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
   for (const isFocused of [true, false]) {
-    const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, isFocused }, surface: 'terminal' })
-    expect(await ui.find({ type: 'Text', text: isFocused ? 'keys on' : 'keys off' })).toBeDefined()
-    expect(!!(await ui.find({ type: 'Text', text: /pane focus key/ }))).toBe(!isFocused)
+    const ui = await mountHolding($, { ...PANE, props: { ...PANE.props, isFocused }, surface: 'terminal' })
+    expect(await ui.find({ type: 'Text', text: isFocused ? 'keys on' : `${focusKeyName()} to use` })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /pane focus key/ })).toBeUndefined()
     await ui.press({ key: 'row:d1' })
-    expect(await ui.find({ type: 'Text', text: isFocused ? 'keys on' : 'keys off' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: isFocused ? 'keys on' : `${focusKeyName()} to use` })).toBeDefined()
     await ui.press({ key: 'b' })
     await ui.unmount()
   }
@@ -204,7 +242,7 @@ test('enter on the first row opens the decision; a number highlights, the same n
   const seen = engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   expect((await ui.find({ key: 'row:d1' }))?.props.autoFocus).toBe(true)
   await ui.press({ key: 'row:d1' })
   expect(await ui.find({ key: 'opt:2' })).toBeDefined()
@@ -214,9 +252,9 @@ test('enter on the first row opens the decision; a number highlights, the same n
   expect(await ui.find({ key: 'row:d1' })).toBeUndefined()
   await ringOn($, 'opt:2')
   await ui.press({ key: 'opt:2' })
-  expect(await ui.find({ key: 'row:d1' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'Answered  1' })).toBeDefined()
-  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 ready')
+  expect(await ui.find({ key: 'group:g:Config file plan' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ Config file plan · 1 answered' })).toBeDefined()
+  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 not sent')
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/Per package {2}✓ your answer/)
   expect((await ui.find({ key: 'line:1' }))?.text).not.toMatch(/✓/)
@@ -228,7 +266,7 @@ test('send: nothing is submitted until confirm, and only ticked answers go', asy
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, title: 'Second one' })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   for (const [id, option] of [['d1', 1], ['d2', 2]] as const) {
     await ui.press({ key: `row:${id}` })
     await answer($, ui, option)
@@ -245,7 +283,7 @@ test('send: nothing is submitted until confirm, and only ticked answers go', asy
   expect(seen.submitted).toHaveLength(1)
   expect(seen.submitted[0]).toContain('Decision d2')
   expect(seen.submitted[0]).not.toContain('Decision d1')
-  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 ready')
+  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 not sent')
   await ui.unmount()
 })
 
@@ -253,18 +291,18 @@ test('a parked draft survives hiding the pane, and an empty enter cancels', asyn
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  let ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'p' })
   await ui.input({ key: 'park', text: 'waiting', kind: 'change' })
   await ui.unmount()
-  ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   expect((await ui.find({ key: 'park' }))?.text).toContain('waiting')
   await ui.input({ key: 'park', text: '' })
   expect(await ui.find({ key: 'park' })).toBeUndefined()
   await ui.press({ key: 'p' })
   await ui.input({ key: 'park', text: 'waiting on design' })
-  expect(await ui.find({ type: 'Text', text: 'Parked  1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Parked · 1' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -272,7 +310,7 @@ test('the option rows carry their own number keys, there is no digit row, and b 
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   expect(await ui.find({ key: 'b' })).toBeUndefined()
   await ui.press({ key: 'row:d1' })
   const keys = (await ui.findAll({ type: 'Button' })).map(b => b.props.key)
@@ -287,12 +325,12 @@ test('p on a parked decision puts it back to open, through the pane', async ($, 
   const seen = engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'p' })
   await ui.input({ key: 'park', text: 'later' })
   expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 parked')
-  await ui.press({ key: 't' })
+  await ui.press({ key: 'group:parked' })
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'p' }))?.text).toMatch(/unpark/)
   await ui.press({ key: 'p' })
@@ -304,7 +342,7 @@ test('a sent decision offers only b, and review back sends nothing', async ($, o
   const seen = engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await answer($, ui, 1)
   await ui.press({ key: 's' })
@@ -330,7 +368,7 @@ test('a send that fails shows its notice in the pane and the answers are ready a
   const seen = engine(on, { failSubmit: true })
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await answer($, ui, 1)
   await ui.press({ key: 's' })
@@ -338,7 +376,7 @@ test('a send that fails shows its notice in the pane and the answers are ready a
   for (let i = 0; i < 20; i++) {
     await Promise.resolve()
   }
-  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 ready')
+  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 not sent')
   expect(await ui.find({ type: 'Text', text: /not sent/ })).toBeDefined()
   await ui.unmount()
 })
@@ -451,7 +489,7 @@ test("a person's move onto a tab keeps the ring where it was", async ($, on) => 
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, group: 'Recipe sharing', title: 'Second one' })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await $.ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'row:d2', origin: { kind: 'person' } })
   const kept = await $.ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'tab:g:Config file plan', origin: { kind: 'person' } })
   expect(kept.deny).toBeUndefined()
@@ -465,12 +503,12 @@ test('a move onto a row draws › on it while the pane has the keys, and none wi
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, title: 'Second one' })
-  let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  let ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await $.ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'row:d2', origin: { kind: 'person' } })
   expect((await ui.find({ key: 'row:d2' }))?.text).toMatch(/^› d2/)
   expect((await ui.find({ key: 'row:d1' }))?.text).toMatch(/^ {2}d1/)
   await ui.unmount()
-  ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, isFocused: false }, surface: 'terminal' })
+  ui = await mountHolding($, { ...PANE, props: { ...PANE.props, isFocused: false }, surface: 'terminal' })
   expect((await ui.find({ key: 'row:d2' }))?.text).toMatch(/^ {2}d2/)
   await ui.unmount()
 })
@@ -479,7 +517,7 @@ test('› is drawn only on a key that is in the tree', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await $.ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'opt:9', origin: { kind: 'person' } })
   await ui.press({ key: 'row:d1' })
   const marked = (await ui.findAll({ type: 'Button' })).filter(b => /^›/.test(b.text ?? ''))
@@ -491,11 +529,11 @@ test('a move onto an option marks that option', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await $.ui.focus({ component: 'Pane', requestId: PANE_ID, plugin: 'decisions', element: 'opt:2', origin: { kind: 'person' } })
-  expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/^› {2}Per package/)
-  expect((await ui.find({ key: 'line:1' }))?.text).toMatch(/^ {3}Project root/)
+  expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/^▌› Per package/)
+  expect((await ui.find({ key: 'line:1' }))?.text).toMatch(/^▌ {2}Project root/)
   await ui.unmount()
 })
 
@@ -544,19 +582,64 @@ function findBox(node: any, match: (props: any) => boolean): any {
   return (node.children ?? []).map((child: any) => findBox(child, match)).find(Boolean)
 }
 
+
+/** The row a keyed Box starts on in a drawn tree, counting rows as the terminal stacks them. */
+function rowOfKey(tree: any, key: string): number | undefined {
+  let found: number | undefined
+  const walk = (n: any, at: number): number => {
+    if (found !== undefined || n === null || n === undefined || n === '' || typeof n === 'boolean') {
+      return 0
+    }
+    if (typeof n !== 'object') {
+      return 1
+    }
+    if (Array.isArray(n)) {
+      let used = 0
+      for (const child of n) {
+        used += walk(child, at + used)
+      }
+      return used
+    }
+    if (n.type === 'Box' && n.props?.key === key) {
+      found = at
+      return 0
+    }
+    if (n.type !== 'Box') {
+      return 1
+    }
+    const kids = (n.children ?? []).flat()
+    const border = n.props?.borderStyle ? 1 : 0
+    if (n.props?.flexDirection === 'column') {
+      let used = border
+      for (const child of kids) {
+        used += walk(child, at + used)
+      }
+      return used + border
+    }
+    let most = 0
+    for (const child of kids) {
+      most = Math.max(most, walk(child, at + border))
+    }
+    return most + 2 * border
+  }
+  walk(tree, 0)
+
+  return found
+}
+
 const SHORT = (rows: number, bodyColumns = 90) => ({ ...PANE, props: { ...PANE.props, bodyColumns, scroll: { offset: 0, bodyRows: rows } } })
 
 test('the header is the title in bold with keys on at the right, then the crumb', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   const header = await ui.find({ key: 'header' })
-  expect(header?.text).toMatch(/^Where the config file lives +keys on/)
+  expect(header?.text).toMatch(/^▌ +CHOICE +Where the config file lives/)
   expect((await ui.find({ type: 'Text', text: 'Where the config file lives' }))?.props.bold).toBe(true)
-  // At 49 columns the crumb is cut at the edge.
-  expect(await ui.find({ type: 'Text', text: /^CHOICE · d1 · Config file plan · ○ 0 of 1 answer/ })).toBeDefined()
+  // At 49 columns the crumb wraps, and the keys state sits at the right of its last line.
+  expect((await ui.find({ key: 'crumb' }))?.text.replace(/[▌\s]+/g, ' ')).toMatch(/^ d1 · Config file plan · asked just now keys on$/)
   await ui.unmount()
 })
 
@@ -564,7 +647,7 @@ test('options 1 to 10 carry their own keys (0 for 10), 11 and 12 none', async ($
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...TWELVE })
-  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 40 } }, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 40 } }, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'opt:1' }))?.props.hotkey).toBe('1')
   expect((await ui.find({ key: 'opt:10' }))?.props.hotkey).toBe('0')
@@ -577,15 +660,16 @@ test('the highlighted option is a card holding its description and why; with the
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'm' })
   await ui.press({ key: 'opt:2' })
   await ringOn($, 'opt:2')
   expect(await ui.find({ type: 'Text', text: /one file, shared/ })).toBeUndefined()
   await ui.press({ key: 'opt:1' })
-  const card = findBox(await ui.drawn(), props => props.borderStyle === 'round')
-  expect(card?.props.borderColor).toBe('claude')
+  const card = findBox(await ui.drawn(), props => props.key === 'card:1')
+  expect(card?.props.borderStyle).toBeUndefined()
+  expect(JSON.stringify(card)).toContain('"backgroundColor":"subtle"')
   expect(JSON.stringify(card)).toContain('one file, shared by every package')
   expect(JSON.stringify(card)).toContain('Why: Every other tool reads from the root.')
   expect(JSON.stringify(card)).toContain('opt:1')
@@ -594,23 +678,23 @@ test('the highlighted option is a card holding its description and why; with the
   await ui.unmount()
 })
 
-test('the whole scenario and the sources show by default; m hides them down to 3 lines and shows them again', async ($, on) => {
+test('the whole scenario and the sources show by default; m hides the sources and keeps the scenario whole', async ($, on) => {
   engine(on)
   await start($)
   const long = Array.from({ length: 12 }, (_, i) => `Sentence ${i + 1} of the scenario.`).join(' ')
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, scenario: long, sources: [{ label: 'config.ts', path: 'src/config.ts' }] })
-  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 40 } }, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 40 } }, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   const context = async () => (await ui.findAll({ type: 'Text' })).filter(t => /Sentence|Sources/.test(t.text))
   expect((await context()).length).toBeGreaterThan(3)
-  expect(await ui.find({ type: 'Text', text: /Sources: config.ts \(src\/config.ts\)/ })).toBeDefined()
+  expect((await ui.find({ type: 'Link' }))?.props.href).toBe('file:///work/pantry/src/config.ts')
   expect((await ui.find({ key: 'm' }))?.text).toMatch(/hide detail/)
   await ui.press({ key: 'm' })
-  expect(await context()).toHaveLength(3)
-  expect((await context()).at(-1)?.text).toMatch(/…$/)
+  expect(await ui.find({ type: 'Link' })).toBeUndefined()
+  expect((await ui.findAll({ type: 'Text' })).map(t => t.text).join(' ')).toContain('Sentence 12 of the scenario.')
   expect((await ui.find({ key: 'm' }))?.text).toMatch(/show detail/)
   await ui.press({ key: 'm' })
-  expect((await context()).length).toBeGreaterThan(3)
+  expect(await ui.find({ type: 'Link' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -618,10 +702,10 @@ test('thin rules sit between the header, context, options, conversation and key 
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   const rules = (await ui.findAll({ type: 'Text' })).filter(t => /^─+$/.test(t.text))
-  expect(rules).toHaveLength(4)
+  expect(rules).toHaveLength(3)
   expect(rules[0]?.props.color).toBe('subtle')
   expect((await ui.findAll({ type: 'Text' })).some(t => /^-+$/.test(t.text))).toBe(false)
   await ui.unmount()
@@ -631,54 +715,48 @@ test('the ring starts on the recommended option, enter is shown choosing it, and
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'opt:1' }))?.props.autoFocus).toBe(true)
-  expect((await ui.find({ key: 'line:1' }))?.text).toMatch(/^›/)
+  expect((await ui.find({ key: 'line:1' }))?.text).toMatch(/^▌›/)
   expect(await ui.find({ type: 'Text', text: /^enter: choose 1/ })).toBeDefined()
   expect(await ui.find({ key: 'discuss' })).toBeUndefined()
   await ui.unmount()
 })
 
-test('compact at 9 rows: 12 options fit the pane, the ringed row is tinted with ›, no border, and o pages', async ($, on) => {
+test('compact at 9 rows: all 12 options are drawn under the key line, the ringed row has › and no border, and ↑↓ is offered', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...TWELVE })
-  const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
+  const ui = await mountHolding($, { ...SHORT(9), surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  expect(rowOfKey(await ui.drawn(), 'hints')).toBeLessThanOrEqual(3)
   const first = (await ui.findAll({ type: 'Button' })).filter(b => /^opt:/.test(String(b.props.key))).map(b => String(b.props.key))
   expect(first[0]).toBe('opt:1')
-  expect(first.length).toBeLessThan(12)
-  expect(await ui.find({ key: 'o' })).toBeDefined()
+  expect(first).toHaveLength(13)
+  expect(await ui.find({ type: 'Text', text: /↑↓: more options/ })).toBeDefined()
   await ui.press({ key: 'opt:2' })
   await ringOn($, 'opt:2')
   expect(findBox(await ui.drawn(), props => props.borderStyle !== undefined)).toBeUndefined()
-  expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/^›/)
+  expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/^▌›/)
   expect(await ui.find({ type: 'Text', text: /what place 2 costs/ })).toBeDefined()
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
-  await ui.press({ key: 'o' })
-  const second = (await ui.findAll({ type: 'Button' })).filter(b => /^opt:/.test(String(b.props.key))).map(b => String(b.props.key))
-  expect(second[0]).toBe(`opt:${first.length + 1}`)
-  expect(await ui.find({ key: 'card:2' })).toBeUndefined()
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  expect(rowOfKey(await ui.drawn(), 'hints')).toBeLessThanOrEqual(3)
   await ui.unmount()
 })
 
-test('compact: a digit for an option on another page draws its page and highlights it, and 9 then enter answers', async ($, on) => {
+test('compact: option 9, below the window, keeps its own key; 9 highlights it and 9 then enter answers', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...TWELVE })
-  const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
+  const ui = await mountHolding($, { ...SHORT(9), surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
-  expect(await ui.find({ key: 'opt:9' })).toBeUndefined()
-  expect((await ui.find({ key: 'digit:9' }))?.props.hotkey).toBe('9')
-  await ui.press({ key: 'digit:9' })
+  expect((await ui.find({ key: 'opt:9' }))?.props.hotkey).toBe('9')
+  expect(await ui.find({ key: 'digit:9' })).toBeUndefined()
+  await ui.press({ key: 'opt:9' })
   expect(await ui.find({ key: 'card:9' })).toBeDefined()
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
   await ringOn($, 'opt:9')
   await ui.press({ key: 'opt:9' })
-  expect(await ui.find({ type: 'Text', text: 'Answered  1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '▸ Config file plan · 1 answered' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -686,12 +764,12 @@ test('compact: 1 then 2 reaches option 12 on its own page, not option 1', async 
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...TWELVE })
-  const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
+  const ui = await mountHolding($, { ...SHORT(9), surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'opt:1' })
   await ui.press({ key: 'opt:2' })
   expect(await ui.find({ key: 'card:12' })).toBeDefined()
-  expect(await ui.find({ key: 'opt:1' })).toBeUndefined()
+  expect(await ui.find({ key: 'card:1' })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -699,7 +777,7 @@ test('a number past the options does nothing: 4 options have no 9 key anywhere',
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, options: [{ label: 'A' }, { label: 'B' }, { label: 'C' }, { label: 'D' }] })
-  const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
+  const ui = await mountHolding($, { ...SHORT(9), surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   const hotkeys = (await ui.findAll({ type: 'Button' })).map(b => b.props.hotkey).filter(Boolean)
   expect(hotkeys).not.toContain('9')
@@ -716,66 +794,60 @@ test('compact with no recommendation and no descriptions: no a, the scenario lin
   const path = [...seen.files.keys()].find(p => p.endsWith('/d1.json'))!
   const { recommendation: _gone, ...stored } = JSON.parse(seen.files.get(path)!)
   seen.files.set(path, JSON.stringify(stored))
-  const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
+  const ui = await mountHolding($, { ...SHORT(9), surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   expect(await ui.find({ key: 'a' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /^Recipes need a home/ })).toBeDefined()
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  expect(rowOfKey(await ui.drawn(), 'hints')).toBeLessThanOrEqual(3)
   await ui.press({ key: 'opt:3' })
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  expect(rowOfKey(await ui.drawn(), 'hints')).toBeLessThanOrEqual(3)
   await ui.unmount()
 })
 
-test('the pane opens on the tab holding the newest open decision, and each tab shows its open count', async ($, on) => {
+test('the list shows every group, newest waiting first, each heading with how many wait', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, group: 'What to work on' })
   for (const title of ['One', 'Two', 'Three']) {
     await $.tool.call({ tool: ADD_TOOL, ...GOOD, group: 'Decisions pane design', title })
   }
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await ui.find({ key: 'row:d2' })).toBeDefined()
-  expect(await ui.find({ key: 'row:d1' })).toBeUndefined()
-  expect((await ui.find({ key: 'tab:g:Decisions pane design' }))?.text).toMatch(/^ Decisions pane design 3 /)
-  expect((await ui.find({ key: 'tab:g:What to work on' }))?.text).toMatch(/^ What to work on 1 /)
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
+  const rows = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.key)).filter(k => k.startsWith('row:'))
+  expect(rows).toEqual(['row:d2', 'row:d3', 'row:d4', 'row:d1'])
+  expect(await ui.find({ type: 'Text', text: '◆ Decisions pane design · 3 waiting' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '◆ What to work on · 1 waiting' })).toBeDefined()
   await ui.unmount()
 })
 
-test('when the open tab has nothing to answer the list says which tab does, and enter goes there', async ($, on) => {
+test('a group with nothing left waiting folds to its heading, below the groups that wait, and the ring starts on a waiting row', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, group: 'What to work on' })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await answer($, ui, 1)
   await ui.unmount()
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, group: 'Decisions pane design', title: 'One' })
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, group: 'Decisions pane design', title: 'Two' })
-  const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await again.find({ key: 'row:d2' })).toBeDefined()
-  await again.press({ key: 't' })
-  const pointer = await again.find({ key: 'goto-waiting' })
-  expect(pointer?.text).toMatch(/2 waiting in Decisions pane design · enter/)
-  expect(pointer?.props.autoFocus).toBe(true)
-  expect((await again.find({ key: 'row:d1' }))?.props.autoFocus).toBeUndefined()
-  await again.press({ key: 'goto-waiting' })
-  expect(await again.find({ key: 'row:d2' })).toBeDefined()
-  expect(await again.find({ key: 'goto-waiting' })).toBeUndefined()
+  const again = await mountHolding($, { ...PANE, surface: 'terminal' })
+  const keys = (await again.findAll({ type: 'Button' })).map(b => String(b.props.key))
+  expect(keys.indexOf('row:d2')).toBeLessThan(keys.indexOf('group:g:What to work on'))
+  expect(await again.find({ key: 'row:d1' })).toBeUndefined()
+  expect((await again.find({ key: 'row:d2' }))?.props.autoFocus).toBe(true)
+  await again.press({ key: 'group:g:What to work on' })
+  expect(await again.find({ key: 'row:d1' })).toBeDefined()
   await again.unmount()
 })
 
-test('Claude adding a decision while the person is not in the pane moves the list to its tab', async ($, on) => {
+test('a decision Claude adds lands in its group, which the list shows', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, group: 'What to work on' })
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, group: 'Decisions pane design' })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 't' })
-  expect(await ui.find({ key: 'row:d1' })).toBeDefined()
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, group: 'Decisions pane design', title: 'Third' })
-  await ui.unmount()
-  const after = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const after = await mountHolding($, { ...PANE, surface: 'terminal' })
   expect(await after.find({ key: 'row:d3' })).toBeDefined()
+  expect(await after.find({ key: 'row:d1' })).toBeDefined()
   await after.unmount()
 })
 
@@ -792,7 +864,7 @@ test("another session sees none of this session's decisions: not in the pane, th
   expect(JSON.stringify(await $.tool.call({ tool: LIST_TOOL }))).toContain('No open decisions in the pane.')
   expect(JSON.stringify(await $.tool.call({ tool: UPDATE_TOOL, id: 'd1', summary: 'Changed', title: 'New title' }))).toMatch(/d1/)
   expect(JSON.parse([...seen.files.values()][0]!).title).toBe(GOOD.title)
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /No decisions yet/ })).toBeDefined()
   await ui.unmount()
   const answer = await $.tool.call({ tool: ADD_TOOL, ...GOOD, title: 'Second session' })
@@ -815,13 +887,13 @@ test("sending answers only this session's ready decisions", async ($, on) => {
   const seen = engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await answer($, ui, 1)
   await ui.unmount()
   seen.session = 'session-2'
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, title: 'Second session' })
-  const other = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const other = await mountHolding($, { ...PANE, surface: 'terminal' })
   await other.press({ key: 'row:d2' })
   await answer($, other, 2)
   await other.press({ key: 's' })
@@ -854,13 +926,13 @@ test('compact at 90 columns: every key line fits the width as the engine draws i
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...TWELVE })
-  const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
+  const ui = await mountHolding($, { ...SHORT(9), surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   const lines = async () => (findBox(await ui.drawn(), props => props.key === 'hints')?.children ?? []).flat().map(drawnWidth)
   for (const width of await lines()) {
     expect(width).toBeLessThanOrEqual(89)
   }
-  await ui.press({ key: 'digit:9' })
+  await ui.press({ key: 'opt:9' })
   for (const width of await lines()) {
     expect(width).toBeLessThanOrEqual(89)
   }
@@ -868,23 +940,23 @@ test('compact at 90 columns: every key line fits the width as the engine draws i
   await ui.unmount()
 })
 
-test('answering the last open decision on a tab leaves the list on that tab', async ($, on) => {
+test('answering the last waiting decision in a group folds that group while another still waits', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, group: 'What to work on' })
   await $.tool.call({ tool: ADD_TOOL, ...GOOD, group: 'Storage choices' })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'row:d2' })
   await answer($, ui, 1)
-  expect(await ui.find({ key: 'row:d2' })).toBeDefined()
-  expect((await ui.find({ key: 'goto-waiting' }))?.text).toMatch(/1 waiting in What to work on/)
+  expect(await ui.find({ type: 'Text', text: '▸ Storage choices · 1 answered' })).toBeDefined()
+  expect(await ui.find({ key: 'row:d1' })).toBeDefined()
   await ui.unmount()
 })
 
 test('an empty pane offers only h', async ($, on) => {
   engine(on)
   await start($)
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   expect((await ui.findAll({ type: 'Button' })).map(b => b.props.key)).toEqual(['h'])
   await ui.unmount()
 })
@@ -896,7 +968,7 @@ test('the Send and assumptions screens open with › on the row the ring starts 
   for (const title of ['Codes are 8 characters', 'Links never expire']) {
     await $.tool.call({ tool: ADD_TOOL, group: 'Config file plan', kind: 'assumption', title, scenario: 's' })
   }
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   await ui.press({ key: 'batch' })
   expect((await ui.find({ key: 'batch:d2' }))?.text).toMatch(/^› d2/)
   await ui.press({ key: 'b' })
@@ -913,7 +985,7 @@ test('compact assumptions screen fits 9 rows with the pane header and a notice, 
   for (let i = 1; i <= 12; i++) {
     await $.tool.call({ tool: ADD_TOOL, group: 'Config file plan', kind: 'assumption', title: `Assumption ${i}`, scenario: 's' })
   }
-  const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
+  const ui = await mountHolding($, { ...SHORT(9), surface: 'terminal' })
   await ui.press({ key: 'batch' })
   await ringOn($, 'batch:d1')
   await ui.press({ key: '1' })
@@ -921,34 +993,35 @@ test('compact assumptions screen fits 9 rows with the pane header and a notice, 
   expect(await ui.find({ type: 'Text', text: /Answered 1 assumption/ })).toBeDefined()
   expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
   await ui.unmount()
-  const off = await $.ui.mount({ ...SHORT(9), props: { ...SHORT(9).props, isFocused: false }, surface: 'terminal' })
+  const off = await mountHolding($, { ...SHORT(9), props: { ...SHORT(9).props, isFocused: false }, surface: 'terminal' })
   expect(lineCount(await off.drawn())).toBeLessThanOrEqual(9)
   await off.unmount()
 })
 
-test('a sent 12-option decision on a 9-row pane shows the page holding its answer', async ($, on) => {
+test('a sent 12-option decision on a 9-row pane draws its answer, with the key line at the top', async ($, on) => {
   const seen = engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...TWELVE })
   const path = [...seen.files.keys()].find(p => p.endsWith('/d1.json'))!
   seen.files.set(path, JSON.stringify({ ...JSON.parse(seen.files.get(path)!), state: 'sent', answer: { option: 9, answeredAt: 't' } }))
-  const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
+  const ui = await mountHolding($, { ...SHORT(9), surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'line:9' }))?.text).toMatch(/✓/)
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  expect(rowOfKey(await ui.drawn(), 'hints')).toBeLessThanOrEqual(3)
   await ui.unmount()
 })
 
-test('compact with m open and an option highlighted still fits 9 rows', async ($, on) => {
+test('compact with m open and an option highlighted draws it all, with the key line at the top', async ($, on) => {
   engine(on)
   await start($)
   await $.tool.call({ tool: ADD_TOOL, ...TWELVE, scenario: 'A long scenario. '.repeat(20), sources: [{ label: 'a.ts', path: 'src/a.ts' }] })
-  const ui = await $.ui.mount({ ...SHORT(9), surface: 'terminal' })
+  const ui = await mountHolding($, { ...SHORT(9), surface: 'terminal' })
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'm' })
   await ui.press({ key: 'opt:1' })
   expect(await ui.find({ type: 'Text', text: /what place 1 costs/ })).toBeDefined()
-  expect(lineCount(await ui.drawn())).toBeLessThanOrEqual(9)
+  expect(await ui.find({ type: 'Link' })).toBeDefined()
+  expect(rowOfKey(await ui.drawn(), 'hints')).toBeLessThanOrEqual(3)
   await ui.unmount()
 })
 
@@ -957,12 +1030,209 @@ test('when the pane gets the keys the ring goes where the pane means it, not to 
   const d = (id: string, group: string, over: Record<string, unknown> = {}) =>
     ({ version: 1, id, number: Number(id.slice(1)), group, section: 'needs-you', kind: 'choice', title: id, scenario: 's', options: [{ id: 1, label: 'A' }], sources: [], dependsOn: [], state: 'open', thread: [], revisions: [], createdAt: at(1), updatedAt: at(1), ...over }) as any
   const tabs = tabsFor([d('d1', 'Old'), d('d2', 'New'), d('d3', 'New', { thread: [{ who: 'claude', text: 'hi', at: at(5) }] })])
-  // The prompt had the keys while a new decision switched the list to "New": the stored ring is a row on the old tab.
-  expect(ringTarget({ ...INITIAL_VIEW, screen: 'list', tab: 'g:New', ring: 'row:d1' }, tabs)).toBe('row:d3')
-  expect(ringTarget({ ...INITIAL_VIEW, screen: 'list', tab: 'g:New', ring: 'row:d2' }, tabs)).toBe('row:d2')
+  // A ring on a row still drawn stays; one on a row that went goes to the first waiting row: the group with the unread reply comes first.
+  expect(ringTarget({ ...INITIAL_VIEW, screen: 'list', ring: 'row:d9' }, tabs)).toBe('row:d3')
+  expect(ringTarget({ ...INITIAL_VIEW, screen: 'list', ring: 'row:d2' }, tabs)).toBe('row:d2')
+  // With nothing waiting the session card takes it.
+  expect(ringTarget({ ...INITIAL_VIEW, screen: 'list' }, [], {}, undefined, true)).toBe('session-card')
   expect(ringTarget({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd2', highlight: 1 }, tabs)).toBe('opt:1')
   expect(ringTarget({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd2' }, tabs)).toBe('opt:1')
   expect(ringTarget({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd2', highlight: 1, answerBox: { kind: 'text', option: 2 } }, tabs)).toBe('answer')
+  expect(ringTarget({ ...INITIAL_VIEW, screen: 'decision', decisionId: 'd2', highlight: 1, ring: 'ask-inline' }, tabs)).toBe('ask-inline')
   expect(ringTarget({ ...INITIAL_VIEW, screen: 'review' }, tabs)).toBeUndefined()
   expect(ringTarget({ ...INITIAL_VIEW, screen: 'review', decisionId: 'd2', ticked: ['d2'] }, tabs)).toBe('confirm')
+})
+
+test('a chat answer through decisions_answer shows the decision as sent with its answer, and opens no turn', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const answered = await $.tool.call({ tool: 'mcp__decisions__decisions_answer', id: 'd1', option: 1, quote: 'happy with your recommendations' } as any)
+  expect(answered).toHaveProperty('result')
+  expect(seen.submitted).toEqual([])
+  const ui = await mountHolding($, { ...PANE, surface: 'terminal' })
+  expect((await ui.find({ key: 'under:d1' }))?.text).toMatch(/↗ sent .* · 1 Project root/)
+  await ui.unmount()
+})
+
+test("a subagent's Artifact publish adds its link to the session record; a clear carries the record to the new id", async ($, on) => {
+  const seen = engine(on)
+  const url = ['https://claude.ai', 'code', 'artifact', 'ab12'].join('/')
+  ;(on as any)('tool.call', { tool: 'Artifact' }, () => ({ result: {}, text: `Published ${url}` }))
+  on('session.end', () => ({ sessionId: 'session-1' }))
+  const clock = mock.clock(on as any)
+  await start($)
+  await $.tool.call({ tool: 'Artifact', file_path: '/tmp/x/mock.html', title: 'Share mock', agentId: 'agent-1' } as any)
+  const file = () => [...seen.files.entries()].find(([k]) => /session-session-1\.json$/.test(k))
+  expect(JSON.parse(file()![1]).links).toEqual([{ url, label: 'Share mock', kind: 'artifact', addedBy: 'mod' }])
+  await $.session.end({ reason: 'clear' } as any)
+  seen.session = 'session-2'
+  await clock.advance(300)
+  const carried = [...seen.files.entries()].find(([k]) => /session-session-2\.json$/.test(k))
+  expect(JSON.parse(carried![1])).toMatchObject({ session: 'session-2', continuedFrom: 'session-1' })
+})
+
+// Row 270: answering the last waiting decision goes straight to sending.
+
+test('answering the last waiting decision lands on the Send screen, every ready answer ticked and send focused first', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD, title: 'Second one' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  await answer($, ui, 1)
+  expect(await ui.find({ key: 'row:d2' })).toBeDefined()
+  await ui.press({ key: 'row:d2' })
+  await answer($, ui, 1)
+  expect(await ui.find({ type: 'Text', text: 'That was the last one.' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'enter sends 2 answers to Claude, b to hold them.' })).toBeDefined()
+  const buttons = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.key))
+  expect(buttons[0]).toBe('confirm')
+  expect((await ui.find({ key: 'confirm' }))?.props.autoFocus).toBe(true)
+  expect((await ui.find({ key: 'tick:d1' }))?.text).toMatch(/\[x\]/)
+  expect((await ui.find({ key: 'tick:d2' }))?.text).toMatch(/\[x\]/)
+  expect(seen.submitted).toEqual([])
+  await ui.press({ key: 'b' })
+  expect(seen.submitted).toEqual([])
+  expect(await ui.find({ key: 'group:g:Config file plan' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('with one answer, the last-one screen says 1 answer, and enter sends it', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  await answer($, ui, 1)
+  expect(await ui.find({ type: 'Text', text: 'enter sends 1 answer to Claude, b to hold it.' })).toBeDefined()
+  expect((await ui.find({ key: 'b' }))?.text).toMatch(/hold it/)
+  await ui.press({ key: 'confirm' })
+  expect(seen.submitted).toHaveLength(1)
+  await ui.unmount()
+})
+
+test('until they are sent, the list warns that answers are not sent, and the status line says not sent', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'row:d1' })
+  await answer($, ui, 1)
+  await ui.press({ key: 'b' })
+  const line = await ui.find({ type: 'Text', text: '1 answer not sent yet · s sends them' })
+  expect(line?.props.color).toBe('warning')
+  expect(await ui.find({ type: 'Text', text: /Nothing needs you/ })).toBeUndefined()
+  expect(seen.statuses.at(-1)).toBe('nothing needs you · 1 not sent')
+  await ui.unmount()
+})
+
+// Row 265: the session card at the top of the one list opens the Session page; r asks Claude to refresh it.
+
+test('the session card sits at the top of the list and opens the Session page; b comes back', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.tool.call({ tool: 'mcp__decisions__decisions_session', title: 'Pantry: sharing links', now: { text: 'Choosing expiry' } } as any)
+  await $.tool.call({ tool: ADD_TOOL, ...GOOD })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const keys = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.key))
+  expect(keys[0]).toBe('session-card')
+  expect((await ui.find({ key: 'session-card' }))?.text).toMatch(/✻ Pantry: sharing links/)
+  expect(await ui.find({ type: 'Text', text: '  ▶ now: Choosing expiry' })).toBeDefined()
+  expect((await ui.find({ key: 'row:d1' }))?.props.autoFocus).toBe(true)
+  await ui.press({ key: 'session-card' })
+  expect(await ui.find({ type: 'Text', text: '▶ now  Choosing expiry' })).toBeDefined()
+  await ui.press({ key: 'b' })
+  expect(await ui.find({ key: 'row:d1' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('with nothing waiting the ring starts on the session card', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  const r = await $.tool.call({ tool: 'mcp__decisions__decisions_session', title: 'Pantry: sharing links' } as any)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(r).toHaveProperty('result')
+  expect((await ui.find({ key: 'session-card' }))?.props.autoFocus).toBe(true)
+  await ui.unmount()
+})
+
+test('r on the Session page asks Claude to refresh once, and the line clears when the record updates', async ($, on) => {
+  const seen = engine(on)
+  await start($)
+  await $.tool.call({ tool: 'mcp__decisions__decisions_session', title: 'Pantry: sharing links' } as any)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'session-card' })
+  await ui.press({ key: 'r' })
+  await ui.press({ key: 'r' })
+  expect(seen.submitted.filter(t => t === REFRESH_PROMPT)).toHaveLength(1)
+  expect(await ui.find({ type: 'Text', text: '✻ asked Claude to refresh' })).toBeDefined()
+  await $.tool.call({ tool: 'mcp__decisions__decisions_session', summary: 'Now on expiry.' } as any)
+  await ui.unmount()
+  const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await again.find({ type: 'Text', text: '✻ asked Claude to refresh' })).toBeUndefined()
+  await again.unmount()
+})
+
+test("a refresh turn that ends without an update says Claude didn't update it", async ($, on) => {
+  engine(on)
+  on('turn.start', (_: any, e: any) => ({ turnId: e.turnId }))
+  on('turn.complete', (_: any, e: any) => ({ text: e.answer }))
+  await start($)
+  await $.tool.call({ tool: 'mcp__decisions__decisions_session', title: 'Pantry: sharing links' } as any)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'session-card' })
+  await ui.press({ key: 'r' })
+  await $.turn.start({ text: `The decisions plugin sent a message:\n${REFRESH_PROMPT}`, turnId: 'refresh-1' } as any)
+  await $.turn.complete({ turnId: 'refresh-1', answer: 'Nothing changed.' } as any)
+  await ui.unmount()
+  const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await again.find({ type: 'Text', text: "Claude didn't update it" })).toBeDefined()
+  await again.unmount()
+})
+
+test('the Session page opens with the ring on b, so a second enter never asks Claude to refresh', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.tool.call({ tool: 'mcp__decisions__decisions_session', title: 'Pantry: sharing links' } as any)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'session-card' })
+  expect((await ui.find({ key: 'b' }))?.props.autoFocus).toBe(true)
+  expect((await ui.find({ key: 'r' }))?.props.autoFocus).toBeUndefined()
+  await ui.unmount()
+})
+
+test("a refresh that can't be sent says so, and r works again", async ($, on) => {
+  const seen = engine(on, { failSubmit: true })
+  await start($)
+  await $.tool.call({ tool: 'mcp__decisions__decisions_session', title: 'Pantry: sharing links' } as any)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'session-card' })
+  await ui.press({ key: 'r' })
+  for (let i = 0; i < 30; i++) {
+    await Promise.resolve()
+  }
+  await ui.unmount()
+  const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await again.find({ type: 'Text', text: "Couldn't ask Claude to refresh" })).toBeDefined()
+  await again.press({ key: 'r' })
+  expect(seen.submitted.filter(t => t === REFRESH_PROMPT)).toHaveLength(2)
+  await again.unmount()
+})
+
+test('a /clear while a refresh is out drops it, so the page does not stay on asked', async ($, on) => {
+  engine(on)
+  on('session.end', () => ({ sessionId: 'session-1' }))
+  await start($)
+  await $.tool.call({ tool: 'mcp__decisions__decisions_session', title: 'Pantry: sharing links' } as any)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'session-card' })
+  await ui.press({ key: 'r' })
+  expect(await ui.find({ type: 'Text', text: '✻ asked Claude to refresh' })).toBeDefined()
+  await ui.unmount()
+  await $.session.end({ reason: 'clear' } as any)
+  const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await again.find({ type: 'Text', text: '✻ asked Claude to refresh' })).toBeUndefined()
+  await again.unmount()
 })

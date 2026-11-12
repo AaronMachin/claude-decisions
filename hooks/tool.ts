@@ -1,10 +1,14 @@
+import { reopenDependents } from './dependents'
+import { SESSION_DESCRIPTION, SESSION_INPUT_SCHEMA } from './session'
 import { fixedOptionsFor } from './kind-options'
+import { problemFields, validateProblem } from './problem'
 import { create, readAll, readOne, write } from './store'
-import type { Decision, Kind, Section, StoreCtx } from './store'
+import type { Answer, Decision, Kind, Section, StoreCtx } from './store'
 
 export const ADD_TOOL = 'mcp__decisions__decisions_add'
 export const LIST_TOOL = 'mcp__decisions__decisions_list'
 export const UPDATE_TOOL = 'mcp__decisions__decisions_update'
+export const ANSWER_TOOL = 'mcp__decisions__decisions_answer'
 
 export const ADD_DESCRIPTION = `Adds one decision to the decisions pane, where the person answers it. Use it for every question, decision, assumption, go-ahead or review finding you would otherwise put to the person in chat, and never use AskUserQuestion: call this tool instead. Write one line in chat saying what you added (such as "Added 2 decisions to the pane, 1 blocks the plan") and carry on with anything that does not depend on the answer. Never list the decisions in chat.
 
@@ -58,17 +62,20 @@ export const ADD_INPUT_SCHEMA = {
         'True for something only the person can do (sign in, run a command), shown in a "For you to do" tab. kind must be go-ahead; give no options and no recommendation. The scenario carries the steps. They answer 1 Done or 2 Cannot do it.',
     },
     title: { type: 'string', description: 'Plain title, readable without the conversation.' },
+    problem: { type: 'string', description: 'Optional: one line, at most 140 characters, saying what the decision is about; written for you when left out.' },
     scenario: { type: 'string', description: 'A concrete example of what happens, for someone who was not in the conversation.' },
     options: {
       type: 'array',
       minItems: 1,
       maxItems: 12,
-      description: 'Required for choice only; refused for every other kind.',
+      description: 'Required for choice only; refused for every other kind. Each may add why and whyNot, a sentence for and against it.',
       items: {
         type: 'object',
         properties: {
           label: { type: 'string' },
           changes: { type: 'string', description: 'What it would take and what changes if chosen.' },
+          why: { type: 'string', description: 'Optional: the case for it.' },
+          whyNot: { type: 'string', description: 'Optional: the case against it.' },
         },
         required: ['label'],
       },
@@ -105,7 +112,7 @@ id (required): the decision, such as "d3".
 summary (required): one plain line for the thread, such as "Added option 3, Per workspace" or "Recommendation moved to 2".
 addOptions (optional): [{ label, changes }] appended after the existing options, so they take the next numbers. A decision has 12 options at most.
 recommendation (optional): { option, reason }. option is the option's NUMBER, counting any you add in this call.
-Give at least one of addOptions, recommendation, dependsOn, blocks and section (a decision moved to another section, for example into needs-you).
+Give at least one of addOptions, recommendation, dependsOn, blocks, section (a decision moved to another section, for example into needs-you) and problem.
 
 REFUSALS
 Only the main session calls this; a subagent's call is refused. Refused, with the reason in the result, when the id is unknown, the decision is already sent, the summary is blank, nothing is given to change, an added option has no label or there would be more than 12, or the recommendation names an option that does not exist. Fix the named field and call again.`
@@ -115,11 +122,12 @@ export const UPDATE_INPUT_SCHEMA = {
   properties: {
     id: { type: 'string', description: 'The decision, such as "d3".' },
     summary: { type: 'string', description: 'One plain line for the thread, such as "Added option 3, Per workspace".' },
+    problem: { type: 'string', description: 'Optional: replaces the one line, at most 140 characters, saying what the decision is about.' },
     addOptions: {
       type: 'array',
       items: {
         type: 'object',
-        properties: { label: { type: 'string' }, changes: { type: 'string' } },
+        properties: { label: { type: 'string' }, changes: { type: 'string' }, why: { type: 'string' }, whyNot: { type: 'string' } },
         required: ['label'],
       },
     },
@@ -141,8 +149,43 @@ export const UPDATE_INPUT_SCHEMA = {
 
 const LIST_INPUT_SCHEMA = { type: 'object', properties: {} }
 
+export const ANSWER_DESCRIPTION = `Records an answer the person gave in the chat instead of the pane. Use it only when their own message answers a decision that is in the pane: for example "happy with your recommendations" answers every open decision you had recommended for, each with its recommended option. Give the option they chose, or text with their answer in their words, an optional condition, and quote: their message, verbatim. The decision is marked sent, since you already have the answer, and the pane shows it with the quote. Never use it to answer on the person's behalf without their words, or for a decision their message doesn't answer.`
+
+export const ANSWER_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: 'The decision, such as "d3".' },
+    option: { type: 'number', description: 'The number of the option they chose. Give this or text.' },
+    text: { type: 'string', description: 'Their answer in their own words, when it is not one of the options.' },
+    condition: { type: 'string', description: 'Optional: a condition they put on it ("only if ...").' },
+    quote: { type: 'string', description: "The person's chat message the answer came from, verbatim." },
+  },
+  required: ['id', 'quote'],
+}
+
 function isBlank(value: unknown): boolean {
   return typeof value !== 'string' || value.trim() === ''
+}
+
+/** The refusal for an option whose why or whyNot is not a string, or undefined. */
+function caseRefusal(tool: string, options: any[], firstNumber: number): string | undefined {
+  for (const [index, option] of options.entries()) {
+    for (const field of ['why', 'whyNot']) {
+      if (option?.[field] !== undefined && typeof option[field] !== 'string') {
+        return `${tool} refused: option ${firstNumber + index} ${field} must be a sentence (a string), or left out.`
+      }
+    }
+  }
+
+  return undefined
+}
+
+/** An option's why and whyNot, trimmed, the empty ones dropped. */
+function cases(option: any): { why?: string; whyNot?: string } {
+  return {
+    ...(isBlank(option?.why) ? {} : { why: String(option.why).trim() }),
+    ...(isBlank(option?.whyNot) ? {} : { whyNot: String(option.whyNot).trim() }),
+  }
 }
 
 const KINDS: Kind[] = ['choice', 'go-ahead', 'assumption', 'finding', 'question']
@@ -158,6 +201,10 @@ export function validateAdd(input: Record<string, any>, existingIds: string[]): 
   }
   if (!KINDS.includes(input.kind)) {
     return `decisions_add refused: kind must be one of ${KINDS.join(', ')}.`
+  }
+  const problem = validateProblem(input.problem, 'decisions_add')
+  if (problem !== undefined) {
+    return problem
   }
   const kind: Kind = input.kind
   const isTask = input.isTask === true
@@ -199,6 +246,10 @@ export function validateAdd(input: Record<string, any>, existingIds: string[]): 
         return `decisions_add refused: option ${index + 1} has no label.`
       }
     }
+    const badCase = caseRefusal('decisions_add', options, 1)
+    if (badCase !== undefined) {
+      return badCase
+    }
     const recommendation = input.recommendation
     const number = recommendation?.option
     if (!Number.isInteger(number) || number < 1 || number > options.length) {
@@ -228,8 +279,14 @@ export function validateUpdate(input: Record<string, any>, d: Decision | undefin
   if (isBlank(input.summary)) {
     return 'decisions_update refused: summary is required. Say what changed in one line.'
   }
+  const problem = validateProblem(input.problem, 'decisions_update')
+  if (problem !== undefined) {
+    return problem
+  }
   const added: any[] = input.addOptions ?? []
-  if (added.length === 0 && ['recommendation', 'dependsOn', 'blocks', 'section'].every(f => input[f] === undefined)) {
+  // A blank problem counts as not given (row 287), so it is no change on its own.
+  const hasProblem = typeof input.problem === 'string' && input.problem.trim() !== ''
+  if (added.length === 0 && !hasProblem && ['recommendation', 'dependsOn', 'blocks', 'section'].every(f => input[f] === undefined)) {
     return 'decisions_update refused: nothing to change. Give addOptions, recommendation, dependsOn, blocks or section.'
   }
   const isFixed = fixedOptionsFor(d.kind, d.isTask === true) !== undefined || d.kind === 'question'
@@ -287,6 +344,10 @@ export function validateUpdate(input: Record<string, any>, d: Decision | undefin
       return `decisions_update refused: option ${d.options.length + index + 1} has no label.`
     }
   }
+  const badCase = caseRefusal('decisions_update', added, d.options.length + 1)
+  if (badCase !== undefined) {
+    return badCase
+  }
   const total = d.options.length + added.length
   if (total > 12) {
     return 'decisions_update refused: a decision has at most 12 options.'
@@ -304,8 +365,12 @@ export function validateUpdate(input: Record<string, any>, d: Decision | undefin
   return undefined
 }
 
-/** Applies an update: keeps the version it replaces, adds a ↻ line to the thread, writes the file. */
-export async function updateDecision($: StoreCtx, input: Record<string, any>): Promise<{ result: string } | { deny: string }> {
+/** Applies an update: keeps the version it replaces, adds a ↻ line to the thread, writes the file. `onUpdated` gets the decision as written. */
+export async function updateDecision(
+  $: StoreCtx,
+  input: Record<string, any>,
+  onUpdated?: (d: Decision) => void,
+): Promise<{ result: string } | { deny: string }> {
   const d = typeof input.id === 'string' ? await readOne($, input.id) : undefined
   const reason = validateUpdate(input, d, (await readAll($)).decisions)
   if (reason !== undefined || !d) {
@@ -318,10 +383,12 @@ export async function updateDecision($: StoreCtx, input: Record<string, any>): P
     id: d.options.length + index + 1,
     label: String(o.label).trim(),
     ...(isBlank(o.changes) ? {} : { changes: String(o.changes).trim() }),
+    ...cases(o),
     fromDiscussion: true,
   }))
-  await write($, {
+  const next: Decision = {
     ...d,
+    ...problemFields(input.problem),
     options: [...d.options, ...added],
     recommendation: input.recommendation
       ? { option: input.recommendation.option, reason: String(input.recommendation.reason).trim() }
@@ -331,14 +398,74 @@ export async function updateDecision($: StoreCtx, input: Record<string, any>): P
     ...(input.section !== undefined ? { section: input.section } : {}),
     revisions: [...d.revisions, { at, summary, before }],
     thread: [...d.thread, { who: 'claude', text: `↻ ${summary}`, at, revision: d.revisions.length }],
-  })
+  }
+  await write($, next)
+  onUpdated?.(next)
 
   return { result: `Updated ${d.id}: ${summary}. The earlier version is kept in the thread.` }
 }
 
+/** The refusal text for a chat answer, or undefined when it's fine. */
+export function validateAnswer(input: Record<string, any>, d: Decision | undefined): string | undefined {
+  if (!d) {
+    return `decisions_answer refused: ${String(input.id)}: no such decision.`
+  }
+  if (['sent', 'superseded', 'withdrawn'].includes(d.state)) {
+    return `decisions_answer refused: ${d.id} is already ${d.state}.`
+  }
+  if ((input.option === undefined) === isBlank(input.text)) {
+    return 'decisions_answer refused: give an option or text, one of them.'
+  }
+  if (input.option !== undefined && !d.options.some(o => o.id === input.option)) {
+    return `decisions_answer refused: option ${String(input.option)} is not one of ${d.id}'s options.`
+  }
+  if (input.condition !== undefined && typeof input.condition !== 'string') {
+    return 'decisions_answer refused: condition must be a sentence, or left out.'
+  }
+  if (isBlank(input.quote)) {
+    return "decisions_answer refused: quote is required: the person's chat message, verbatim."
+  }
+
+  return undefined
+}
+
+/** A chat answer (row 263): the answer, sent at once since Claude already has it, the quote in the thread, and dependents reopened as for any changed answer. */
+export async function answerDecision($: StoreCtx, input: Record<string, any>): Promise<{ result: string } | { deny: string }> {
+  const d = typeof input.id === 'string' ? await readOne($, input.id) : undefined
+  const reason = validateAnswer(input, d)
+  if (reason !== undefined || !d) {
+    return { deny: reason ?? 'decisions_answer refused: no such decision.' }
+  }
+  const at = new Date().toISOString()
+  const condition = isBlank(input.condition) ? undefined : String(input.condition).trim()
+  const answer: Answer = {
+    ...(input.option !== undefined ? { option: input.option as number } : { text: String(input.text).trim() }),
+    ...(condition !== undefined ? { condition } : {}),
+    answeredAt: at,
+  }
+  const previous = d.answer
+  const next: Decision = {
+    ...d,
+    state: 'sent',
+    sentAt: at,
+    answer,
+    thread: [...d.thread, { who: 'person', text: `Answered in chat: ${String(input.quote).trim()}`, at }],
+  }
+  await write($, next)
+  const changed = previous !== undefined && (previous.option !== answer.option || previous.text !== answer.text || previous.condition !== condition)
+  const reopened = changed ? (await reopenDependents($, next, previous)).reopened : []
+
+  return { result: `Recorded ${d.id} as answered in chat and sent.${reopened.length > 0 ? ` Reopened ${reopened.join(', ')}.` : ''}` }
+}
+
 const WAITING = ['open', 'live']
 
-export async function addDecision($: StoreCtx, input: Record<string, any>): Promise<{ result: string } | { deny: string }> {
+/** Adds a decision. `onAdded` gets the decision as written. */
+export async function addDecision(
+  $: StoreCtx,
+  input: Record<string, any>,
+  onAdded?: (d: Decision) => void,
+): Promise<{ result: string } | { deny: string }> {
   const { decisions } = await readAll($)
   const reason = validateAdd(input, decisions.map(d => d.id))
   if (reason !== undefined) {
@@ -355,11 +482,13 @@ export async function addDecision($: StoreCtx, input: Record<string, any>): Prom
           id: index + 1,
           label: o.label.trim(),
           ...(isBlank(o.changes) ? {} : { changes: o.changes.trim() }),
+          ...cases(o),
         }))
   const made = await create($, {
     group: isBlank(input.group) ? undefined : String(input.group).trim(),
     kind,
     title: input.title.trim(),
+    ...problemFields(input.problem),
     scenario: input.scenario.trim(),
     options,
     ...(input.recommendation ? { recommendation: { option: input.recommendation.option, reason: input.recommendation.reason.trim() } } : {}),
@@ -368,6 +497,7 @@ export async function addDecision($: StoreCtx, input: Record<string, any>): Prom
     ...(isBlank(input.blocks) ? {} : { blocks: input.blocks.trim() }),
     ...(isTask ? { isTask: true } : {}),
   }, input.section ?? 'needs-you')
+  onAdded?.(made)
   const open = decisions.filter(d => WAITING.includes(d.state)).length + 1
 
   return { result: `Added ${made.id} to the pane. ${open} open.` }
@@ -437,6 +567,18 @@ export async function registerTools($: { tool: { register: (spec: any) => Promis
     name: 'decisions_update',
     description: UPDATE_DESCRIPTION,
     inputSchema: UPDATE_INPUT_SCHEMA,
+    isDeferred: false,
+  })
+  await $.tool.register({
+    name: 'decisions_answer',
+    description: ANSWER_DESCRIPTION,
+    inputSchema: ANSWER_INPUT_SCHEMA,
+    isDeferred: false,
+  })
+  await $.tool.register({
+    name: 'decisions_session',
+    description: SESSION_DESCRIPTION,
+    inputSchema: SESSION_INPUT_SCHEMA,
     isDeferred: false,
   })
 }

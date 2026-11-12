@@ -3,10 +3,11 @@ import type { Decision } from '../store'
 import { focusLater, openDecision, readView, ringMark, setView } from './decision'
 import { previewLines } from '../send'
 import { SETTLED_TEXT } from '../discuss'
-import { Card, KeyHints, Rule, cardFrame, cardInset, isCompact, wrapLines } from './look'
+import { KeyHints, Rule, capLines, isCompact, wrapLines } from './look'
 import type { Hint } from './look'
-import { ago, hasUnread, unreadReplies } from './seen'
+import { ago, hasUnread, unreadReplies, when } from './seen'
 import type { Seen } from './seen'
+import { Bar, SELECTED_BG, barColour, colourProps } from './style'
 import { FOLDED, answeredRoom, assumptionsIn, firstKey, foldAll, foldedRows, isWaiting, movePage, pageOf, pageSize, sectionsFor, toggleSection } from './sections'
 
 /** `hasUnread`: a decision in it has a reply from Claude the person hasn't opened (its chip ends ●). */
@@ -72,7 +73,7 @@ export function statusText(all: Decision[]): string | undefined {
     return undefined
   }
 
-  return [open > 0 ? `${open} open` : 'nothing needs you', ready > 0 ? `${ready} ready` : '', parked > 0 ? `${parked} parked` : '']
+  return [open > 0 ? `${open} open` : 'nothing needs you', ready > 0 ? `${ready} not sent` : '', parked > 0 ? `${parked} parked` : '']
     .filter(Boolean)
     .join(' · ')
 }
@@ -175,10 +176,15 @@ export function toggleTick(ticked: string[], id: string): string[] {
  */
 export function openReview(view: PaneView, readyIds: string[], only?: string): PaneView {
   if (only !== undefined) {
-    return { ...view, screen: 'review', decisionId: only, ticked: [only], answerBox: undefined, notice: undefined, compactPage: 0, ring: 'confirm' }
+    return { ...view, screen: 'review', decisionId: only, ticked: [only], answerBox: undefined, notice: undefined, compactPage: 0, ring: 'confirm', isLastOne: false }
   }
 
-  return { ...view, screen: 'review', decisionId: undefined, ticked: readyIds, notice: undefined, compactPage: 0, ring: readyIds[0] === undefined ? undefined : `tick:${readyIds[0]}` }
+  return { ...view, screen: 'review', decisionId: undefined, ticked: readyIds, notice: undefined, compactPage: 0, ring: readyIds[0] === undefined ? undefined : `tick:${readyIds[0]}`, isLastOne: false }
+}
+
+/** The person answered the last waiting decision (row 270): the Send screen with every ready answer ticked and the ring on send. */
+export function openLastOne(view: PaneView, readyIds: string[]): PaneView {
+  return { ...openReview(view, readyIds), decisionId: undefined, highlight: undefined, answerBox: undefined, ring: 'confirm', isLastOne: true }
 }
 
 function chosenText(d: Decision): string {
@@ -195,7 +201,7 @@ function chosenText(d: Decision): string {
 export function rowMeta(d: Decision, width: number): string {
   const isWide = width >= 70
   if (d.state === 'ready') {
-    return isWide ? `${chosenText(d)} · ready to send` : `${chosenText(d)}  ready`
+    return isWide ? `${chosenText(d)} · not sent yet` : `${chosenText(d)}  not sent`
   }
   if (d.state === 'sent') {
     return isWide ? `${chosenText(d)} · sent` : `${chosenText(d)}  sent`
@@ -243,6 +249,80 @@ export function unreadLine(d: Decision, seen: Seen, now: Date = new Date()): str
   return `${last.who} · ${ago(last.at, now)}: ${last.text.split('\n')[0]}`
 }
 
+/** The answer in the person's words: `1 Red · only if in stock`, `Something else: …`, or `discussed`. */
+export function answerWords(d: Decision): string {
+  const o = d.options.find(x => x.id === d.answer?.option)
+  if (o) {
+    return d.answer?.condition !== undefined ? `${o.id} ${o.label} · only if ${d.answer.condition}` : `${o.id} ${o.label}`
+  }
+  if (d.answer?.text === undefined) {
+    return ''
+  }
+
+  return d.answer.text === SETTLED_TEXT ? 'discussed' : `${SOMETHING_ELSE_WORDS}: ${d.answer.text}`
+}
+
+const SOMETHING_ELSE_WORDS = 'Something else'
+
+/**
+ * A row's second line on a tall pane (row 251): the unread reply in `claude`; a parked or reopened row's own line;
+ * a sent row's `↗ sent 12:04 · <answer>`; else the problem line when there is one, the kind, how long ago it was asked
+ * and, once answered, the answer.
+ */
+export function rowSecondLine(d: Decision, seen: Seen, now: Date = new Date(), isParkedTab = false): { text: string; colour?: string } {
+  const reply = isWaiting(d) && hasUnread(d, seen) ? unreadLine(d, seen, now) : undefined
+  if (reply !== undefined) {
+    return { text: reply, colour: 'claude' }
+  }
+  const own = secondLine(d, isParkedTab)
+  if (own !== undefined) {
+    return { text: own }
+  }
+  const answer = answerWords(d)
+  if (d.state === 'sent') {
+    return { text: [`↗ sent${d.sentAt ? ` ${when(d.sentAt, now)}` : ''}`, answer].filter(Boolean).join(' · ') }
+  }
+  const age = ago(d.createdAt, now)
+
+  return { text: [d.problem ?? '', d.isTask ? 'to do' : d.kind, age === '' ? '' : `asked ${age}`, d.state === 'ready' ? answer : ''].filter(Boolean).join(' · ') }
+}
+
+/** Up to three of the latest sent decisions, newest first, for the all-clear (row 252, extra 6). */
+export function allClear(all: Decision[]): Decision[] {
+  return all
+    .filter(d => d.state === 'sent' && d.sentAt !== undefined)
+    .map((d, index) => ({ d, index }))
+    .sort((a, b) => (a.d.sentAt === b.d.sentAt ? a.index - b.index : a.d.sentAt! < b.d.sentAt! ? 1 : -1))
+    .slice(0, 3)
+    .map(x => x.d)
+}
+
+/** `Last sent 12:04 · 2 answers`: the newest send and how many answers went with it. */
+export function lastSentLine(all: Decision[]): string | undefined {
+  const latest = allClear(all)[0]
+  if (latest === undefined) {
+    return undefined
+  }
+  const count = all.filter(d => d.state === 'sent' && d.sentAt === latest.sentAt).length
+
+  return `Last sent ${when(latest.sentAt!)} · ${count} ${count === 1 ? 'answer' : 'answers'}`
+}
+
+/** The title lines a tall row draws: the id and title wrapped onto at most two lines, cut with `…` past that (row 258). */
+export function titleLines(d: Decision, room: number): string[] {
+  return capLines(`${d.id} ${d.title}`, room, 2).lines
+}
+
+/** The receipt on a sent decision: the first line of what Claude did next (row 252, extra 4). */
+export function receiptOf(d: Decision): string | undefined {
+  return d.state === 'sent' ? d.thread.findLast(e => e.who === 'receipt')?.text : undefined
+}
+
+/** Lines a row takes: one on a compact pane; tall, its title lines, the second line and a sent row's receipt. */
+export function rowLines(d: Decision, width: number, compact: boolean): number {
+  return compact ? 1 : titleLines(d, width - 5).length + 1 + (receiptOf(d) !== undefined ? 1 : 0)
+}
+
 /** One row, padded so the meta sits at the right edge. The meta is left out when the title wouldn't fit whole beside it (row 168). */
 export function rowText(d: Decision, width: number): string {
   const meta = rowMeta(d, width)
@@ -254,12 +334,13 @@ export function rowText(d: Decision, width: number): string {
 
 type ListProps = {
   ui: { Box: any; Text: any; Button: any }
+  /** The session's decisions grouped (one per group, then For you to do, then Parked), as `tabsFor` gives them. */
   tabs: Tab[]
   view: PaneView
   width: number
   readyCount: number
   unreadable: number
-  /** The pane's rows (`scroll.bodyRows`), so an open section can be paged to fit. */
+  /** The pane's rows (`scroll.bodyRows`), so a long group can be paged to fit. */
   rows?: number
   /** The pane has the keys, so the ring (and its `›`) is shown. */
   isFocused?: boolean
@@ -267,113 +348,190 @@ type ListProps = {
   seen?: Seen
   /** The order to keep while the pane has the keys. */
   frozen?: string[]
+  /** The session record, for the card at the top (row 265). */
+  session?: { title?: string; now?: { text: string } }
+  /** Enter on the session card. */
+  onOpenSession?: () => void
   onSend: () => void
   onHide: () => void
 }
 
-/** Changes tab and, once it is drawn, puts the ring on its first row, so the ring is never left on a row that went. */
-async function showTab($: any, tabs: Tab[], key: string | undefined): Promise<void> {
-  await setView($, v => ({ ...foldAll(v), tab: key }))
-  const target = tabs.find(t => t.key === key)
-  const first = waitingElsewhere(tabs, target) ? 'goto-waiting' : firstKey(target)
-  if (first) {
-    focusLater($, first)
-  }
+/** The groups that sit at the bottom of the list, folded when nothing in them waits. */
+const BOTTOM = new Set(['todo', 'parked'])
+
+/**
+ * The list's group order (row 265): groups with an unread reply first, then those with waiting decisions (newest first),
+ * then the folded ones, then For you to do and Parked at the bottom.
+ */
+export function groupOrder(tabs: Tab[]): Tab[] {
+  const newest = (t: Tab) => Math.max(0, ...t.decisions.filter(d => isWaiting(d) && d.section === 'needs-you').map(d => d.number))
+  const rank = (t: Tab) => (BOTTOM.has(t.key) ? 3 : t.hasUnread ? 0 : openCount(t) > 0 ? 1 : 2)
+
+  return [...tabs].sort((a, b) => rank(a) - rank(b) || (rank(a) <= 1 ? newest(b) - newest(a) : 0) || (a.key === 'todo' ? -1 : b.key === 'todo' ? 1 : 0))
 }
 
-/** The tab row and the open tab's decisions. Returns an element tree. */
+/** A group is drawn open while something in it waits, or the person unfolded it. */
+export function isGroupOpen(t: Tab, view: PaneView): boolean {
+  return openCount(t) > 0 || (view.openGroups ?? []).includes(t.key)
+}
+
+/** A group's heading: `◆ <group> · N waiting` (and `· ● 1 new`), or folded `▸ <group> · N answered` / `· nothing waiting`. */
+export function groupHeading(t: Tab, view: PaneView, seen: Seen = {}): { text: string; isWaiting: boolean; unread: number } {
+  const waiting = openCount(t)
+  const unread = t.decisions.filter(d => isWaiting(d) && hasUnread(d, seen)).length
+  if (waiting > 0) {
+    return { text: `◆ ${t.label} · ${waiting} waiting`, isWaiting: true, unread }
+  }
+  const answered = t.decisions.filter(d => d.state === 'ready' || d.state === 'sent').length
+  const mark = isGroupOpen(t, view) ? '▾' : '▸'
+  const rest = t.key === 'parked' ? `${t.decisions.length} parked` : answered > 0 ? `${answered} answered` : 'nothing waiting'
+
+  return { text: `${mark} ${t.label} · ${rest}`, isWaiting: false, unread }
+}
+
+/** `enter` on a folded group's heading unfolds it; again folds it. */
+export function toggleGroup(view: PaneView, key: string): PaneView {
+  const open = view.openGroups ?? []
+
+  return { ...view, openGroups: open.includes(key) ? open.filter(k => k !== key) : [...open, key] }
+}
+
+/** Where the ring starts on the list (row 265): the first waiting row, else the session card, else the first heading. */
+export function listFirstKey(tabs: Tab[], seen: Seen = {}, frozen?: string[], hasSession = false): string | undefined {
+  const ordered = groupOrder(tabs)
+  for (const t of ordered) {
+    const first = sectionsFor(t, seen, frozen).needsYou[0]
+    if (first) {
+      return `row:${first.id}`
+    }
+  }
+  if (hasSession) {
+    return 'session-card'
+  }
+  for (const t of ordered) {
+    const key = firstKey(t, seen, frozen)
+    if (key) {
+      return openCount(t) > 0 ? key : `group:${t.key}`
+    }
+  }
+
+  return undefined
+}
+
+/** One list for the session, grouped by headings, with the session card at the top (row 265). Returns an element tree. */
 export function ListView($: any, props: ListProps): any {
-  const { ui, tabs, view, width, readyCount, unreadable, onSend, onHide } = props
+  const { ui, view, width, readyCount, unreadable, onSend, onHide } = props
   const rows = props.rows ?? 30
   const { Box, Text, Button } = ui
-  const tab = activeTab(tabs, view)
   const seen = props.seen ?? {}
-  const sections = tab ? sectionsFor(tab, seen, props.frozen) : { needsYou: [], claudesCall: [], alreadyDecided: [], answered: [], parked: [] }
-  const elsewhere = waitingElsewhere(tabs, tab)
-  const isIdle = newestOpenTab(tabs) === undefined
-  const first = elsewhere
-    ? undefined
-    : (sections.needsYou[0] ?? sections.parked[0] ?? (sections.claudesCall.length + sections.alreadyDecided.length > 0 ? undefined : sections.answered[0]))
-  const isParkedTab = tab?.key === 'parked'
-  const batch = tab && !isParkedTab ? assumptionsIn(tab) : []
-  const tabRow = visibleTabs(tabs, tab?.key, width)
+  const groups = groupOrder(props.tabs)
+  const isIdle = newestOpenTab(groups) === undefined
   const isFocused = props.isFocused === true
   const compact = isCompact(rows)
   const mark = (key: string) => `${ringMark(key, view.ring, isFocused)} `
-  // Tall, the look adds a rule above the tabs and the ringed row is a card two rows taller. Compact, the rules
-  // and the blank line before the keys go, so the list fits 9 rows.
-  const lookRows = compact ? -2 : 1 + cardFrame(false)
+  const first = listFirstKey(groups, seen, props.frozen, props.session !== undefined)
+  const lookRows = compact ? -2 : 1
 
-  const row = (d: Decision) => {
+  const row = (d: Decision, tab: Tab) => {
     const isUnread = isWaiting(d) && hasUnread(d, seen)
-    const reply = isUnread && !compact ? unreadLine(d, seen) : undefined
-    const second = reply === undefined ? secondLine(d, isParkedTab) : undefined
     const isRinged = isFocused && view.ring === `row:${d.id}`
-    const room = width - 2 - (isRinged ? cardInset(compact) : 0)
-    const tint = isRinged && compact ? 'claude' : undefined
-    const body = [
-      <Button key={`row:${d.id}`} plain autoFocus={d === first ? true : undefined} onPress={() => openDecision($, d, tab?.key)}>
-        {mark(`row:${d.id}`)}
-        {isUnread ? <Text color="claude">● </Text> : ''}
-        {d.state === 'sent' ? <Text dimColor>{rowText(d, room - (isUnread ? 2 : 0))}</Text> : <Text color={tint} bold={isUnread || undefined}>{rowText(d, room - (isUnread ? 2 : 0))}</Text>}
-      </Button>,
-      reply !== undefined ? <Text key={`reply:${d.id}`} color="claude">{truncate(`     ${reply}`, room)}</Text> : null,
-      second !== undefined ? <Text key={`second:${d.id}`} dimColor>{truncate(`     ${second}`, room)}</Text> : null,
-    ]
+    const look = { ...(d.state === 'sent' ? { dimColor: true } : {}), ...(isRinged ? { backgroundColor: SELECTED_BG } : {}), bold: isUnread || undefined }
+    const room = width - 3 - (isUnread ? 2 : 0)
+    const dot = isUnread ? <Text color="claude">● </Text> : ''
+    const autoFocus = first === `row:${d.id}` ? true : undefined
+    const open = () => openDecision($, d, tab.key)
+    if (compact) {
+      return (
+        <Box key={`box:${d.id}`}>
+          {Bar(ui, barColour(d), `bar:${d.id}`)}
+          <Button key={`row:${d.id}`} plain autoFocus={autoFocus} onPress={open}>
+            {mark(`row:${d.id}`)}
+            {dot}
+            <Text {...look}>{rowText(d, room + 2)}</Text>
+          </Button>
+        </Box>
+      )
+    }
+    const lines = titleLines(d, room)
+    const second = rowSecondLine(d, seen, new Date(), tab.key === 'parked')
 
-    return isRinged ? Card(ui, compact, `box:${d.id}`, body) : (
+    return (
       <Box key={`box:${d.id}`} flexDirection="column">
-        {body}
+        <Box key={`line:${d.id}`}>
+          {Bar(ui, barColour(d), `bar:${d.id}`)}
+          <Button key={`row:${d.id}`} plain autoFocus={autoFocus} onPress={open}>
+            {mark(`row:${d.id}`)}
+            {dot}
+            <Text {...look}>
+              <Text bold>{d.id}</Text>
+              {(lines[0] ?? d.id).slice(d.id.length)}
+            </Text>
+          </Button>
+        </Box>
+        {lines.slice(1).map((line, index) => (
+          <Box key={`more:${d.id}:${index}`}>
+            {Bar(ui, barColour(d))}
+            <Text {...look}>{`  ${isUnread ? '  ' : ''}${line}`}</Text>
+          </Box>
+        ))}
+        <Box key={`under:${d.id}`}>
+          {Bar(ui, barColour(d))}
+          <Text key={`second:${d.id}`} {...colourProps(second.colour ?? 'dim')}>
+            {truncate(`  ${second.text}`, width - 1)}
+          </Text>
+        </Box>
+        {receiptOf(d) !== undefined ? (
+          <Box key={`receipt:${d.id}`}>
+            {Bar(ui, barColour(d))}
+            <Text dimColor>{truncate(`  claude: ${receiptOf(d)}`, width - 1)}</Text>
+          </Box>
+        ) : null}
       </Box>
     )
   }
-  const heading = (name: string, count: number) => (
-    <Text key={`heading:${name}`}>
-      <Text bold>{name}</Text>
-      <Text dimColor>{`  ${count}`}</Text>
-    </Text>
-  )
-  const elsewhereRows = elsewhere ? 1 : 0
-  const needsReserve = 13 + lookRows + elsewhereRows + (view.openSection !== undefined ? 5 : 0)
-  const needsSize = pageSize(rows, needsReserve)
-  const needsPaged = sections.needsYou.length > needsSize
-  const needsPage = pageOf(sections.needsYou, view.openSection === undefined ? view.sectionPage : 0, needsSize)
-  const needsShown = needsPaged ? needsPage.rows : sections.needsYou
-  const needsYouLines = needsShown.reduce((n, d) => n + (secondLine(d, isParkedTab) === undefined && (compact || !hasUnread(d, seen)) ? 1 : 2), 0)
-  const answeredShown = sections.answered.slice(0, answeredRoom(rows, needsYouLines, view.openSection !== undefined))
-  const answeredHidden = sections.answered.length - answeredShown.length
-  const fixedRows = 9 + lookRows + elsewhereRows + needsYouLines + (answeredShown.length === 0 ? 0 : answeredShown.length + 1 + (answeredHidden > 0 ? 1 : 0)) + (batch.length >= 2 ? 1 : 0)
-  const size = pageSize(rows, fixedRows)
-  const foldedHeading = (f: (typeof FOLDED)[number]) => {
-    const all = tab ? foldedRows(tab, f.section) : []
+  const lines = (d: Decision) => rowLines(d, width, compact)
+  const perRow = (list: Decision[]) => (compact ? 1 : Math.max(2, ...list.map(lines)))
+  const recent = isIdle ? allClear(groups.flatMap(t => t.decisions)) : []
+  const recentIds = new Set(recent.map(d => d.id))
+  const lastSent = isIdle ? lastSentLine(groups.flatMap(t => t.decisions)) : undefined
+  const sessionRows = props.session ? (compact ? 1 : 2) : 0
+  const clearRows = isIdle ? 1 + (lastSent ? 1 : 0) + recent.reduce((n, d) => n + lines(d), 0) + 1 : 0
+  const headingRows = groups.length
+  const fixed = 5 + lookRows + sessionRows + clearRows + headingRows + (view.openSection !== undefined ? 5 : 0)
+  // The first group too long for the pane pages with n and o; the key line names it.
+  const pageRows = Math.max(1, Math.floor(pageSize(rows, fixed) / perRow(groups.flatMap(t => sectionsFor(t, seen, props.frozen).needsYou))))
+  const paged = groups.find(t => isGroupOpen(t, view) && sectionsFor(t, seen, props.frozen).needsYou.length > pageRows)
+  const pagedAll = paged ? sectionsFor(paged, seen, props.frozen).needsYou : []
+  const page = pageOf(pagedAll, view.openSection === undefined ? view.sectionPage : 0, pageRows)
+  let answeredBudget = answeredRoom(rows, fixed - 9, view.openSection !== undefined)
+
+  const subSection = (t: Tab, f: (typeof FOLDED)[number]) => {
+    const all = foldedRows(t, f.section)
     if (all.length === 0) {
       return null
     }
-    const isOpen = view.openSection === f.section
-    const page = pageOf(all, view.sectionPage, size)
+    const isOpen = view.openSection === f.section && view.tab === t.key
+    const size = Math.max(1, Math.floor(pageSize(rows, fixed + 4) / perRow(all)))
+    const sub = pageOf(all, view.sectionPage, size)
+    const key = `section:${t.key}:${f.section}`
 
     return (
-      <Box key={`fold:${f.section}`} flexDirection="column">
-        <Button
-          key={`section:${f.section}`}
-          plain
-          autoFocus={first === undefined && !elsewhere && f === FOLDED.find(x => tab && foldedRows(tab, x.section).length > 0) ? true : undefined}
-          onPress={() => setView($, v => toggleSection(v, f.section))}
-        >
-          {mark(`section:${f.section}`)}
-          <Text dimColor>{`${isOpen ? '▾' : '▸'} ${f.name}  ${all.length}`}</Text>
+      <Box key={`fold:${t.key}:${f.section}`} flexDirection="column">
+        <Button key={key} plain autoFocus={first === key ? true : undefined} onPress={() => setView($, v => ({ ...toggleSection({ ...v, openSection: v.tab === t.key ? v.openSection : undefined }, f.section), tab: t.key }))}>
+          {mark(key)}
+          <Text dimColor>{`  ${isOpen ? '▾' : '▸'} ${f.name} · ${all.length}`}</Text>
         </Button>
-        {isOpen ? page.rows.map(row) : null}
-        {isOpen && (page.hasEarlier || page.hasNext) ? (
+        {isOpen ? sub.rows.map(d => row(d, t)) : null}
+        {isOpen && (sub.hasEarlier || sub.hasNext) ? (
           <Box>
-            {page.hasEarlier ? (
+            {sub.hasEarlier ? (
               <Button key="o" hotkey="o" plain onPress={() => setView($, v => movePage(v, -1, all.length, size))}>
                 {'o earlier  '}
               </Button>
             ) : null}
-            {page.hasNext ? (
+            {sub.hasNext ? (
               <Button key="n" hotkey="n" plain onPress={() => setView($, v => movePage(v, 1, all.length, size))}>
-                {`n next ${Math.min(size, page.remaining)} more`}
+                {`n next ${Math.min(size, sub.remaining)} more`}
               </Button>
             ) : null}
           </Box>
@@ -382,15 +540,97 @@ export function ListView($: any, props: ListProps): any {
     )
   }
 
+  // The first group's batch row keeps the key `batch`; `batch:` is the batch screen's own rows.
+  const batchGroups = groups.filter(t => t.key !== 'parked' && isGroupOpen(t, view) && assumptionsIn(t).length >= 2)
+  const batchKey = (t: Tab) => (batchGroups[0] === t ? 'batch' : `batch-${batchGroups.indexOf(t)}`)
+  const group = (t: Tab) => {
+    const head = groupHeading(t, view, seen)
+    const isOpen = isGroupOpen(t, view)
+    const sections = sectionsFor(t, seen, props.frozen)
+    const batch = t.key === 'parked' ? [] : assumptionsIn(t)
+    const needs = t === paged ? page.rows : sections.needsYou
+    const answered = sections.answered.filter(d => !recentIds.has(d.id))
+    const answeredShown: Decision[] = []
+    for (const d of answered) {
+      if (answeredShown.length > 0 && answeredBudget - lines(d) < 0) {
+        break
+      }
+      answeredShown.push(d)
+      answeredBudget -= lines(d)
+    }
+    const hidden = answered.length - answeredShown.length
+    const headKey = `group:${t.key}`
+    const headText = (
+      <Text key={`heading:${t.key}`}>
+        {head.isWaiting ? <Text bold>{head.text}</Text> : <Text dimColor>{head.text}</Text>}
+        {head.unread > 0 ? <Text color="claude">{` · ● ${head.unread} new`}</Text> : ''}
+      </Text>
+    )
+
+    return (
+      <Box key={`group-box:${t.key}`} flexDirection="column">
+        {head.isWaiting ? (
+          headText
+        ) : (
+          <Button key={headKey} plain autoFocus={first === headKey ? true : undefined} onPress={() => setView($, v => toggleGroup(v, t.key))}>
+            {mark(headKey)}
+            {headText}
+          </Button>
+        )}
+        {isOpen && batch.length >= 2 ? (
+          <Button
+            key={batchKey(t)}
+            plain
+            onPress={async () => {
+              await setView($, v => ({ ...v, tab: t.key, screen: 'batch', marks: {}, batchRow: undefined, compactPage: 0, ring: `batch:${batch[0]!.id}`, notice: undefined }))
+              focusLater($, `batch:${batch[0]!.id}`)
+            }}
+          >
+            {`${mark(batchKey(t))}Check ${batch.length} assumptions together (enter)`}
+          </Button>
+        ) : null}
+        {isOpen ? needs.map(d => row(d, t)) : null}
+        {isOpen && t === paged && (page.hasEarlier || page.hasNext) ? (
+          <Box>
+            {page.hasEarlier ? (
+              <Button key="o" hotkey="o" plain onPress={() => setView($, v => movePage(v, -1, pagedAll.length, pageRows))}>
+                {'o earlier  '}
+              </Button>
+            ) : null}
+            {page.hasNext ? (
+              <Button key="n" hotkey="n" plain onPress={() => setView($, v => movePage(v, 1, pagedAll.length, pageRows))}>
+                {`n next ${Math.min(pageRows, page.remaining)} more in ${truncate(t.label, 24)}`}
+              </Button>
+            ) : null}
+          </Box>
+        ) : null}
+        {isOpen ? FOLDED.map(f => subSection(t, f)) : null}
+        {isOpen ? sections.parked.map(d => row(d, t)) : null}
+        {isOpen ? answeredShown.map(d => row(d, t)) : null}
+        {isOpen && hidden > 0 ? <Text dimColor>{`     ${hidden} more answered`}</Text> : null}
+      </Box>
+    )
+  }
+
   const hints: Hint[] = [
-    { id: 't', keyText: 't', label: 'next tab', hotkey: 't', onPress: () => void showTab($, tabs, nextTab(tabs, tab?.key)) },
     ...(readyCount > 0 ? [{ id: 's', keyText: 's', label: `send ${readyCount}`, hotkey: 's', onPress: onSend }] : []),
     { id: 'h', keyText: 'h', label: 'hide', hotkey: 'h', onPress: onHide },
   ]
+  // A Button holds one line, so the now line sits under it, not inside it.
+  const card = props.session ? (
+    <Box key="session" flexDirection="column">
+      <Button key="session-card" plain autoFocus={first === 'session-card' ? true : undefined} onPress={() => props.onOpenSession?.()}>
+        {mark('session-card')}
+        <Text bold>{truncate(`✻ ${props.session.title ?? 'This session'}`, width - 2)}</Text>
+      </Button>
+      {!compact && props.session.now ? <Text dimColor>{truncate(`  ▶ now: ${props.session.now.text}`, width)}</Text> : null}
+    </Box>
+  ) : null
 
-  if (tabs.length === 0) {
+  if (groups.length === 0) {
     return (
       <Box flexDirection="column">
+        {card}
         <Text dimColor>No decisions yet. Claude adds them here when it needs you.</Text>
         {KeyHints(ui, hints.filter(hint => hint.id === 'h'), width, 1)}
       </Box>
@@ -399,77 +639,24 @@ export function ListView($: any, props: ListProps): any {
 
   return (
     <Box flexDirection="column">
-      {compact ? null : Rule(ui, width, 'rule:tabs')}
-      <Box>
-        {tabRow.hasLeft ? <Text dimColor>‹ </Text> : null}
-        {tabRow.shown.map(t => (
-          <Button
-            key={`tab:${t.key}`}
-            plain
-            onPress={() => void showTab($, tabs, t.key)}
-          >
-            {t.key === tab?.key ? (
-              <Text backgroundColor="claude" color="inverseText" bold>
-                {tabChipText(t)}
-              </Text>
-            ) : (
-              <Text backgroundColor="subtle" color="text">
-                {tabChipText(t)}
-              </Text>
-            )}
-            {' '}
-          </Button>
-        ))}
-        {tabRow.hasRight ? <Text dimColor>›</Text> : null}
-      </Box>
+      {card}
       {compact ? null : Rule(ui, width, 'rule:sections')}
       {isIdle ? (
-        <Text key="idle" color="success">
-          {truncate(readyCount > 0 ? `✓ Nothing needs you · ${readyCount} ready to send (s)` : '✓ Nothing needs you', width)}
-        </Text>
-      ) : isParkedTab ? null : heading('Needs you', sections.needsYou.length)}
-      {elsewhere ? (
-        <Button key="goto-waiting" plain autoFocus onPress={() => void showTab($, tabs, elsewhere.tab.key)}>
-          {mark('goto-waiting')}
-          <Text color="claude">{truncate(`${elsewhere.count} waiting in ${elsewhere.tab.label} · enter`, width - 2)}</Text>
-        </Button>
+        readyCount > 0 ? (
+          // Until they are sent nothing says done (row 270).
+          <Text key="idle" color="warning">
+            {truncate(`${readyCount} answer${readyCount === 1 ? '' : 's'} not sent yet · s sends them`, width)}
+          </Text>
+        ) : (
+          <Text key="idle" color="success">
+            {truncate('✓ Nothing needs you', width)}
+          </Text>
+        )
       ) : null}
-      {batch.length >= 2 ? (
-        <Button
-          key="batch"
-          plain
-          onPress={async () => {
-            await setView($, v => ({ ...v, screen: 'batch', marks: {}, batchRow: undefined, compactPage: 0, ring: `batch:${batch[0]!.id}`, notice: undefined }))
-            focusLater($, `batch:${batch[0]!.id}`)
-          }}
-        >
-          {`${mark('batch')}Check ${batch.length} assumptions together (enter)`}
-        </Button>
-      ) : null}
-      {needsShown.map(row)}
-      {needsPaged && view.openSection === undefined && (needsPage.hasEarlier || needsPage.hasNext) ? (
-        <Box>
-          {needsPage.hasEarlier ? (
-            <Button key="o" hotkey="o" plain onPress={() => setView($, v => movePage(v, -1, sections.needsYou.length, needsSize))}>
-              {'o earlier  '}
-            </Button>
-          ) : null}
-          {needsPage.hasNext ? (
-            <Button key="n" hotkey="n" plain onPress={() => setView($, v => movePage(v, 1, sections.needsYou.length, needsSize))}>
-              {`n next ${Math.min(needsSize, needsPage.remaining)} more`}
-            </Button>
-          ) : null}
-        </Box>
-      ) : null}
-      {needsPaged && view.openSection !== undefined ? (
-        <Text dimColor>{truncate(`     ${sections.needsYou.length - needsShown.length} more need you: fold the open section to page them`, width - 2)}</Text>
-      ) : null}
-      {FOLDED.map(foldedHeading)}
-      {sections.parked.length > 0 ? heading('Parked', sections.parked.length) : null}
-      {sections.parked.map(row)}
-      {sections.answered.length > 0 ? heading('Answered', sections.answered.length) : null}
-      {answeredShown.map(row)}
-      {answeredHidden > 0 ? <Text dimColor>{`     ${answeredHidden} more answered`}</Text> : null}
+      {lastSent ? <Text key="last-sent" dimColor>{truncate(lastSent, width)}</Text> : null}
+      {recent.map(d => row(d, groups.find(t => t.decisions.includes(d)) ?? groups[0]!))}
+      {isIdle ? <Text key="land-here" dimColor>New decisions land here.</Text> : null}
+      {groups.map(group)}
       {unreadable > 0 ? <Text dimColor>{`${unreadable} decision file${unreadable === 1 ? '' : 's'} couldn't be read`}</Text> : null}
       {compact ? null : Rule(ui, width, 'rule:keys')}
       {KeyHints(ui, hints, width, 1)}
@@ -567,7 +754,7 @@ export function ReviewView($: any, props: ReviewProps): any {
   const isFocused = props.isFocused === true
   const compact = isCompact(props.rows ?? 30)
   const back = () => {
-    void setView($, v => ({ ...v, screen: 'list', compactPage: 0 }))
+    void setView($, v => ({ ...v, screen: 'list', compactPage: 0, isLastOne: false }))
     onLeave()
   }
   const send = () => {
@@ -576,6 +763,28 @@ export function ReviewView($: any, props: ReviewProps): any {
     }
   }
   const tick = (d: Decision) => () => setView($, v => ({ ...v, ticked: toggleTick(v.ticked, d.id) }))
+
+  if (view.isLastOne === true) {
+    const count = ticked.length
+    // Send is drawn first and has the ring, so enter sends; b holds them. Nothing is sent without enter.
+    return (
+      <Box flexDirection="column">
+        <Text bold>That was the last one.</Text>
+        <Text>{`enter sends ${count} answer${count === 1 ? '' : 's'} to Claude, b to hold ${count === 1 ? 'it' : 'them'}.`}</Text>
+        <Button key="confirm" variant="primary" autoFocus onPress={send}>
+          {`${ringMark('confirm', view.ring, isFocused)}enter: send ${count}  `}
+        </Button>
+        {ready.map(d => (
+          <Button key={`tick:${d.id}`} plain onPress={tick(d)}>
+            {`${ringMark(`tick:${d.id}`, view.ring, isFocused)} ` + truncate(`${ticked.includes(d.id) ? '[x]' : '[ ]'} ${d.id}  ${d.title} · ${chosenText(d).replace('✓ ', '')}`, width - 2)}
+          </Button>
+        ))}
+        <Button key="b" hotkey="b" plain onPress={back}>
+          {count === 1 ? 'hold it' : 'hold them'}
+        </Button>
+      </Box>
+    )
+  }
 
   if (compact) {
     const size = Math.max(1, (props.rows ?? 30) - REVIEW_COMPACT_FIXED - (isFocused ? 0 : 1))

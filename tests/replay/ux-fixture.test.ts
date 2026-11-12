@@ -1,8 +1,10 @@
 import { expect, test } from 'claude-code/testing'
 
+import { validateProblem } from '../../hooks/problem'
+import { validateSession } from '../../hooks/session'
 import { validateAdd } from '../../hooks/tool'
 import { unreadReplies } from '../../hooks/pane/seen'
-import { CHOICES, INBOX, SEEDED, inboxState, shifted } from './ux-fixture'
+import { CHOICES, INBOX, MODEL_PROBLEM, SEEDED, SESSION_RECORD, inboxState, shifted } from './ux-fixture'
 
 test('every seeded decision passes the tool\'s own validation, in order', () => {
   const ids: string[] = []
@@ -29,16 +31,24 @@ test('the review has an Image uploads finding and at least 30 findings needing t
   expect(SEEDED.some(i => i.group === 'Image uploads')).toBe(true)
 })
 
-test('the inbox group has an unread reply, an answer with a condition and one with Something else, and they load', async () => {
+test('the inbox group has an unread reply, an answer with a condition, one with Something else and a quick answer, and they load', async () => {
   const at = '2026-11-12T10:00:00.000Z'
   const later = '2026-11-12T10:05:00.000Z'
-  expect(INBOX).toHaveLength(3)
+  expect(INBOX).toHaveLength(4)
   const made = INBOX.map((entry, index) => ({ ...entry.input, id: `d${index + 1}`, createdAt: at, thread: [], options: (entry.input.options ?? []).map((o: any, i: number) => ({ id: i + 1, ...o })) }))
-  const [unread, condition, typed] = INBOX.map((entry, index) => inboxState(made[index] as any, entry, later))
+  const [unread, condition, typed, quick] = INBOX.map((entry, index) => inboxState(made[index] as any, entry, later))
   expect(unreadReplies(unread as any, undefined)).toHaveLength(1)
   expect(condition!.state).toBe('ready')
   expect([condition!.answer?.option, condition!.answer?.condition]).toEqual([1, 'only for recipes with photos'])
   expect(typed!.state).toBe('ready')
   expect([typed!.answer?.option, typed!.answer?.text]).toEqual([undefined, 'a QR code on the printed recipe card'])
-  expect(SEEDED.slice(-3)).toEqual(INBOX.map(entry => entry.input))
+  expect(quick!.thread.map((e: any) => `${e.who}:${e.via ?? ''}`)).toEqual(['person:', 'quick:triage'])
+  expect(unreadReplies(quick as any, undefined)).toHaveLength(1)
+  expect(SEEDED.slice(-4)).toEqual(INBOX.map(entry => entry.input))
+})
+
+test('the session record is a valid decisions_session call, and the model-written problem fits', () => {
+  expect(validateSession(SESSION_RECORD)).toBeUndefined()
+  expect(validateProblem(MODEL_PROBLEM, 'decisions_add')).toBeUndefined()
+  expect(SESSION_RECORD.links[0].url).toMatch(/^https:\/\/github\.com\/example\//)
 })

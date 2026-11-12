@@ -1,6 +1,6 @@
 {
   "name": "decisions",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Moves Claude's questions and decisions out of the chat into a pane beside it, each with its own discussion.",
   "author": {
     "name": "Aaron Machin"
@@ -10,9 +10,10 @@
     "discussionReplies": {
       "type": "string",
       "title": "Discussion replies",
-      "description": "Who answers a question asked in a decision's discussion.",
-      "default": "main session",
+      "description": "Who answers a question asked in a decision's discussion. auto: a small model answers what the decision itself covers and hands the rest to the main session.",
+      "default": "auto",
       "options": [
+        "auto",
         "main session",
         "fork",
         "quick model"

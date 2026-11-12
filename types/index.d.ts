@@ -12,7 +12,7 @@ export type PendingQuestion = {
 
 /** What the pane remembers between draws. The decisions themselves live in files, never here. */
 export type PaneView = {
-  screen: 'list' | 'decision' | 'review' | 'thread' | 'batch'
+  screen: 'list' | 'decision' | 'review' | 'thread' | 'batch' | 'session'
   /** 'g:<group>', 'other' or 'parked' */
   tab?: string
   decisionId?: string
@@ -57,6 +57,16 @@ export type PaneView = {
   answerDrafts: Record<string, string>
   /** Decision screen: `m` hides every option's detail but the highlighted one's (decision 217). */
   isDetailHidden: boolean
+  /** List: the groups with nothing waiting that the person unfolded (row 265). */
+  openGroups?: string[]
+  /** Send screen: opened because the person answered the last waiting decision (row 270). */
+  isLastOne?: boolean
+  /** Session page: `m` folds done plan items to `✓ N done`. */
+  isDoneFolded?: boolean
+  /** Session page, compact: `o` shows the links instead of the plan. */
+  sessionLinksOpen?: boolean
+  /** Session page: `r` asked Claude to refresh at `askedAt`; `no-update` once that turn ended without a new record (row 256). */
+  sessionRefresh?: { askedAt: string; status: 'asked' | 'no-update' | 'failed' }
 }
 
 declare module 'claude-code' {

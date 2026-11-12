@@ -1,8 +1,11 @@
 import type { PaneView, PendingQuestion } from '../types'
 import { readView, setView } from './pane/decision'
 import { statusText } from './pane/list'
+import { noteRefreshTurn, refreshTurnEnded } from './pane/session-tab'
 import { readAll, readOne, write } from './store'
 import type { Decision, StoreCtx, ThreadEntry } from './store'
+import { triage } from './triage'
+import type { SessionSummary } from './triage'
 
 /** Appends the person's question to the thread and moves an open decision to live. Undefined when the decision is missing. */
 export async function recordQuestion(store: StoreCtx, id: string, text: string): Promise<{ asked: string } | undefined> {
@@ -32,12 +35,13 @@ export async function recordReply(
   asked: string,
   who: 'claude' | 'fork' | 'quick',
   text: string,
+  via?: 'triage',
 ): Promise<boolean> {
   const d = await readOne(store, id)
   if (!d) {
     return false
   }
-  const entry: ThreadEntry = { who, text, at: new Date().toISOString() }
+  const entry: ThreadEntry = { who, text, at: new Date().toISOString(), ...(via ? { via } : {}) }
   const at = d.thread.findIndex(e => e.who === 'person' && e.at === asked)
   let end = at + 1
   while (at !== -1 && end < d.thread.length && d.thread[end]!.who !== 'person') {
@@ -185,21 +189,97 @@ export function routeComplete(e: { turnId: string; agentId?: string; answer: str
   return { waiter: waiter!, text: e.answer.trim() === '' ? PLACEHOLDER : e.answer }
 }
 
-export type Mode = 'main' | 'fork' | 'quick'
+/** Answer prompts whose turn has started, by turn id: the decisions each carried. */
+const answerTurns = new Map<string, string[]>()
 
-/** `/config`'s `Discussion replies` value as a mode; anything unknown is the main session. */
-export function modeOf(option: unknown): Mode {
-  return option === 'fork' ? 'fork' : option === 'quick model' ? 'quick' : 'main'
+/** The ids an answer prompt carries, from its `Decision dX ·` lines; undefined when the text is not one. */
+export function answerPromptIds(text: string): string[] | undefined {
+  if (!/Answers? from the decisions pane/.test(text)) {
+    return undefined
+  }
+  const ids = [...text.matchAll(/^Decision (d\d+) · /gm)].map(m => m[1]!)
+
+  return ids.length > 0 ? ids : undefined
 }
 
-let configured: Mode = 'main'
+/**
+ * A main-loop `turn.start` whose text is an answer prompt (`Answer from the decisions pane` or `Answers from…`): its
+ * turn claims the decisions it carried. Matched by the turn's own text, so a prompt queued behind a running turn is
+ * claimed by its own turn when that starts. A subagent's turn never claims one.
+ */
+export function routeAnswerStart(e: { text: string; turnId: string; agentId?: string }): string[] | undefined {
+  if (e.agentId !== undefined) {
+    return undefined
+  }
+  const ids = answerPromptIds(e.text)
+  if (ids !== undefined) {
+    answerTurns.set(e.turnId, ids)
+  }
+
+  return ids
+}
+
+/** The first non-empty line of an answer, cut at 200 characters. */
+export function receiptLine(answer: string): string | undefined {
+  const line = answer
+    .split('\n')
+    .map(l => l.trim())
+    .find(l => l !== '')
+
+  return line === undefined ? undefined : line.slice(0, 200)
+}
+
+/** A `turn.complete`: the decisions its turn carried and the receipt line, only for a turn `routeAnswerStart` claimed. */
+export function routeAnswerComplete(e: { turnId: string; agentId?: string; answer: string }): { ids: string[]; line: string } | undefined {
+  if (e.agentId !== undefined) {
+    return undefined
+  }
+  const ids = answerTurns.get(e.turnId)
+  answerTurns.delete(e.turnId)
+  const line = receiptLine(e.answer ?? '')
+
+  return ids === undefined || line === undefined ? undefined : { ids, line }
+}
+
+/** Writes the receipt (the answer's first non-empty line) into each carried decision's thread. */
+export async function recordReceipt(store: StoreCtx, ids: string[], answer: string): Promise<void> {
+  const line = receiptLine(answer)
+  if (line === undefined) {
+    return
+  }
+  const at = new Date().toISOString()
+  for (const id of ids) {
+    const d = await readOne(store, id)
+    if (d) {
+      await write(store, { ...d, thread: [...d.thread, { who: 'receipt', text: line, at }] })
+    }
+  }
+}
+
+export type Mode = 'main' | 'fork' | 'quick'
+
+/** The `Discussion replies` setting: a replier, or `auto`, where the small model answers first and hands the rest to the main session. */
+export type Replies = Mode | 'auto'
+
+/** `/config`'s `Discussion replies` value; anything unknown is the main session. */
+export function modeOf(option: unknown): Replies {
+  return option === 'fork' ? 'fork' : option === 'quick model' ? 'quick' : option === 'auto' ? 'auto' : 'main'
+}
+
+let configured: Replies = 'main'
 
 /** Called by `register(on, options)`: the mode for questions asked from now on. */
 export function configure(options: { discussionReplies?: unknown } | undefined): void {
   configured = modeOf(options?.discussionReplies)
 }
 
+/** The replier the pane names. Under `auto` that is the main session, where anything the small model can't answer goes. */
 export function currentMode(): Mode {
+  return configured === 'auto' ? 'main' : configured
+}
+
+/** The setting itself, `auto` included: what the pane passes to `askQuestion`. */
+export function currentReplies(): Replies {
   return configured
 }
 
@@ -269,8 +349,27 @@ async function dispatch($: any, mode: Mode, d: Decision, asked: string, question
   await redraw($)
 }
 
-/** The person sent a question from the thread: keep it, clear the draft, hand it to the replier. */
-export async function askQuestion($: any, mode: Mode, decisionId: string, question: string): Promise<void> {
+/**
+ * `auto`: the small model answers from the decision and its thread, or hands over. An answer is kept as
+ * a quick answer (`via: 'triage'`); a hand-over, a failure or a malformed reply goes to the main session.
+ */
+async function triageThenDispatch($: any, d: Decision, asked: string, question: string, session?: SessionSummary): Promise<void> {
+  await setPending($, list => [...without(list, d.id, asked, 'quick'), { asked, decisionId: d.id, mode: 'quick', status: 'answering', run: RUN }])
+  await setState($, v => ({ ...v, isAsking: false }))
+  await redraw($)
+  const outcome = await triage($, d, question, session)
+  await setPending($, list => without(list, d.id, asked, 'quick'))
+  if (outcome.kind === 'hand-over') {
+    await dispatch($, 'main', d, asked, question)
+
+    return
+  }
+  await recordReply($, d.id, asked, 'quick', outcome.text, 'triage')
+  await redraw($)
+}
+
+/** The person sent a question from the thread: keep it, clear the draft, hand it to the replier. `session` is the session record's note, for `auto`. */
+export async function askQuestion($: any, mode: Replies, decisionId: string, question: string, session?: SessionSummary): Promise<void> {
   const recorded = await recordQuestion($, decisionId, question)
   const d = await readOne($, decisionId)
   if (!recorded || !d) {
@@ -280,7 +379,50 @@ export async function askQuestion($: any, mode: Mode, decisionId: string, questi
     const { [decisionId]: _gone, ...drafts } = v.drafts
     return { ...v, drafts }
   })
+  if (mode === 'auto') {
+    await triageThenDispatch($, d, recorded.asked, question, session)
+
+    return
+  }
   await dispatch($, mode, d, recorded.asked, question)
+}
+
+/** The question a thread entry answers: the newest question before it. */
+function questionAbove(d: Decision, replyAt: string): ThreadEntry | undefined {
+  const at = d.thread.findIndex(e => e.at === replyAt && e.who !== 'person')
+
+  return at === -1 ? undefined : d.thread.slice(0, at).findLast(e => e.who === 'person')
+}
+
+/** Whether a quick answer still offers "ask the main session instead": no main reply under its question yet, and none pending. */
+export function canAskMainInstead(d: Decision, replyAt: string, pending: PendingQuestion[]): boolean {
+  const reply = d.thread.find(e => e.at === replyAt && e.who === 'quick')
+  const question = questionAbove(d, replyAt)
+  if (reply?.via !== 'triage' || !question) {
+    return false
+  }
+  const start = d.thread.indexOf(question)
+  let end = start + 1
+  while (end < d.thread.length && d.thread[end]!.who !== 'person') {
+    end += 1
+  }
+  const answeredByMain = d.thread.slice(start + 1, end).some(e => e.who === 'claude' && e.revision === undefined)
+
+  return !answeredByMain && !pending.some(p => p.decisionId === d.id && p.asked === question.at && p.mode === 'main')
+}
+
+/** The pane's key on a quick answer: the same question goes to the main session; its reply lands under it, after the quick one. */
+export async function askMainInstead($: any, decisionId: string, replyAt: string): Promise<void> {
+  const d = await readOne($, decisionId)
+  const question = d ? questionAbove(d, replyAt) : undefined
+  if (!d || !question) {
+    return
+  }
+  const { pending } = await readState($)
+  if (pending.some(p => p.decisionId === d.id && p.asked === question.at && p.mode === 'main')) {
+    return
+  }
+  await dispatch($, 'main', d, question.at, question.text)
 }
 
 /** The question a pending entry stands for, from the thread. */
@@ -332,6 +474,8 @@ export async function askMain($: any): Promise<void> {
 
 /** The `turn.start` hook's work: a reply turn that begins is "answering". */
 export async function onTurnStart($: any, e: any, next: (e: any) => Promise<any>): Promise<any> {
+  routeAnswerStart(e)
+  noteRefreshTurn(e, 'start')
   const waiter = routeStart(e)
   if (waiter && !waiter.late) {
     await setPending($, list => list.map(p => (p.decisionId === waiter.decisionId && p.asked === waiter.asked && p.mode === 'main' ? { ...p, status: 'answering' } : p)))
@@ -344,6 +488,14 @@ export async function onTurnStart($: any, e: any, next: (e: any) => Promise<any>
 /** The `turn.complete` hook's work: the claimed turn's answer goes into the thread under its question. */
 export async function onTurnComplete($: any, e: any, next: (e: any) => Promise<any>): Promise<any> {
   const done = await next(e)
+  if (noteRefreshTurn(e, 'complete')) {
+    await refreshTurnEnded($).catch(() => undefined)
+  }
+  const receipt = routeAnswerComplete(e)
+  if (receipt) {
+    await recordReceipt($, receipt.ids, receipt.line)
+    await redraw($)
+  }
   const routed = routeComplete(e)
   if (routed) {
     await recordReply($, routed.waiter.decisionId, routed.waiter.asked, 'claude', routed.text)

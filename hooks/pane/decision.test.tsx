@@ -1,5 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+import { configure } from '../discuss'
+import { SESSION_TOOL } from '../session'
 import { ADD_TOOL, UPDATE_TOOL, addDecision } from '../tool'
 import { create, readAll, readOne, write } from '../store'
 import type { Decision, StoreCtx } from '../store'
@@ -10,6 +12,7 @@ import {
   answerWithText,
   chooseAndReopen,
   DecisionView,
+  ASK_PLACEHOLDER,
   somethingElseNumber,
   chooseOption,
   dependencyLines,
@@ -69,6 +72,42 @@ async function make(store: StoreCtx, count = 3, recommendation: Decision['recomm
     sources: [],
     dependsOn: [],
   })
+}
+
+/**
+ * Answering the last waiting decision opens the Send screen (row 270). The tests that mount through this are about
+ * what follows on the list or the decision, so the mount holds the answers there with b, as the person would.
+ */
+async function mountHolding<M extends (props: any) => Promise<any>>($: { ui: { mount: M } }, props: Parameters<M>[0]): Promise<Awaited<ReturnType<M>>> {
+  const ui = await $.ui.mount(props)
+  const hold = async () => {
+    if (await ui.find({ type: 'Text', text: 'That was the last one.' })) {
+      await ui.press({ key: 'b' })
+    }
+  }
+  const press = async (args: any) => {
+    // One list (row 265): a group with nothing waiting is folded, so a row in it is reached by unfolding its heading.
+    if (/^row:/.test(String(args.key)) && !(await ui.find({ key: args.key }))) {
+      for (const heading of (await ui.findAll({ type: 'Button' })).filter((b: any) => /^group:/.test(String(b.props.key)))) {
+        if (!(await ui.find({ key: args.key }))) {
+          await ui.press({ key: heading.props.key })
+        }
+      }
+    }
+    const result = await ui.press(args)
+    if (args.key !== 'b' && args.key !== 'confirm') {
+      await hold()
+    }
+    return result
+  }
+  const input = async (args: any) => {
+    const result = await ui.input(args)
+    await hold()
+    return result
+  }
+
+  // The kit's handle is frozen, so the wrapper is a view over it with press and input replaced.
+  return new Proxy({}, { get: (_target, key) => (key === 'press' ? press : key === 'input' ? input : typeof ui[key] === 'function' ? ui[key].bind(ui) : ui[key]) }) as Awaited<ReturnType<M>>
 }
 
 function focusRecorder() {
@@ -404,7 +443,7 @@ async function drawDecision($: any, on: any, d: Decision) {
     DecisionView($$, { ui: $$.ui.resolve(e), d, view: INITIAL_VIEW, width: 49, readyCount: 0, onChanged: () => {}, onLeave: () => {}, onSend: () => {}, onHide: () => {} }),
   )
 
-  return $.ui.mount({ ...PANE, surface: 'terminal' })
+  return mountHolding($, { ...PANE, surface: 'terminal' })
 }
 
 test('a finding shows four options and Something else, each with its own number key, and no digit row', async ($, on) => {
@@ -418,7 +457,7 @@ test('a finding shows four options and Something else, each with its own number 
   expect((await ui.findAll({ type: 'Button' })).filter((b: any) => /^opt:/.test(b.props.key)).map((b: any) => b.props.hotkey)).toEqual(['1', '2', '3', '4', '5'])
   expect((await ui.find({ key: 'opt:5' }))?.text).toMatch(/Something else/)
   expect(keys.some((k: string) => k.startsWith('digit:'))).toBe(false)
-  expect(await ui.find({ type: 'Text', text: /^FINDING · d1 · / })).toBeDefined()
+  expect((await ui.findAll({ type: 'Text' })).some((t: any) => t.text === ' FINDING ')).toBe(true)
   await ui.unmount()
 })
 
@@ -564,7 +603,7 @@ const texts = async (ui: any) => (await ui.findAll({ type: 'Text' })).map((t: an
 
 test('opening puts the ring on the recommendation, on the chosen option once answered, and on 1 without either; opening marks it seen', async ($, on) => {
   const seen = await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'opt:2' }))?.props.autoFocus).toBe(true)
   expect(await ui.find({ key: 'card:2' })).toBeDefined()
@@ -584,7 +623,7 @@ test('opening puts the ring on the recommendation, on the chosen option once ans
 
 test('b goes straight back to the list, even with an option highlighted', async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'b' })
   expect(await ui.find({ key: 'row:d1' })).toBeDefined()
@@ -593,7 +632,7 @@ test('b goes straight back to the list, even with an option highlighted', async 
 
 test("every option's changes and the Why line show in full on a tall pane; m hides them but the highlighted one's", async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   const all = (await texts(ui)).join(' ')
   expect(all).toContain('by hand afterwards')
@@ -610,18 +649,18 @@ test("every option's changes and the Why line show in full on a tall pane; m hid
   await ui.unmount()
 })
 
-test('full detail that would not fit the pane falls back to the highlighted card alone', async ($, on) => {
+test('full detail that would not fit the pane is still drawn whole, and the pane scrolls (row 262)', async ($, on) => {
   await begin($, on, { ...CHOICE, scenario: 'A long scenario sentence. '.repeat(30) })
-  const ui = await $.ui.mount(rowsOf(16))
+  const ui = await mountHolding($, rowsOf(16))
   await ui.press({ key: 'row:d1' })
-  expect((await texts(ui)).join(' ')).not.toContain('by hand afterwards')
+  expect((await texts(ui)).join(' ')).toContain('by hand afterwards')
   expect(await ui.find({ key: 'card:2' })).toBeDefined()
   await ui.unmount()
 })
 
 test('the last option is Something else; enter on it opens "Your answer ", and a typed answer saves without a turn', async ($, on) => {
   const seen = await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'opt:3' }))?.text).toMatch(/Something else/)
   expect((await ui.find({ key: 'opt:3' }))?.props.hotkey).toBe('3')
@@ -633,7 +672,7 @@ test('the last option is Something else; enter on it opens "Your answer ", and a
   expect((await texts(ui)).join(' ')).toContain("enter saves it, Claude isn't asked · empty enter cancels")
   await ui.input({ key: 'answer', text: 'after CI is green', kind: 'change' })
   await ui.input({ key: 'answer', text: 'after CI is green' })
-  expect(await ui.find({ key: 'row:d1' })).toBeDefined()
+  expect(await ui.find({ key: 'group:g:Code review' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'Saved d1 · Something else: after CI is green · s sends it' })).toBeDefined()
   expect(seen.submitted).toEqual([])
   const stored = JSON.parse([...seen.files.entries()].find(([k]) => k.endsWith('/d1.json'))![1])
@@ -648,7 +687,7 @@ test('the last option is Something else; enter on it opens "Your answer ", and a
 
 test('an empty enter in the answer box closes it and saves nothing', async ($, on) => {
   const seen = await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'opt:3' })
   await ring($, 'opt:3')
@@ -662,7 +701,7 @@ test('an empty enter in the answer box closes it and saves nothing', async ($, o
 
 test('c on a highlighted option opens "Only if " and saves the option with its condition; c on Something else does nothing', async ($, on) => {
   const seen = await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'opt:3' })
   await ring($, 'opt:3')
@@ -684,12 +723,12 @@ test('c on a highlighted option opens "Only if " and saves the option with its c
 
 test('the answer box open when the pane is hidden comes back with its draft on the same option', async ($, on) => {
   await begin($, on)
-  let ui = await $.ui.mount(rowsOf(40))
+  let ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'c' })
   await ui.input({ key: 'answer', text: 'only on stag', kind: 'change' })
   await ui.unmount()
-  ui = await $.ui.mount(rowsOf(40))
+  ui = await mountHolding($, rowsOf(40))
   expect((await ui.find({ key: 'answer' }))?.props.label).toBe('Only if ')
   expect((await ui.find({ key: 'answer' }))?.text).toContain('only on stag')
   expect(await ui.find({ key: 'card:2' })).toBeDefined()
@@ -703,11 +742,11 @@ const TWELVE_PLACES = {
   recommendation: { option: 1, reason: 'It is the one already in use.' },
 }
 
-test('12 options on a 9-row pane: 1 then 3 reaches Something else on its own page, and 1 alone does not answer at once', async ($, on) => {
+test('12 options on a 9-row pane: every option is drawn, 1 then 3 reaches Something else, and 1 alone does not answer at once', async ($, on) => {
   const seen = await begin($, on, TWELVE_PLACES)
-  const ui = await $.ui.mount(rowsOf(9))
+  const ui = await mountHolding($, rowsOf(9))
   await ui.press({ key: 'row:d1' })
-  expect(await ui.find({ key: 'opt:13' })).toBeUndefined()
+  expect(await ui.find({ key: 'opt:13' })).toBeDefined()
   await ui.press({ key: 'opt:1' })
   expect(await ui.find({ key: 'opt:1' })).toBeDefined()
   await ui.press({ key: 'opt:3' })
@@ -719,7 +758,7 @@ test('12 options on a 9-row pane: 1 then 3 reaches Something else on its own pag
 
 test('a question has only Something else, and no line about typing in the discussion', async ($, on) => {
   await begin($, on, { group: 'Code review', kind: 'question', title: 'Which staging account', scenario: 'Two accounts exist.' })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   const options = (await ui.findAll({ type: 'Button' })).filter((b: any) => /^opt:/.test(String(b.props.key)))
   expect(options.map((b: any) => b.props.key)).toEqual(['opt:1'])
@@ -742,16 +781,16 @@ test('the conversation sits under the options: counts, the unread reply, and the
       { who: 'claude', text: 'Also, the importer has an owner who reads every PR.', at: at(120_000) },
     ],
   }))
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   const all = await texts(ui)
   expect(all).toContain('Talk it through with Claude')
   expect(all.join('|')).toContain(' · 3 messages')
   expect(all.join('|')).toContain(' · ● 1 new')
-  expect(all.some((t: string) => /^claude · 2m ago$/.test(t))).toBe(true)
+  expect((await ui.find({ key: 'talk:reply' }))?.text).toMatch(/^claude · 2m {2}Also, the importer/)
   expect(all.join(' ')).toContain('the importer has an owner who reads every PR.')
   expect(all).toContain('2 earlier messages · o: whole thread')
-  expect((await ui.find({ key: 'ask-inline' }))?.props.placeholder).toBe('Ask Claude about this decision…')
+  expect(all).toContain('Ask Claude about this decision… ')
   // Opening it counted as reading it: back on the list the row has no ●.
   await ui.press({ key: 'b' })
   expect((await ui.find({ key: 'row:d1' }))?.text).not.toMatch(/●/)
@@ -760,7 +799,7 @@ test('the conversation sits under the options: counts, the unread reply, and the
 
 test('with no thread the conversation says what asking does; while a question waits it says Claude is replying', async ($, on) => {
   const seen = await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await texts(ui)).join(' ')).toContain('Ask why an option exists, what it would cost, or for another option. Claude replies here and can change the decision.')
   await ui.input({ key: 'ask-inline', text: 'Does the author read them?', kind: 'change' })
@@ -776,13 +815,13 @@ test('with no thread the conversation says what asking does; while a question wa
 
 test('t puts the ring in the ask box on a tall pane and opens the thread on a compact one', async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 't' }))?.props.hotkey).toBe('t')
   await ui.press({ key: 't' })
   expect(await ui.find({ key: 'ask-inline' })).toBeDefined()
   await ui.unmount()
-  const short = await $.ui.mount(rowsOf(9))
+  const short = await mountHolding($, rowsOf(9))
   expect(await short.find({ key: 'ask-inline' })).toBeUndefined()
   await short.press({ key: 't' })
   expect(await short.find({ type: 'Text', text: /^Replies from:/ })).toBeDefined()
@@ -791,7 +830,7 @@ test('t puts the ring in the ask box on a tall pane and opens the thread on a co
 
 test('o opens the whole thread, which has no d or m key and still has f', async ($, on) => {
   await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect(await ui.find({ key: 'discuss' })).toBeUndefined()
   await ui.press({ key: 'o' })
@@ -810,16 +849,16 @@ test('o opens the whole thread, which has no d or m key and still has f', async 
   await ui.unmount()
 })
 
-test('the crumb names the kind, the group and how many in it are answered; blocks shows with ⚑', async ($, on) => {
+test('the crumb names the id, the group and how many in it are answered; blocks shows as holds up', async ($, on) => {
   await begin($, on, { ...CHOICE, blocks: 'merging the branch' })
   await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: 'Second one' })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d2' })
   // The ring starts on the recommendation, so one press answers it.
   await ui.press({ key: 'opt:2' })
   await ui.press({ key: 'row:d1' })
-  expect(await ui.find({ type: 'Text', text: 'CHOICE · d1 · Code review · ●○ 1 of 2 answered' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '⚑ Blocks merging the branch' })).toBeDefined()
+  expect((await ui.find({ key: 'crumb' }))?.text.replace(/[▌\s]+/g, ' ')).toContain('d1 · Code review · asked just now · ●○ 1 of 2 answered')
+  expect((await ui.find({ key: 'holds:blocks' }))?.text).toMatch(/holds up merging the branch/)
   expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/★ recommended/)
   await ui.unmount()
 })
@@ -827,7 +866,7 @@ test('the crumb names the kind, the group and how many in it are answered; block
 test('an option from a discussion in the last two minutes is marked ↻ new, and not after', async ($, on) => {
   const seen = await begin($, on)
   await $.tool.call({ tool: UPDATE_TOOL, id: 'd1', summary: 'Added option 3, Both', addOptions: [{ label: 'Both' }] })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   expect((await ui.find({ key: 'line:3' }))?.text).toMatch(/↻ new/)
   expect((await ui.find({ key: 'line:1' }))?.text).not.toMatch(/↻ new/)
@@ -845,7 +884,7 @@ test('an option from a discussion in the last two minutes is marked ↻ new, and
 async function twoReady($: any, on: On, rows = 40): Promise<{ seen: Engine; ui: any }> {
   const seen = await begin($, on)
   await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: 'Second one', recommendation: { option: 1, reason: 'r' } })
-  const ui = await $.ui.mount(rowsOf(rows))
+  const ui = await mountHolding($, rowsOf(rows))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'opt:2' })
   await ui.press({ key: 'row:d2' })
@@ -898,7 +937,7 @@ test('b on the preview goes back to the decision, not the list, and nothing is s
 
 test('the preview of a lone answer has no line about others, shows a condition, and fits a 9-row pane', async ($, on) => {
   await begin($, on, { ...CHOICE, scenario: 's' })
-  const ui = await $.ui.mount(rowsOf(9))
+  const ui = await mountHolding($, rowsOf(9))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'c' })
   await ui.input({ key: 'answer', text: 'after CI is green' })
@@ -909,7 +948,7 @@ test('the preview of a lone answer has no line about others, shows a condition, 
   expect(all.join('|')).not.toMatch(/stays? ready/)
   expect(lineTotal(await ui.drawn())).toBeLessThanOrEqual(9)
   await ui.unmount()
-  const tall = await $.ui.mount(rowsOf(40))
+  const tall = await mountHolding($, rowsOf(40))
   expect(await texts(tall)).toContain('Condition: after CI is green')
   await tall.unmount()
 })
@@ -917,7 +956,7 @@ test('the preview of a lone answer has no line about others, shows a condition, 
 test('s on an unanswered decision still opens the Send screen for everything ready', async ($, on) => {
   const seen = await begin($, on)
   await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: 'Second one' })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'opt:2' })
   await ui.press({ key: 'row:d2' })
@@ -953,7 +992,7 @@ function lineTotal(node: any): number {
 for (const [kind, count] of [['go-ahead', 2], ['assumption', 2], ['finding', 4]] as const) {
   test(`a ${kind} ends with ${count + 1}: Something else`, async ($, on) => {
     await begin($, on, { group: 'Code review', kind, title: 'Search ranking: exact matches sort low', scenario: 's', recommendation: { option: 1, reason: 'r' } })
-    const ui = await $.ui.mount(rowsOf(40))
+    const ui = await mountHolding($, rowsOf(40))
     await ui.press({ key: 'row:d1' })
     const last = await ui.find({ key: `opt:${count + 1}` })
     expect(last?.text).toMatch(/Something else/)
@@ -966,7 +1005,7 @@ for (const [kind, count] of [['go-ahead', 2], ['assumption', 2], ['finding', 4]]
 test('on the assumptions batch 3 does nothing, and enter on a row opens it with Something else as 3', async ($, on) => {
   await begin($, on, { group: 'Code review', kind: 'assumption', title: 'Codes are 8 characters', scenario: 's' })
   await $.tool.call({ tool: ADD_TOOL, group: 'Code review', kind: 'assumption', title: 'Links never expire', scenario: 's' })
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'batch' })
   const hotkeys = (await ui.findAll({ type: 'Button' })).map((b: any) => b.props.hotkey).filter(Boolean)
   expect(hotkeys).toEqual(expect.arrayContaining(['1', '2']))
@@ -993,7 +1032,7 @@ test('the one-decision preview draws send first, with the focus on it and no c k
 
 test('compact at 49 columns: a 12-option decision keeps enter, c and Something else labelled, in 2 lines', async ($, on) => {
   await begin($, on, TWELVE_PLACES)
-  const ui = await $.ui.mount({ ...SCREEN, props: { ...SCREEN.props, bodyColumns: 49, scroll: { offset: 0, bodyRows: 9 } }, surface: 'terminal' as const })
+  const ui = await mountHolding($, { ...SCREEN, props: { ...SCREEN.props, bodyColumns: 49, scroll: { offset: 0, bodyRows: 9 } }, surface: 'terminal' as const })
   await ui.press({ key: 'row:d1' })
   const hints = (await ui.findAll({ type: 'Box' })).find((b: any) => b.props.key === 'hints')
   expect(hints).toBeDefined()
@@ -1008,7 +1047,7 @@ test('compact at 49 columns: a 12-option decision keeps enter, c and Something e
 
 test('a reply read on the decision screen is not new once the person leaves it', async ($, on) => {
   const seen = await begin($, on)
-  const ui = await $.ui.mount(rowsOf(40))
+  const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   tick()
   edit(seen, 'd1', d => ({ ...d, thread: [{ who: 'claude', text: 'A reply while you were here.', at: new Date().toISOString() }] }))
@@ -1067,3 +1106,401 @@ function tick(): void {
     // waiting
   }
 }
+
+// Workstream 9: the decision screen in direction B (rows 251, 252, 258, 259, 262).
+
+const allTexts = async (ui: any) => (await texts(ui)).join('\n')
+const keysInOrder = async (ui: any) => (await ui.findAll({ type: 'Button' })).map((b: any) => String(b.props.key))
+const minutesBefore = (n: number) => new Date(Date.now() - n * 60_000).toISOString()
+
+test('a 120-character title is drawn whole across lines, with keys on at the right of the crumb line', async ($, on) => {
+  const title = 'Activity API docs: still says the app events are six and appear on the site log, when there are now eight of them'
+  expect(title.length).toBeGreaterThan(110)
+  await begin($, on, { ...CHOICE, title })
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const header = await ui.find({ key: 'header' })
+  expect(header?.text.replace(/[▌\s]+/g, ' ')).toContain(title.split(' ').slice(-6).join(' '))
+  expect(header?.text).not.toContain('…')
+  expect((await ui.find({ key: 'crumb' }))?.text).toMatch(/keys on$/)
+  expect((await ui.find({ key: 'crumb' }))?.text).not.toContain('…')
+  await ui.unmount()
+})
+
+test('the header has the kind as an inverse label in its colour, and the crumb says how long ago it was asked', async ($, on) => {
+  await begin($, on)
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const label = (await ui.findAll({ type: 'Text' })).find((t: any) => t.text === ' CHOICE ')
+  expect(label?.props.backgroundColor).toBe('suggestion')
+  expect(label?.props.color).toBe('inverseText')
+  expect((await ui.find({ key: 'crumb' }))?.text).toMatch(/^▌ d1 · Code review · asked just now/)
+  expect((await ui.find({ key: 'crumb' }))?.text).not.toMatch(/answered/)
+  await ui.unmount()
+})
+
+test('the crumb counts answers with dots for up to 5 in the group, and without them above that', async ($, on) => {
+  await begin($, on)
+  await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: 'Second one' })
+  let ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'crumb' }))?.text.replace(/[▌\s]+/g, ' ')).toMatch(/· ○○ 0 of 2 answered/)
+  await ui.press({ key: 'b' })
+  await ui.unmount()
+  for (let i = 0; i < 6; i++) {
+    await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: `More ${i}` })
+  }
+  ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'crumb' }))?.text.replace(/[▌\s]+/g, ' ')).toMatch(/· 0 of 8 answered/)
+  expect((await ui.find({ key: 'crumb' }))?.text).not.toMatch(/○/)
+  await ui.unmount()
+})
+
+test('what a decision waits on and holds up sits under the header, and is no longer in the m lines', async ($, on) => {
+  await begin($, on, { ...CHOICE, blocks: 'merging the branch' })
+  await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: 'Second one', dependsOn: ['d1'] })
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'holds:d2' }))?.text).toMatch(/holds up d2 Second one ◆/)
+  expect((await ui.find({ key: 'holds:blocks' }))?.text).toMatch(/holds up merging the branch/)
+  expect(await allTexts(ui)).not.toMatch(/⚑ Blocks|Depends on:/)
+  await ui.press({ key: 'b' })
+  await ui.press({ key: 'row:d2' })
+  expect((await ui.find({ key: 'waits:d1' }))?.text).toMatch(/waits on d1 Where the review comments go ◆/)
+  await ui.unmount()
+})
+
+test('the ringed option has the selection background and no card border; Something else lines up with the options', async ($, on) => {
+  await begin($, on)
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'card:2' }))?.props.borderStyle).toBeUndefined()
+  expect(JSON.stringify(await ui.find({ key: 'line:2' }))).toContain('"backgroundColor":"subtle"')
+  expect(JSON.stringify(await ui.find({ key: 'line:1' }))).not.toContain('"backgroundColor"')
+  const one = (await ui.find({ key: 'line:1' }))!.text
+  const other = (await ui.find({ key: 'line:3' }))!.text
+  expect(one.indexOf('In the chat')).toBe(other.indexOf('Something else'))
+  await ui.unmount()
+})
+
+test('the ask box has a border, and its placeholder is dim text before the field, not under the cursor', async ($, on) => {
+  await begin($, on)
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'ask-box' }))?.props.borderStyle).toBe('round')
+  expect((await ui.find({ key: 'ask-inline' }))?.props.placeholder).toBeUndefined()
+  expect((await ui.findAll({ type: 'Text' })).find((t: any) => t.text === 'Ask Claude about this decision… ')?.props.dimColor).toBe(true)
+  await ui.unmount()
+})
+
+test('the conversation reads as a chat: speaker and age, then the text on the same line', async ($, on) => {
+  const seen = await begin($, on)
+  edit(seen, 'd1', d => ({ ...d, thread: [{ who: 'person', text: 'would c work on findings too?', at: minutesBefore(2) }, { who: 'claude', text: 'Yes. c works on any highlighted option.', at: minutesBefore(0) }] }))
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const reply = await ui.find({ key: 'talk:reply' })
+  expect(reply?.text).toMatch(/^claude · now {2}Yes\. c works/)
+  expect(JSON.stringify(reply)).toContain('"color":"claude"')
+  await ui.unmount()
+})
+
+test('sources are links: a path to its file with the line in the label, a URL as it is', async ($, on) => {
+  await begin($, on, { ...CHOICE, sources: [{ label: 'Park box', path: 'hooks/pane/decision.tsx:681' }, { label: 'The PR', path: 'https://github.com/o/pantry/pull/12' }] })
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const links = (await ui.findAll({ type: 'Link' })).map((l: any) => l.props.href)
+  expect(links).toEqual(expect.arrayContaining(['file:///work/pantry/hooks/pane/decision.tsx', 'https://github.com/o/pantry/pull/12']))
+  expect(await allTexts(ui)).toContain('hooks/pane/decision.tsx:681')
+  await ui.unmount()
+})
+
+test('backticks in a scenario draw as code, and a URL in it as a short link', async ($, on) => {
+  await begin($, on, { ...CHOICE, scenario: 'The test calls `request()`, see https://github.com/o/pantry/pull/12 for the change.' })
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.findAll({ type: 'Text' })).find((t: any) => t.text === 'request()')?.props.color).toBe('suggestion')
+  expect(await allTexts(ui)).not.toContain('`request()`')
+  expect((await ui.find({ type: 'Link' }))?.props.href).toBe('https://github.com/o/pantry/pull/12')
+  await ui.unmount()
+})
+
+test('12 options at 49x9: every option is drawn with its key, the key line comes before them, and ↑↓ is offered', async ($, on) => {
+  await begin($, on, TWELVE_PLACES)
+  const ui = await mountHolding($, { ...SCREEN, props: { ...SCREEN.props, bodyColumns: 49, scroll: { offset: 0, bodyRows: 9 } }, surface: 'terminal' as const })
+  await ui.press({ key: 'row:d1' })
+  const keys = await keysInOrder(ui)
+  for (let n = 1; n <= 13; n++) {
+    expect(keys).toContain(`opt:${n}`)
+  }
+  expect(keys.indexOf('b')).toBeLessThan(keys.indexOf('opt:1'))
+  expect(await allTexts(ui)).toMatch(/↑↓: more options/)
+  expect(keys).not.toContain('digit:9')
+  await ui.unmount()
+})
+
+test('a decision twice the pane tall draws every line, with nothing cut, and the key line near the top', async ($, on) => {
+  const scenario = Array.from({ length: 30 }, (_, i) => `Sentence ${i + 1} of the scenario.`).join(' ')
+  await begin($, on, { ...CHOICE, scenario })
+  const ui = await mountHolding($, rowsOf(20))
+  await ui.press({ key: 'row:d1' })
+  const all = (await allTexts(ui)).replace(ASK_PLACEHOLDER, '')
+  expect(all).toContain('Sentence 30 of the scenario.')
+  expect(all).toContain('by hand afterwards')
+  expect(all).toContain('the code it concerns')
+  expect(all).not.toContain('…')
+  const keys = await keysInOrder(ui)
+  expect(keys.indexOf('b')).toBeLessThan(keys.indexOf('opt:1'))
+  await ui.unmount()
+})
+
+test("the newest reply is drawn whole, even 12 lines of it on a 20-row pane", async ($, on) => {
+  const seen = await begin($, on)
+  const reply = Array.from({ length: 12 }, (_, i) => `Line ${i + 1} of the reply.`).join('\n')
+  edit(seen, 'd1', d => ({ ...d, thread: [{ who: 'person', text: 'why?', at: minutesBefore(3) }, { who: 'claude', text: reply, at: minutesBefore(1) }] }))
+  const ui = await mountHolding($, rowsOf(20))
+  await ui.press({ key: 'row:d1' })
+  const all = (await allTexts(ui)).replace(ASK_PLACEHOLDER, '')
+  expect(all).toContain('Line 12 of the reply.')
+  expect(all).not.toContain('…')
+  await ui.unmount()
+})
+
+test('a tall pane with the detail shown puts a blank line between options; m hides it with the detail', async ($, on) => {
+  await begin($, on)
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect(await ui.find({ key: 'gap:2' })).toBeDefined()
+  expect(await ui.find({ key: 'gap:1' })).toBeUndefined()
+  await ui.press({ key: 'm' })
+  expect(await ui.find({ key: 'gap:2' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('an open condition box is a bordered box indented under its option, with its line dim inside', async ($, on) => {
+  await begin($, on)
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'c' })
+  const box = await ui.find({ key: 'answer-box' })
+  expect(box?.props.borderStyle).toBe('round')
+  expect(box?.props.marginLeft).toBe(5)
+  expect(JSON.stringify(box)).toContain('"answer"')
+  expect(JSON.stringify(box)).toContain("enter saves it, Claude isn't asked")
+  await ui.unmount()
+})
+
+const WITH_WHY = {
+  ...CHOICE,
+  options: [
+    { label: 'In the chat', changes: 'the comments stay here', why: 'nothing to set up', whyNot: 'nobody else sees them' },
+    { label: 'As PR comments', changes: 'each finding sits on its line' },
+  ],
+}
+
+test('why and why not draw under an option in full detail, in success and warning, through the inline renderer', async ($, on) => {
+  await begin($, on, { ...WITH_WHY, options: [{ ...WITH_WHY.options[0]!, why: 'nothing to `set up`' }, WITH_WHY.options[1]!] })
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const spans = (await ui.findAll({ type: 'Text' })) as any[]
+  const plus = spans.find(t => /^\+ nothing to set up$/.test(t.text))
+  const minus = spans.find(t => /^− nobody else sees them$/.test(t.text))
+  expect(plus?.props.color).toBe('success')
+  expect(minus?.props.color).toBe('warning')
+  expect(spans.find(t => t.text === 'set up')?.props.color).toBe('suggestion')
+  await ui.unmount()
+})
+
+test('an option without why or why not draws neither', async ($, on) => {
+  await begin($, on)
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect(await allTexts(ui)).not.toMatch(/^[+−] /m)
+  await ui.unmount()
+})
+
+test('with the detail hidden, why and why not show only under the highlighted option', async ($, on) => {
+  await begin($, on, { ...WITH_WHY, recommendation: { option: 2, reason: 'r' } })
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  await ui.press({ key: 'm' })
+  expect(await allTexts(ui)).not.toContain('nothing to set up')
+  await ui.press({ key: 'opt:1' })
+  expect(await allTexts(ui)).toContain('+ nothing to set up')
+  await ui.unmount()
+})
+
+test('compact at 49x9 with why and why not keeps the key line at the top', async ($, on) => {
+  await begin($, on, WITH_WHY)
+  const ui = await mountHolding($, { ...SCREEN, props: { ...SCREEN.props, bodyColumns: 49, scroll: { offset: 0, bodyRows: 9 } }, surface: 'terminal' as const })
+  await ui.press({ key: 'row:d1' })
+  const keys = await keysInOrder(ui)
+  expect(keys.indexOf('b')).toBeLessThan(keys.indexOf('opt:1'))
+  await ui.unmount()
+})
+
+test('while the ring is in the ask box the key line shows only what works there', async ($, on) => {
+  await begin($, on)
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  await ring($, 'ask-inline')
+  // The keys stay drawn, dim and without their hotkeys, so the engine's ring index still lands on the box (row 285).
+  for (const key of ['o', 'b', 'm', 't', 'a', 'c', 'p', 'h']) {
+    expect(await ui.find({ key })).toBeDefined()
+    expect((await ui.find({ key }))?.props.hotkey).toBeUndefined()
+  }
+  const all = await allTexts(ui)
+  expect(all).toMatch(/enter: send to Claude/)
+  expect(all).toMatch(/↑: back to the options/)
+  await ui.unmount()
+})
+
+test('after a question is sent from the ask box the ring goes back to the highlighted option', async ($, on) => {
+  const clock = mock.clock(on as any)
+  const seen = await begin($, on)
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  await clock.advance(100)
+  await ring($, 'ask-inline')
+  await ui.input({ key: 'ask-inline', text: 'would c work on findings too?' })
+  for (let i = 0; i < 5; i++) {
+    for (let j = 0; j < 30; j++) {
+      await Promise.resolve()
+    }
+    await clock.advance(100)
+  }
+  expect(seen.submitted).toHaveLength(1)
+  expect(await allTexts(ui)).not.toMatch(/send to Claude/)
+  expect((await ui.find({ key: 'line:2' }))?.text).toMatch(/^▌›/)
+  expect(await ui.find({ key: 'b' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a sent decision shows when it went and the first line of what Claude did next, on the list and the decision', async ($, on) => {
+  const seen = await begin($, on)
+  const sentAt = new Date().toISOString()
+  edit(seen, 'd1', d => ({ ...d, state: 'sent', sentAt, answer: { option: 2, answeredAt: sentAt }, thread: [{ who: 'receipt', text: 'Posted three PR comments.', at: sentAt }] }))
+  const ui = await mountHolding($, rowsOf(40))
+  const clock = sentAt.slice(11, 16)
+  const local = new Date(sentAt)
+  const hm = `${String(local.getHours()).padStart(2, '0')}:${String(local.getMinutes()).padStart(2, '0')}`
+  expect(clock.length).toBe(5)
+  expect((await ui.find({ key: 'under:d1' }))?.text).toMatch(new RegExp(`↗ sent ${hm} · 2 As PR comments`))
+  expect((await ui.find({ key: 'receipt:d1' }))?.text).toMatch(/claude: Posted three PR comments\./)
+  await ui.press({ key: 'row:d1' })
+  const all = await allTexts(ui)
+  expect(all).toContain(`↗ sent ${hm}`)
+  expect(all).toContain('claude: Posted three PR comments.')
+  await ui.unmount()
+})
+
+/** Answers `$.model.complete`: the triage prompt with `triage`, the problem prompt with a fixed line. Records each request. */
+function smallModel(on: On, triage: string): any[] {
+  const asked: any[] = []
+  on('model.complete', (_: any, e: any) => {
+    asked.push(e)
+    return { value: { isAnswered: true, text: /HAND OVER/.test(e.system ?? '') ? triage : 'Review comments need a home' } }
+  })
+
+  return asked
+}
+
+test('auto: a question from the ask box goes to the small model with the session record, and its answer stays in the pane', async ($, on) => {
+  const clock = mock.clock(on as any)
+  const asked = smallModel(on, 'ANSWER\nA comment on the line it is about.')
+  configure({ discussionReplies: 'auto' })
+  try {
+    const seen = await begin($, on)
+    await $.tool.call({ tool: SESSION_TOOL, title: 'Pantry importer review', summary: 'Reviewing the recipe importer.', now: { text: 'Choosing where comments go' } })
+    const ui = await mountHolding($, rowsOf(40))
+    await ui.press({ key: 'row:d1' })
+    await clock.advance(100)
+    await ring($, 'ask-inline')
+    await ui.input({ key: 'ask-inline', text: 'what does a PR comment look like?' })
+    for (let i = 0; i < 5; i++) {
+      for (let j = 0; j < 30; j++) {
+        await Promise.resolve()
+      }
+      await clock.advance(100)
+    }
+    const triage = asked.find(e => /HAND OVER/.test(e.system ?? ''))
+    expect(triage?.prompt).toContain('Title: Pantry importer review')
+    expect(triage?.prompt).toContain('Summary: Reviewing the recipe importer.')
+    expect(triage?.prompt).toContain('Now: Choosing where comments go')
+    expect(seen.submitted).toEqual([])
+    expect((await ui.find({ key: 'talk:reply' }))?.text).toMatch(/^quick answer · now {2}A comment on the line/)
+    await ui.unmount()
+  } finally {
+    configure({})
+  }
+})
+
+test('a quick answer from triage reads "quick answer", dim, and r asks the main session instead, once', async ($, on) => {
+  const seen = await begin($, on)
+  edit(seen, 'd1', d => ({
+    ...d,
+    thread: [
+      { who: 'person', text: 'what does a PR comment look like?', at: minutesBefore(3) },
+      { who: 'quick', via: 'triage', text: 'A note on the line it is about.', at: minutesBefore(2) },
+    ],
+  }))
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'talk:reply' }))?.text).toMatch(/^quick answer · 2m {2}A note on the line/)
+  const speaker = (await ui.findAll({ type: 'Text' })).find((t: any) => t.text === 'quick answer')
+  expect(speaker?.props.color).toBe('claude')
+  expect(speaker?.props.dimColor).toBe(true)
+  expect((await ui.find({ key: 'r' }))?.text).toMatch(/ask the main session/)
+  await ui.press({ key: 'r' })
+  expect(seen.submitted).toEqual(['On decision 1 · Where the review comments go: what does a PR comment look like?'])
+  expect(await ui.find({ key: 'r' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a reply the person asked the quick model for keeps its name and has no r', async ($, on) => {
+  const seen = await begin($, on)
+  edit(seen, 'd1', d => ({
+    ...d,
+    thread: [
+      { who: 'person', text: 'which is cheaper?', at: minutesBefore(3) },
+      { who: 'quick', text: 'The chat.', at: minutesBefore(2) },
+    ],
+  }))
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'talk:reply' }))?.text).toMatch(/^quick model · 2m/)
+  expect(await ui.find({ key: 'r' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the problem line sits under the title in bold, with ◇ when the small model wrote it', async ($, on) => {
+  const seen = await begin($, on, { ...CHOICE, problem: 'Review comments need a home the team reads' })
+  let ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const header = (await ui.find({ key: 'header' }))!.text
+  expect(header.indexOf('Where the review comments go')).toBeLessThan(header.indexOf('Review comments need a home'))
+  expect(header.indexOf('Review comments need a home')).toBeLessThan(header.indexOf('d1 · Code review'))
+  expect(header).not.toContain('◇')
+  const line = (await ui.findAll({ type: 'Text' })).find((t: any) => t.text.startsWith('Review comments need a home'))
+  expect(line?.props.bold).toBe(true)
+  await ui.press({ key: 'b' })
+  await ui.unmount()
+  edit(seen, 'd1', d => ({ ...d, problemBy: 'model' }))
+  ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'header' }))!.text.replace(/[▌\s]+/g, ' ')).toContain('◇ Review comments need a home the team reads')
+  await ui.unmount()
+})
+
+test('the focusable keys above the ask box are the same before and after the ring moves into it', async ($, on) => {
+  await begin($, on)
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const before = await keysInOrder(ui)
+  const inputsBefore = (await ui.findAll({ type: 'Input' })).map((i: any) => String(i.props.key))
+  expect(inputsBefore).toEqual(['ask-inline'])
+  await ring($, 'ask-inline')
+  expect(await keysInOrder(ui)).toEqual(before)
+  expect((await ui.findAll({ type: 'Input' })).map((i: any) => String(i.props.key))).toEqual(inputsBefore)
+  await ui.unmount()
+})

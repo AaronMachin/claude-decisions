@@ -3,12 +3,15 @@ import { atom, read, update } from 'claude-code'
 import type { PaneView } from '../../types'
 import { reopenDependents, reopenNotice } from '../dependents'
 import { focusKeyName } from '../focus-key'
-import { readOne, write } from '../store'
-import { askQuestion, currentMode } from '../discuss'
+import { readAll, readOne, write } from '../store'
+import { openLastOne } from './list'
+import { askMainInstead, askQuestion, canAskMainInstead, currentReplies } from '../discuss'
+import { readSession, sessionSummary } from '../session'
 import type { Answer, Decision, Kind, Option, StoreCtx, ThreadEntry } from '../store'
-import { Card, Header, KeyHints, Rule, capLines, cardFrame, cardInset, hintLineCount, isCompact, wrapLines } from './look'
+import { HEADER_RIGHT_GAP, KeyHints, Rule, hintLineCount, isCompact, keysState, wrapLines } from './look'
 import type { Hint } from './look'
-import { ago, markSeen, noteVisit, readSeen, unreadReplies } from './seen'
+import { ago, markSeen, noteVisit, readSeen, unreadReplies, when } from './seen'
+import { Bar, ChatEntry, Inline, InlineLines, SELECTED_BG, barColour, chatRows, colourProps, kindColour, kindLabel, wrapInline } from './style'
 
 export const PANE_ID = 'decisions'
 export const GAP_MS = 1000
@@ -33,7 +36,7 @@ export const INITIAL_VIEW: PaneView = {
 }
 
 // Change the tag when PaneView's fields change: it declines what an earlier version stored.
-const viewAtom = atom({ plugin: 'decisions', key: 'view' } as const, INITIAL_VIEW, { shape: 'view-6' })
+const viewAtom = atom({ plugin: 'decisions', key: 'view' } as const, INITIAL_VIEW, { shape: 'view-7' })
 
 export type Typed = { digit: string; at: number } | undefined
 export type Typing = { typed: Typed; option: number | undefined }
@@ -349,12 +352,7 @@ export async function openDecision($: any, d: Decision, tab?: string): Promise<v
   focusLater($, `opt:${option}`)
 }
 
-const KIND_COLOR: Record<Kind, string> = { choice: 'suggestion', 'go-ahead': 'warning', finding: 'claude', assumption: 'subtle', question: 'subtle' }
-
-/** The kind as the crumb names it, and the colour the spec gives it. */
-export function kindLabel(kind: Kind): { text: string; color: string } {
-  return { text: kind.toUpperCase(), color: KIND_COLOR[kind] }
-}
+export { kindLabel }
 
 const HIDDEN: Decision['state'][] = ['superseded', 'withdrawn']
 
@@ -366,12 +364,49 @@ export function progressDots(d: Decision, all: Decision[]): { answered: number; 
   return { answered: group.filter(x => x.state === 'ready' || x.state === 'sent').length, total: group.length }
 }
 
-/** "CHOICE · d41 · Code review · ●○ 1 of 2 answered": the dim line under the title. */
-export function crumbFor(d: Decision, all: Decision[] = []): string {
-  const { answered, total } = progressDots(d, all)
-  const dots = '●'.repeat(answered) + '○'.repeat(Math.max(0, total - answered))
+/** Groups larger than this count their answers without the dots (row 259). */
+export const DOTS_UP_TO = 5
 
-  return [kindLabel(d.kind).text, d.id, d.group ?? 'Other', `${dots} ${answered} of ${total} answered`].join(' · ')
+/**
+ * The dim line under the title: `d41 · Code review · asked 4m ago`, then how many in the group are answered when it
+ * has two or more (`●○ 1 of 2 answered`, the dots only up to 5).
+ */
+export function crumbFor(d: Decision, all: Decision[] = [], now: Date = new Date()): string {
+  const { answered, total } = progressDots(d, all)
+  const age = ago(d.createdAt, now)
+  const dots = total <= DOTS_UP_TO ? `${'●'.repeat(answered)}${'○'.repeat(Math.max(0, total - answered))} ` : ''
+
+  return [d.id, d.group ?? 'Other', age === '' ? '' : `asked ${age}`, total >= 2 ? `${dots}${answered} of ${total} answered` : ''].filter(Boolean).join(' · ')
+}
+
+/** `✓` for an answered decision, `◆` for one still waiting (row 252, extra 5). */
+function stateMark(d: Decision): string {
+  return d.state === 'ready' || d.state === 'sent' ? '✓' : '◆'
+}
+
+/** What a decision waits on (its `dependsOn`, with each one's state) and holds up (the decisions that depend on it, and its `blocks`). */
+export function relations(d: Decision, all: Decision[]): { waitsOn: { id: string; title: string; state: string }[]; holdsUp: { id: string; title: string; state: string }[]; blocks?: string } {
+  const shown = all.filter(x => !HIDDEN.includes(x.state))
+
+  return {
+    waitsOn: d.dependsOn.flatMap(id => {
+      const other = shown.find(x => x.id === id)
+      return other ? [{ id: other.id, title: other.title, state: stateMark(other) }] : []
+    }),
+    holdsUp: shown.filter(x => x.dependsOn.includes(d.id)).map(x => ({ id: x.id, title: x.title, state: stateMark(x) })),
+    ...(d.blocks ? { blocks: d.blocks } : {}),
+  }
+}
+
+/** The relation lines as drawn, keyed: `waits on d41 Pick a colour ✓`, `holds up d45 Book the weekend ◆`, `holds up merging the branch`. */
+export function relationLines(d: Decision, all: Decision[]): { key: string; lead: string; text: string; mark?: string }[] {
+  const r = relations(d, all)
+
+  return [
+    ...r.waitsOn.map(w => ({ key: `waits:${w.id}`, lead: 'waits on', text: `${w.id} ${w.title}`, mark: w.state })),
+    ...r.holdsUp.map(h => ({ key: `holds:${h.id}`, lead: 'holds up', text: `${h.id} ${h.title}`, mark: h.state })),
+    ...(r.blocks ? [{ key: 'holds:blocks', lead: 'holds up', text: r.blocks }] : []),
+  ]
 }
 
 const NEW_FOR_MS = 2 * 60_000
@@ -386,16 +421,22 @@ export function isNewFromDiscussion(d: Decision, o: Option, now: number = Date.n
   return last !== undefined && now - new Date(last.at).getTime() < NEW_FOR_MS
 }
 
-/** The lines `m` used to show beyond the scenario: reopened, blocks and depends-on, parked reason, sources. */
-export function contextExtras(d: Decision, all: Decision[]): string[] {
+/** The lines `m` shows beyond the scenario: reopened and the parked reason. What it waits on and holds up sits under the header now (extra 5), and sources are links. */
+export function contextExtras(d: Decision, _all: Decision[] = []): string[] {
   const reopened = reopenedLine(d)
 
-  return [
-    ...(reopened ? [reopened] : []),
-    ...dependencyLines(d, all),
-    ...(d.state === 'parked' && d.parkedReason ? [`Parked: ${d.parkedReason}`] : []),
-    ...(d.sources.length > 0 ? [`Sources: ${d.sources.map(s => `${s.label} (${s.path})`).join(', ')}`] : []),
-  ]
+  return [...(reopened ? [reopened] : []), ...(d.state === 'parked' && d.parkedReason ? [`Parked: ${d.parkedReason}`] : [])]
+}
+
+/** A source's link: a URL as it is; a file path as a `file://` link to the file, without its `:line`, against the working folder. */
+export function sourceHref(path: string, cwd: string): string {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path)) {
+    return path
+  }
+  const file = path.replace(/:\d+(?::\d+)?$/, '')
+  const absolute = file.startsWith('/') ? file : `${cwd.replace(/\/+$/, '')}/${file.replace(/^\.\//, '')}`
+
+  return `file://${absolute}`
 }
 
 /** The digit that presses an option's own row: 1 to 9, 0 for 10, none past 10. */
@@ -405,22 +446,20 @@ export function digitOf(option: number): string | undefined {
 
 const REPLIERS = new Set<ThreadEntry['who']>(['claude', 'fork', 'quick'])
 
-/** What the conversation block under the options says (decisions 216, 220). */
+/** What the conversation block under the options says (decisions 216, 220, 262). */
 export type Conversation = {
   heading: string
   messages: number
   unread: number
-  reply?: { who: string; when: string; lines: string[] }
+  /** The newest unread reply, else the newest reply: always drawn whole (row 262). */
+  reply?: ThreadEntry
   earlier?: string
   empty?: string[]
 }
 
-/**
- * The conversation under the options: the counts, the newest unread reply or else the newest reply (at most
- * `replyCap` lines, cut with `…`), and how many other messages the thread screen holds.
- */
-export function conversationLines(d: Decision, seenAt: string | undefined, width: number, replyCap = 6, now: Date = new Date()): Conversation {
-  const messages = d.thread.filter(e => e.revision === undefined)
+/** The conversation under the options: the counts, the newest unread reply or else the newest reply, and how many other messages the thread screen holds. */
+export function conversationLines(d: Decision, seenAt: string | undefined, width: number): Conversation {
+  const messages = d.thread.filter(e => e.revision === undefined && e.who !== 'receipt')
   const unread = unreadReplies(d, seenAt)
   const shown = unread.at(-1) ?? messages.findLast(e => REPLIERS.has(e.who))
   const heading = [
@@ -429,18 +468,24 @@ export function conversationLines(d: Decision, seenAt: string | undefined, width
     ...(unread.length > 0 ? [`● ${unread.length} new`] : []),
   ].join(' · ')
   if (messages.length === 0) {
-    return { heading, messages: 0, unread: 0, empty: replyCap > 0 ? wrapLines(ASK_EMPTY, width) : [] }
+    return { heading, messages: 0, unread: 0, empty: wrapLines(ASK_EMPTY, width) }
   }
-  const reply = shown && replyCap > 0 ? { who: shown.who, when: ago(shown.at, now), lines: capLines(shown.text, Math.max(1, width - 2), replyCap).lines } : undefined
-  const rest = reply ? messages.length - 1 : messages.length
-  const earlier = rest > 0 ? `${rest} ${reply ? 'earlier ' : ''}${rest === 1 ? 'message' : 'messages'}` : undefined
+  const rest = shown ? messages.length - 1 : messages.length
+  const earlier = rest > 0 ? `${rest} ${shown ? 'earlier ' : ''}${rest === 1 ? 'message' : 'messages'}` : undefined
 
-  return { heading, messages: messages.length, unread: unread.length, reply, earlier }
+  return { heading, messages: messages.length, unread: unread.length, reply: shown, earlier }
 }
 
-/** Rows the conversation block takes, without its rule: heading, reply, earlier line, replying line, the ask box. */
-function conversationRows(c: Conversation, isReplying: boolean): number {
-  return 1 + (c.reply ? 1 + c.reply.lines.length : 0) + (c.earlier ? 1 : 0) + (c.empty?.length ?? 0) + (isReplying ? 1 : 0) + 1
+/** The newest reply, when it is a quick answer from triage that can still go to the main session: the `r` key's target. */
+export function mainInsteadReply(d: Decision, pending: PaneView['pending']): string | undefined {
+  const newest = d.thread.findLast(e => REPLIERS.has(e.who) && e.revision === undefined)
+
+  return newest?.who === 'quick' && newest.via === 'triage' && canAskMainInstead(d, newest.at, pending) ? newest.at : undefined
+}
+
+/** Rows the conversation block takes, rule included: heading, the reply, earlier line, replying line, the bordered ask box. */
+function conversationRows(c: Conversation, isReplying: boolean, width: number): number {
+  return 2 + (c.reply ? chatRows(c.reply, width) : 0) + (c.earlier ? 1 : 0) + (c.empty?.length ?? 0) + (isReplying ? 1 : 0) + 3
 }
 
 type HintCtx = {
@@ -457,6 +502,8 @@ type HintCtx = {
   canToggleDetail?: boolean
   /** Something else is on another page, so the key line names it. */
   isElseOffPage?: boolean
+  /** The newest reply is a quick answer that can go to the main session, so `r` is offered. */
+  canAskMain?: boolean
 }
 
 type Handlers = {
@@ -465,6 +512,7 @@ type Handlers = {
   talk: () => void
   moreOptions: () => void
   thread: () => void
+  askMain: () => void
   digit: (option: number) => void
   more: () => void
   back: () => void
@@ -479,6 +527,7 @@ const NO_HANDLERS: Handlers = {
   talk: () => {},
   moreOptions: () => {},
   thread: () => {},
+  askMain: () => {},
   digit: () => {},
   more: () => {},
   back: () => {},
@@ -490,6 +539,20 @@ const NO_HANDLERS: Handlers = {
 /** The decision screen's key hints. */
 export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
   const { d, view } = c
+  if (view.ring === 'ask-inline') {
+    // Any other key types into the box (row 261), so the line names what works there. The other keys stay drawn, dim and
+    // without hotkeys (row 285): the engine lands the ring by its place among the focusable elements, and taking them away
+    // above the box moved that place past it, so typing went to the main prompt.
+    const inert = decisionHints({ ...c, view: { ...view, ring: undefined } }, on)
+      .filter(hint => hint.onPress !== undefined)
+      .map(hint => ({ ...hint, hotkey: undefined, label: '', isInert: true }))
+
+    return [
+      { id: 'enter-send', keyText: 'enter', label: 'send to Claude', keepLabel: true },
+      { id: 'up', keyText: '↑', label: 'back to the options', keepLabel: true },
+      ...inert,
+    ]
+  }
   const isSent = d.state === 'sent'
   const highlight = view.highlight
   const isSomethingElse = highlight === somethingElseNumber(d)
@@ -505,10 +568,13 @@ export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
     hints.push({ id: 'c', keyText: 'c', label: 'condition', hotkey: 'c', onPress: on.condition, keepLabel: true })
   }
   hints.push({ id: 't', keyText: 't', label: 'talk', hotkey: 't', onPress: on.talk })
-  if (c.isPaged && !isSent) {
-    hints.push({ id: 'o', keyText: 'o', label: 'more options', hotkey: 'o', onPress: on.moreOptions })
-  } else {
-    hints.push({ id: 'o', keyText: 'o', label: 'thread', hotkey: 'o', onPress: on.thread })
+  hints.push({ id: 'o', keyText: 'o', label: 'thread', hotkey: 'o', onPress: on.thread })
+  if (c.canAskMain) {
+    hints.push({ id: 'r', keyText: 'r', label: 'ask the main session', hotkey: 'r', onPress: on.askMain, keepLabel: true })
+  }
+  if (c.isPaged) {
+    // Every option is drawn and the pane scrolls (row 262): ↑ and ↓ reach the ones out of view.
+    hints.push({ id: 'more-options', keyText: '↑↓', label: 'more options' })
   }
   if (!isSent) {
     for (const option of c.offPage) {
@@ -543,40 +609,25 @@ export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
   return hints
 }
 
-/** One line of an option's detail: its `changes` dim, the recommendation's reason in `success`. */
-export type DetailLine = { text: string; color?: string }
+/** One paragraph under an option: its changes dim, why and why not, the recommendation's reason in `success`. Drawn through the inline renderer. */
+export type DetailPart = { text: string; color?: string; dim?: boolean; key: string }
 
-/** Everything under an option, in full: its changes and, on the recommended one, why (decision 217). */
-export function detailLines(d: Decision, option: number, width: number): DetailLine[] {
+/** Everything under an option, in full (decisions 217, 262): its changes and, on the recommended one, why. */
+export function detailParts(d: Decision, option: number): DetailPart[] {
   const o = drawnOptions(d).find(x => x.id === option)
   const why = d.recommendation?.option === option && !o?.isSomethingElse ? `Why: ${d.recommendation.reason}` : undefined
 
-  return [...(o?.changes ? wrapLines(o.changes, width).map(text => ({ text })) : []), ...(why ? wrapLines(why, width).map(text => ({ text, color: 'success' })) : [])]
+  return [
+    ...(o?.changes ? [{ text: o.changes, key: 'changes' }] : []),
+    ...(o?.why ? [{ text: `+ ${o.why}`, color: 'success', dim: true, key: 'for' }] : []),
+    ...(o?.whyNot ? [{ text: `− ${o.whyNot}`, color: 'warning', dim: true, key: 'against' }] : []),
+    ...(why ? [{ text: why, color: 'success', key: 'why' }] : []),
+  ]
 }
 
-/** The highlighted option's card lines: in full, else 2 lines each; compact, one line. */
-export function cardDetail(d: Decision, option: number, width: number, compact: boolean, isFull = false): DetailLine[] {
-  if (isFull) {
-    return detailLines(d, option, width)
-  }
-  const o = drawnOptions(d).find(x => x.id === option)
-  const why = d.recommendation?.option === option && !o?.isSomethingElse ? `Why: ${d.recommendation.reason}` : undefined
-  if (compact) {
-    const one = [o?.changes, why].filter(Boolean).join(' · ')
-
-    return one === '' ? [] : [{ text: truncateLine(one, width - 3) }]
-  }
-
-  return [...(o?.changes ? capLines(o.changes, width, 2).lines.map(text => ({ text })) : []), ...(why ? capLines(why, width, 2).lines.map(text => ({ text, color: 'success' })) : [])]
-}
-
-/** The lines under the highlighted option: its description and, on the recommended one, why. Compact: one line. */
-export function cardLines(d: Decision, option: number, width: number, compact: boolean): string[] {
-  return cardDetail(d, option, width, compact).map(line => line.text)
-}
-
-function truncateLine(text: string, width: number): string {
-  return text.length <= width ? text : text.slice(0, Math.max(0, width - 1)) + '…'
+/** An option's detail as the lines drawn at `width`, markers gone. */
+export function detailLines(d: Decision, option: number, width: number): { text: string; color?: string }[] {
+  return detailParts(d, option).flatMap(part => wrapInline(part.text, width).map(line => ({ text: line.map(x => x.text).join(''), color: part.color })))
 }
 
 /** The line under a chosen option: the condition, or the typed answer. */
@@ -588,17 +639,40 @@ export function answerNote(d: Decision): string | undefined {
   return d.answer?.text !== undefined && d.answer.option === undefined ? `⤷ ${d.answer.text}` : undefined
 }
 
-/** How the decision screen fits the pane: rules, context lines, the page of options, the conversation, the hints. */
+/** Under a sent decision's answer: when it went and, once the turn that carried it ended, the first line of Claude's reply (row 252, extra 4). */
+export function receiptLines(d: Decision): string[] {
+  if (d.state !== 'sent') {
+    return []
+  }
+  const receipt = d.thread.findLast(e => e.who === 'receipt')?.text
+
+  return [`↗ sent${d.sentAt ? ` ${when(d.sentAt)}` : ''}`, ...(receipt !== undefined ? [`claude: ${receipt}`] : [])]
+}
+
+/** Columns before an option's number: the bar, the ring's mark and a space. */
+const OPTION_LEAD = 3
+/** Columns before an option's detail: the bar, then five spaces, under the option's label. */
+const DETAIL_INDENT = 6
+
+/**
+ * How the decision screen is laid out (row 262): nothing is cut. Every option is drawn and the pane scrolls when the
+ * screen is taller than it; the key line sits under the header so it is in view when the screen opens.
+ */
 export type DecisionLayout = {
   compact: boolean
   rules: boolean
-  /** Tall: the scenario lines (in full, the extras too). Compact: the one line above the options. */
-  context: string[]
+  /** The scenario, whole. */
+  scenario: string
+  /** Reopened and parked lines; compact, only with `m`. */
+  extras: string[]
+  /** Sources are drawn (tall with the detail shown; compact with `m`). */
+  showSources: boolean
   hasMore: boolean
-  /** Tall, with the detail shown and room for it: every option's text and the reason in full (decisions 217, 228). */
+  /** Every option's detail is drawn (tall, unless `m` hid it). */
   isFull: boolean
-  /** Tall: the full layout fits, or the detail is hidden, so `m` changes something. */
   canToggleDetail: boolean
+  /** A blank line between options (row 259). */
+  hasGaps: boolean
   page: number
   pageSize: number
   pages: number
@@ -606,15 +680,15 @@ export type DecisionLayout = {
   offPage: number[]
   hints: Hint[]
   hintLines: number
-  /** The keys-off line, or none while the pane has the keys. */
   keysOff: string[]
-  /** Tall only: what the conversation block under the options says. */
   conversation?: Conversation
+  /** Some option rows are out of the pane's window, so ↑↓ is offered. */
+  hasOptionsOutOfView: boolean
 }
 
 const KEYS_OFF_TALL = (key: string) => `Press the pane focus key (${key} unless you moved it) to use it with a draft kept, or run /decisions with an empty prompt.`
 
-/** The line under the header while the prompt has the keys (row 149, shorter on a compact pane). */
+/** The old keys-off sentence; the header now says `<key> to use` instead (row 251). Kept for the compact one-liner's callers. */
 export function keysOffLines(width: number, compact: boolean): string[] {
   const key = focusKeyName()
 
@@ -634,6 +708,44 @@ export function isReplying(view: PaneView, d: Decision): boolean {
   return view.pending.some(p => p.decisionId === d.id && (p.status === 'waiting' || p.status === 'answering'))
 }
 
+/** Lines the header takes: the title wrapped whole on a tall pane (row 258), one line compact, then the crumb. */
+export function headerLines(d: Decision, width: number, compact: boolean): string[] {
+  const label = ` ${kindLabel(d.kind)} `
+  const room = Math.max(8, width - 2 - label.length - 1)
+
+  return compact ? [truncateLine(d.title, room)] : wrapLines(d.title, room)
+}
+
+/** The problem line under the title, wrapped whole, `◇ ` first when the small model wrote it; none on a compact pane. */
+export function problemLines(d: Decision, width: number, compact: boolean): string[] {
+  if (compact || d.problem === undefined || d.problem === '') {
+    return []
+  }
+  const room = Math.max(8, width - 2 - ` ${kindLabel(d.kind)} `.length - 1)
+
+  return wrapLines(`${d.problemBy === 'model' ? '◇ ' : ''}${d.problem}`, room)
+}
+
+/** Lines the crumb takes: one, or wrapped whole on a tall pane with the keys state after. */
+function crumbRows(d: Decision, all: Decision[], width: number, compact: boolean): number {
+  const room = width - HEADER_RIGHT_GAP - 2 - 10
+  const full = crumbFor(d, all)
+
+  return compact || full.length <= room ? 1 : wrapLines(full, width - 2).length + 1
+}
+
+function truncateLine(text: string, width: number): string {
+  return text.length <= width ? text : text.slice(0, Math.max(0, width - 1)) + '…'
+}
+
+/** Rows one option takes as drawn. */
+function optionRows(d: Decision, o: DrawnOption, width: number, withDetail: boolean): number {
+  const label = wrapLines(o.label, Math.max(8, width - OPTION_LEAD - `${o.id}: `.length)).length
+  const detail = withDetail ? detailParts(d, o.id).reduce((n, part) => n + wrapInline(part.text, width - DETAIL_INDENT).length, 0) : 0
+
+  return label + detail + (chosenNumber(d) === o.id ? (answerNote(d) !== undefined ? 1 : 0) + receiptLines(d).length : 0)
+}
+
 export function decisionLayout(
   d: Decision,
   view: PaneView,
@@ -643,131 +755,75 @@ export function decisionLayout(
   readyCount: number,
   all: Decision[] = [],
   seenAt?: string,
+  scrollOffset = 0,
 ): DecisionLayout {
   const compact = isCompact(rows)
-  const inner = width - cardInset(compact)
-  const keysOff = isFocused ? [] : keysOffLines(width, compact)
   const drawn = drawnOptions(d)
-  const count = drawn.length
-  const scenario = wrapLines(d.scenario, width)
-  const extras = contextExtras(d, all).flatMap(line => wrapLines(line, width))
-  const fullContext = [...scenario, ...extras]
-  const isContextOpen = compact && view.isContextOpen
-  const hasMore = compact && (view.isContextOpen || extras.length > 0 || scenario.length > 1)
-  const replying = isReplying(view, d)
-  const talk = (cap: number) => (compact ? undefined : conversationLines(d, seenAt, width, cap))
-  const talkRows = (cap: number) => (compact ? 0 : conversationRows(talk(cap)!, replying))
-  const fixedBase =
-    2 +
-    keysOff.length +
-    (view.notice ? 1 : 0) +
-    (view.isParking ? 1 : 0) +
-    (view.answerBox !== undefined && d.state !== 'sent' ? 1 + wrapLines(BOX_LINE, width).length : 0) +
-    (answerNote(d) !== undefined ? 1 : 0)
-  const hintMax = hintLinesMax(compact)
-  const hintsFor = (isPaged: boolean, offPage: number[], canToggleDetail: boolean, isElseOffPage = false) =>
-    decisionHints({ d, view, isFocused, readyCount, isPaged, offPage, hasMore, compact, canToggleDetail, isElseOffPage })
-
-  // Full detail: every option's text at the card's width, so moving the highlight never tips it over the edge.
-  const fullOptionRows = drawn.reduce((n, o) => n + 1 + detailLines(d, o.id, inner).length, 0) + cardFrame(false)
-  const fullHintLines = hintLineCount(hintsFor(false, [], true), width, hintMax)
-  const fitsFull = !compact && fixedBase + 4 + fullContext.length + fullOptionRows + talkRows(6) + fullHintLines <= rows
-  const canToggleDetail = fitsFull || view.isDetailHidden
-  if (fitsFull && !view.isDetailHidden) {
-    const hints = hintsFor(false, [], true)
-
-    return {
-      compact,
-      rules: true,
-      context: fullContext,
-      hasMore,
-      isFull: true,
-      canToggleDetail,
-      page: 0,
-      pageSize: count,
-      pages: 1,
-      shown: drawn,
+  const extrasAll = contextExtras(d, all)
+  const hasMore = compact && (view.isContextOpen || extrasAll.length > 0 || d.sources.length > 0)
+  const isFull = !compact && !view.isDetailHidden
+  const conversation = compact ? undefined : conversationLines(d, seenAt, width)
+  const extras = compact && !view.isContextOpen ? [] : extrasAll
+  const showSources = d.sources.length > 0 && (compact ? view.isContextOpen : isFull)
+  const withDetail = (o: DrawnOption) => isFull || view.highlight === o.id
+  const hintsFor = (outOfView: boolean) =>
+    decisionHints({
+      d,
+      view,
+      isFocused,
+      readyCount,
+      isPaged: outOfView,
       offPage: [],
-      hints,
-      hintLines: hintLineCount(hints, width, hintMax),
-      keysOff,
-      conversation: talk(6),
-    }
-  }
+      hasMore,
+      compact,
+      canToggleDetail: !compact,
+      isElseOffPage: false,
+      canAskMain: mainInsteadReply(d, view.pending) !== undefined,
+    })
 
-  // Compact, the highlighted option's one line; tall, the biggest card. The ring always starts on an option now (219),
-  // so compact keeps its scenario line as well rather than giving it up to the highlight.
-  const reserveCard = compact
-    ? view.highlight !== undefined
-      ? 1
-      : 0
-    : drawn.reduce((most, o) => Math.max(most, cardDetail(d, o.id, inner, compact).length), 0) + cardFrame(compact)
-  type Step = { rules: boolean; contextCap: number; replyCap: number }
-  const steps: Step[] = compact
-    ? [{ rules: true, contextCap: 1, replyCap: 0 }, { rules: false, contextCap: 1, replyCap: 0 }]
-    : [
-        { rules: true, contextCap: 3, replyCap: 6 },
-        { rules: false, contextCap: 3, replyCap: 6 },
-        { rules: false, contextCap: 1, replyCap: 2 },
-        { rules: false, contextCap: 1, replyCap: 0 },
-      ]
-  const fit = (step: Step, hintLines: number) => {
-    const ruleRows = step.rules ? (compact ? 1 : 4) : 0
-    const without = fixedBase + hintLines + ruleRows + reserveCard + talkRows(step.replyCap)
-    const contextRows = isContextOpen ? Math.min(fullContext.length, Math.max(step.contextCap, rows - without - 1)) : compact ? 1 : Math.min(scenario.length, step.contextCap)
-
-    return { room: rows - without - contextRows, contextRows, ruleRows }
-  }
-  // A sent decision has no `o`: its page is the one holding the answer, so the ✓ is always drawn.
-  const anchored = d.state === 'sent' && view.highlight === undefined ? { ...view, highlight: chosenNumber(d) } : view
-  const unpagedHints = hintsFor(false, [], canToggleDetail)
-  const unpagedLines = hintLineCount(unpagedHints, width, hintMax)
-  let chosen = steps.find(step => fit(step, unpagedLines).room >= count)
-  let hints = unpagedHints
-  let hintLines = unpagedLines
-  let pageSize = Math.max(1, count)
-  if (chosen === undefined) {
-    chosen = steps[steps.length - 1]!
-    const guess = Math.max(1, fit(chosen, hintLineCount(hintsFor(true, [], canToggleDetail), width, hintMax)).room)
-    const pagedHints = (size: number, page: number) =>
-      hintsFor(
-        true,
-        drawn.filter(o => digitOf(o.id) !== undefined && Math.floor((o.id - 1) / size) !== page).map(o => o.id),
-        canToggleDetail,
-        Math.floor((count - 1) / size) !== page,
-      )
-    hints = pagedHints(guess, pageFor(anchored, guess, count))
-    hintLines = hintLineCount(hints, width, hintMax)
-    pageSize = Math.max(1, fit(chosen, hintLines).room)
-    hints = pagedHints(pageSize, pageFor(anchored, pageSize, count))
-    hintLines = hintLineCount(hints, width, hintMax)
-    pageSize = Math.max(1, fit(chosen, hintLines).room)
-  }
-  const pages = Math.max(1, Math.ceil(count / pageSize))
-  const page = pageFor(anchored, pageSize, count)
-  const { contextRows } = fit(chosen, hintLines)
-  const context = isContextOpen
-    ? fullContext.slice(0, contextRows)
-    : compact
-      ? [truncateLine(d.scenario.replace(/\s+/g, ' '), width)]
-      : capLines(d.scenario, width, contextRows).lines
+  // Rows above the options, then the options, for telling whether some are out of the window.
+  const before = (hintLines: number) =>
+    headerLines(d, width, compact).length +
+    problemLines(d, width, compact).length +
+    crumbRows(d, all, width, compact) +
+    (compact ? 0 : relationLines(d, all).length) +
+    hintLines +
+    (compact ? 0 : 1) +
+    wrapInline(d.scenario, width).length +
+    extras.reduce((n, line) => n + wrapLines(line, width).length, 0) +
+    (showSources ? d.sources.length : 0) +
+    (compact ? 0 : 1)
+  const optionLines = drawn.reduce((n, o) => n + optionRows(d, o, width, withDetail(o)), 0)
+  const plainHints = hintsFor(false)
+  const plainLines = hintLineCount(plainHints, width, hintLinesMax(compact))
+  const start = before(plainLines)
+  const end = start + optionLines + (isFull ? drawn.length - 1 : 0)
+  const hasOptionsOutOfView = start < scrollOffset || end > scrollOffset + rows
+  const hints = hasOptionsOutOfView ? hintsFor(true) : plainHints
+  // Blank lines between options only while the whole screen fits; past that they only add scrolling.
+  const total = end + (conversation ? conversationRows(conversation, isReplying(view, d), width) : 0)
+  const hasGaps = isFull && total <= rows
 
   return {
     compact,
-    rules: chosen.rules,
-    context,
+    rules: !compact,
+    scenario: d.scenario,
+    extras,
+    showSources,
     hasMore,
-    isFull: false,
-    canToggleDetail,
-    page,
-    pageSize,
-    pages,
-    shown: drawn.slice(page * pageSize, (page + 1) * pageSize),
-    offPage: pages > 1 ? drawn.filter(o => digitOf(o.id) !== undefined && Math.floor((o.id - 1) / pageSize) !== page).map(o => o.id) : [],
+    isFull,
+    canToggleDetail: !compact,
+    hasGaps,
+    page: 0,
+    pageSize: Math.max(1, drawn.length),
+    pages: 1,
+    shown: drawn,
+    offPage: [],
     hints,
-    hintLines,
-    keysOff,
-    conversation: talk(chosen.replyCap),
+    hintLines: hintLineCount(hints, width, hintLinesMax(compact)),
+    keysOff: [],
+    conversation,
+    hasOptionsOutOfView,
   }
 }
 
@@ -860,7 +916,7 @@ export async function highlightOption($: any, option: number, pageSize: number, 
 }
 
 type Props = {
-  ui: { Box: any; Text: any; Button: any; Input: any }
+  ui: { Box: any; Text: any; Button: any; Input: any; Link?: any }
   d: Decision
   view: PaneView
   width: number
@@ -881,6 +937,10 @@ type Props = {
   onHide: () => void
   /** The pane has the keys, so the ring (and its `›`) is shown. */
   isFocused?: boolean
+  /** The working folder, for a source's `file://` link. */
+  cwd?: string
+  /** The first row of the screen the pane's window shows (`scroll.offset`), for the ↑↓ hint. */
+  scrollOffset?: number
 }
 
 /** What a saved typed answer or condition reads as in the notice. */
@@ -893,7 +953,7 @@ function savedText(d: Decision, box: { kind: 'text' | 'condition'; option: numbe
   return `${box.option} ${o?.label ?? ''}, if ${text}`
 }
 
-/** One decision: header, context, the options (the highlighted one in a card), the conversation and the key hints. Returns an element tree. */
+/** One decision: header, what it waits on, the key hints, context, every option, the conversation (rows 251, 262). Returns an element tree. */
 export function DecisionView($: any, props: Props): any {
   const { ui, d, view, width, readyCount, onChanged, onLeave, onSend, onHide } = props
   const { Box, Text, Button, Input } = ui
@@ -901,14 +961,28 @@ export function DecisionView($: any, props: Props): any {
   const isSent = d.state === 'sent'
   const chosen = chosenNumber(d)
   const somethingElse = somethingElseNumber(d)
-  const layout = decisionLayout(d, view, width, props.rows ?? 30, isFocused, readyCount, props.all ?? [], props.seenAt)
+  const all = props.all ?? []
+  const layout = decisionLayout(d, view, width, props.rows ?? 30, isFocused, readyCount, all, props.seenAt, props.scrollOffset ?? 0)
   const { compact } = layout
-  const inner = width - cardInset(compact)
   const now = Date.now()
+  const colour = barColour(d)
   const box = isSent ? undefined : view.answerBox
 
   const toList = async (notice: string | undefined): Promise<unknown> => {
     await leaving()
+    const { decisions } = await readAll($)
+    const isLast = !decisions.some(x => (x.state === 'open' || x.state === 'live') && x.section === 'needs-you')
+    const readyIds = decisions.filter(x => x.state === 'ready').map(x => x.id)
+    if (isLast && readyIds.length > 0) {
+      // That was the last one (row 270): straight to sending, the ring on send.
+      await setView($, v => {
+        const { [d.id]: _gone, ...answerDrafts } = v.answerDrafts
+        return { ...openLastOne(v, readyIds), answerDrafts, isContextOpen: false, compactPage: 0, notice }
+      })
+      focusLater($, 'confirm')
+
+      return undefined
+    }
 
     return setView($, v => {
       const { [d.id]: _gone, ...answerDrafts } = v.answerDrafts
@@ -997,7 +1071,17 @@ export function DecisionView($: any, props: Props): any {
         await openBox('condition', option)
       }
     },
-    talk: () => void (compact ? openThread() : focusTo($, 'ask-inline')),
+    talk: async () => {
+      if (compact) {
+        await openThread()
+
+        return
+      }
+      // Asked again once the box is drawn with the ring in it, in case the first call landed before that draw.
+      if (await focusTo($, 'ask-inline')) {
+        focusLater($, 'ask-inline')
+      }
+    },
     moreOptions: async () => {
       typing.typed = undefined
       const next = (layout.page + 1) % layout.pages
@@ -1006,6 +1090,13 @@ export function DecisionView($: any, props: Props): any {
       focusLater($, `opt:${first}`)
     },
     thread: () => void openThread(),
+    askMain: async () => {
+      const replyAt = mainInsteadReply(d, (await readView($)).pending)
+      if (replyAt !== undefined) {
+        await askMainInstead($, d.id, replyAt)
+        onChanged()
+      }
+    },
     digit: async (option: number) => {
       const digit = digitOf(option)!
       const result = highlightFor(digit, Date.now(), typing.typed, drawnOptions(d).length)
@@ -1054,16 +1145,33 @@ export function DecisionView($: any, props: Props): any {
       view,
       isFocused,
       readyCount,
-      isPaged: layout.pages > 1,
-      offPage: layout.offPage,
+      isPaged: layout.hasOptionsOutOfView,
+      offPage: [],
       hasMore: layout.hasMore,
       compact,
       canToggleDetail: layout.canToggleDetail,
-      isElseOffPage: layout.pages > 1 && !layout.shown.some(o => o.isSomethingElse === true),
+      isElseOffPage: false,
+      canAskMain: mainInsteadReply(d, view.pending) !== undefined,
     },
     handlers,
   )
   const note = answerNote(d)
+  const barred = (key: string, lineColour: string | undefined, children: any) => (
+    <Box key={key}>
+      {Bar(ui, lineColour)}
+      {children}
+    </Box>
+  )
+  // Lines under one bar: the bars in a column of their own, so each line's text stays whole beside them.
+  const barredBlock = (key: string, lineColour: string | undefined, indent: number, lines: any[]) =>
+    lines.length === 0 ? null : (
+      <Box key={key}>
+        <Box flexDirection="column">{lines.map((_, index) => Bar(ui, lineColour, `${key}:bar:${index}`))}</Box>
+        <Box flexDirection="column" paddingLeft={indent}>
+          {lines}
+        </Box>
+      </Box>
+    )
 
   const optionRow = (o: DrawnOption) => {
     const isHighlighted = view.highlight === o.id
@@ -1075,12 +1183,14 @@ export function DecisionView($: any, props: Props): any {
     const fresh = isNew ? '  ↻ new' : ''
     const after = isChosen ? '  ✓ your answer' : ''
     const numberWidth = `${o.id}: `.length
-    const room = Math.max(4, (isHighlighted ? inner : width) - 3 - numberWidth - tag.length - fresh.length - after.length)
-    const label = truncateLine(o.label, room)
-    const color = compact && isHighlighted ? 'claude' : undefined
+    const labelLines = wrapLines(o.label, Math.max(8, width - OPTION_LEAD - numberWidth - tag.length - fresh.length - after.length))
+    const lineColour = isChosen ? 'success' : colour
+    const selected = isHighlighted ? { backgroundColor: SELECTED_BG } : {}
+    const labelLook = { ...selected, ...(chosen !== undefined && !isChosen ? { dimColor: true } : {}) }
     const row = (
       <Box key={`line:${o.id}`}>
-        <Text color={color}>{`${ringMark(`opt:${o.id}`, view.ring, isFocused)}  `}</Text>
+        {Bar(ui, lineColour)}
+        <Text {...selected}>{`${ringMark(`opt:${o.id}`, view.ring, isFocused)} `}</Text>
         <Button
           key={`opt:${o.id}`}
           hotkey={isSent ? undefined : digit}
@@ -1088,128 +1198,157 @@ export function DecisionView($: any, props: Props): any {
           autoFocus={isHighlighted && box === undefined && !view.isParking ? true : undefined}
           onPress={() => void pressOption($, d, o.id, choose, layout.pageSize)}
         >
-          {digit === undefined || isSent ? <Text color="suggestion">{`${o.id}: `}</Text> : ''}
-          {chosen !== undefined && !isChosen ? <Text dimColor>{label}</Text> : <Text color={color}>{label}</Text>}
-          {isRecommended ? <Text color="success">{tag}</Text> : ''}
-          {isNew ? <Text color="warning">{fresh}</Text> : ''}
-          {isChosen ? <Text dimColor>{after}</Text> : ''}
+          {digit === undefined || isSent ? <Text color="suggestion" {...selected}>{`${o.id}: `}</Text> : ''}
+          <Text {...labelLook}>{labelLines[0] ?? ''}</Text>
+          {isRecommended ? <Text color="success" {...selected}>{tag}</Text> : ''}
+          {isNew ? <Text color="warning" {...selected}>{fresh}</Text> : ''}
+          {isChosen ? <Text dimColor {...selected}>{after}</Text> : ''}
         </Button>
       </Box>
     )
-    const noteRow = (room: number) =>
-      isChosen && note !== undefined ? (
-        <Box key={`note:${o.id}`} paddingLeft={3}>
-          <Text color="success">{truncateLine(note, room - 3)}</Text>
+    const more = barredBlock(
+      `label:${o.id}`,
+      lineColour,
+      OPTION_LEAD - 1 + numberWidth,
+      labelLines.slice(1).map((line, index) => (
+        <Text key={`label:${o.id}:${index}`} {...labelLook}>
+          {line}
+        </Text>
+      )),
+    )
+    const noteRow =
+      isChosen && note !== undefined
+        ? barred(`note:${o.id}`, lineColour, <Text color="success">{`${' '.repeat(DETAIL_INDENT - 1)}${note}`}</Text>)
+        : null
+    const detail = barredBlock(
+      `detail:${o.id}`,
+      lineColour,
+      DETAIL_INDENT - 1,
+      layout.isFull || isHighlighted
+        ? detailParts(d, o.id).flatMap(part => InlineLines(ui, part.text, width - DETAIL_INDENT, part.color ? { color: part.color, ...(part.dim ? { dimColor: true } : {}) } : { dimColor: true }, `detail:${o.id}:${part.key}`))
+        : [],
+    )
+    const answerBox =
+      box !== undefined && box.option === o.id ? (
+        <Box key="answer-box" flexDirection="column" borderStyle="round" borderColor="claude" marginLeft={DETAIL_INDENT - 1} paddingX={1}>
+          <Input
+            key="answer"
+            autoFocus
+            label={box.kind === 'text' ? 'Your answer ' : 'Only if '}
+            value={view.answerDrafts[d.id] ?? ''}
+            onInput={(text: string) => void setView($, v => ({ ...v, answerDrafts: { ...v.answerDrafts, [d.id]: text } }))}
+            onSubmit={(text: string) => void saveBox(text)}
+          />
+          <Text dimColor>{BOX_LINE}</Text>
         </Box>
       ) : null
-    const boxRows =
-      box !== undefined && box.option === o.id
-        ? [
-            <Input
-              key="answer"
-              autoFocus
-              label={box.kind === 'text' ? 'Your answer ' : 'Only if '}
-              value={view.answerDrafts[d.id] ?? ''}
-              onInput={(text: string) => void setView($, v => ({ ...v, answerDrafts: { ...v.answerDrafts, [d.id]: text } }))}
-              onSubmit={(text: string) => void saveBox(text)}
-            />,
-            ...wrapLines(BOX_LINE, width).map((line, index) => (
-              <Text key={`answer-line:${index}`} dimColor>
-                {line}
-              </Text>
-            )),
-          ]
-        : []
-    if (!isHighlighted) {
-      const detail = layout.isFull
-        ? detailLines(d, o.id, width - 3).map((line, index) => (
-            <Box key={`detail:${o.id}:${index}`} paddingLeft={3}>
-              {line.color ? <Text color={line.color}>{line.text}</Text> : <Text dimColor>{line.text}</Text>}
-            </Box>
-          ))
-        : []
-
-      return [row, noteRow(width), ...detail, ...boxRows]
-    }
-    const lines = cardDetail(d, o.id, inner, compact, layout.isFull)
+    const gap = layout.hasGaps && o !== layout.shown[0] ? (
+      <Box key={`gap:${o.id}`}>
+        <Text> </Text>
+      </Box>
+    ) : null
+    const receipt = isChosen
+      ? barredBlock(
+          `receipt:${o.id}`,
+          lineColour,
+          DETAIL_INDENT - 1,
+          receiptLines(d).map((line, index) => (
+            <Text key={`receipt:${o.id}:${index}`} dimColor>
+              {line}
+            </Text>
+          )),
+        )
+      : null
+    const block = [row, more, noteRow, receipt, detail]
 
     return [
-      Card(ui, compact, `card:${o.id}`, [
-        row,
-        noteRow(inner),
-        ...lines.map((line, index) =>
-          line.color ? (
-            <Text key={`card:${o.id}:${index}`} color={line.color}>
-              {compact ? `   ${line.text}` : line.text}
-            </Text>
-          ) : (
-            <Text key={`card:${o.id}:${index}`} dimColor>
-              {compact ? `   ${line.text}` : line.text}
-            </Text>
-          ),
-        ),
-      ]),
-      ...boxRows,
+      gap,
+      isHighlighted ? (
+        <Box key={`card:${o.id}`} flexDirection="column">
+          {block}
+        </Box>
+      ) : (
+        block
+      ),
+      answerBox,
     ]
   }
 
   const hintBlock = KeyHints(ui, hints, width, hintLinesMax(compact))
-  const contextBlock = layout.context.map((line, index) => (
-    <Text key={`context:${index}`} dimColor={compact}>
-      {line}
-    </Text>
-  ))
+  const contextBlock = [
+    ...InlineLines(ui, layout.scenario, width, compact ? { dimColor: true } : {}, 'context'),
+    ...layout.extras.flatMap((line, index) =>
+      wrapLines(line, width).map((part, n) => (
+        <Text key={`extra:${index}:${n}`} dimColor>
+          {part}
+        </Text>
+      )),
+    ),
+    ...(layout.showSources
+      ? d.sources.map((source, index) => (
+          <Box key={`source:${index}`}>
+            <Text>{'  '}</Text>
+            {ui.Link ? <ui.Link href={sourceHref(source.path, props.cwd ?? '')}>{source.label}</ui.Link> : <Text>{source.label}</Text>}
+            <Text dimColor>{`  ${source.path}`}</Text>
+          </Box>
+        ))
+      : []),
+  ]
   const talk = layout.conversation
+  const draft = view.drafts[d.id] ?? ''
   const talkBlock = talk ? (
     <Box key="talk" flexDirection="column">
-      {layout.rules ? Rule(ui, width, 'rule:talk') : null}
+      {Rule(ui, width, 'rule:talk')}
       <Box key="talk:heading">
         <Text bold>Talk it through with Claude</Text>
         {talk.messages > 0 ? <Text dimColor>{` · ${talk.messages} ${talk.messages === 1 ? 'message' : 'messages'}`}</Text> : ''}
         {talk.unread > 0 ? <Text color="claude">{` · ● ${talk.unread} new`}</Text> : ''}
       </Box>
-      {talk.reply ? <Text key="talk:who" dimColor>{`${talk.reply.who} · ${talk.reply.when}`}</Text> : null}
-      {(talk.reply?.lines ?? []).map((line, index) => (
-        <Box key={`talk:line:${index}`} paddingLeft={2}>
-          <Text>{line}</Text>
-        </Box>
-      ))}
-      {talk.earlier ? <Text key="talk:earlier" dimColor>{layout.pages > 1 ? talk.earlier : `${talk.earlier} · o: whole thread`}</Text> : null}
+      {talk.earlier ? <Text key="talk:earlier" dimColor>{`${talk.earlier} · o: whole thread`}</Text> : null}
+      {talk.reply ? ChatEntry(ui, talk.reply, width, 'talk:reply') : null}
       {(talk.empty ?? []).map((line, index) => (
         <Text key={`talk:empty:${index}`} dimColor>
           {line}
         </Text>
       ))}
       {isReplying(view, d) ? <Text key="talk:replying" color="claude">{REPLYING}</Text> : null}
-      <Input
-        key="ask-inline"
-        placeholder={ASK_PLACEHOLDER}
-        value={view.drafts[d.id] ?? ''}
-        onInput={(text: string) => void setView($, v => ({ ...v, drafts: { ...v.drafts, [d.id]: text } }))}
-        onSubmit={async (text: string) => {
-          if (text.trim() === '') {
-            return
-          }
-          await askQuestion($, currentMode(), d.id, text.trim())
-          onChanged()
-        }}
-      />
+      <Box key="ask-box" borderStyle="round" borderColor="subtle" paddingX={1}>
+        {draft === '' ? <Text dimColor>{`${ASK_PLACEHOLDER} `}</Text> : null}
+        <Input
+          key="ask-inline"
+          value={draft}
+          onInput={(text: string) => void setView($, v => ({ ...v, drafts: { ...v.drafts, [d.id]: text } }))}
+          onSubmit={async (text: string) => {
+            if (text.trim() === '') {
+              return
+            }
+            // Out of the box once it is sent, so the hotkeys work again and stop typing into it (row 261). The view takes the
+            // ring at once, so the key line is the options' again on the next draw; the engine's ring follows.
+            const option = `opt:${view.highlight ?? openingOption(d)}`
+            await setView($, v => ({ ...v, ring: option }))
+            focusLater($, option)
+            await askQuestion($, currentReplies(), d.id, text.trim(), sessionSummary(await readSession($).catch(() => undefined)))
+            onChanged()
+          }}
+        />
+      </Box>
     </Box>
   ) : null
 
   return (
     <Box flexDirection="column">
-      {Header(ui, d.title, isFocused, crumbFor(d, props.all ?? []), width)}
-      {layout.keysOff.map((line, index) => (
-        <Text key={`keys-off:${index}`} dimColor>
-          {line}
-        </Text>
-      ))}
-      {compact ? hintBlock : null}
-      {compact && layout.rules ? Rule(ui, width, 'rule:top') : null}
-      {!compact && layout.rules ? Rule(ui, width, 'rule:header') : null}
+      {DecisionHeader(ui, d, all, isFocused, width, compact)}
+      {compact ? null : relationLines(d, all).map(line =>
+        barred(line.key, colour, [
+          <Text key="lead" dimColor>{` ${line.lead} `}</Text>,
+          <Text key="text">{line.text}</Text>,
+          line.mark ? <Text key="mark" color={line.mark === '✓' ? 'success' : undefined}>{` ${line.mark}`}</Text> : null,
+        ]),
+      )}
+      {hintBlock}
+      {layout.rules ? Rule(ui, width, 'rule:top') : null}
       {contextBlock}
-      {!compact && layout.rules ? Rule(ui, width, 'rule:context') : null}
+      {layout.rules ? Rule(ui, width, 'rule:context') : null}
       {layout.shown.flatMap(optionRow)}
       {view.isParking ? (
         <Input
@@ -1238,10 +1377,73 @@ export function DecisionView($: any, props: Props): any {
           }}
         />
       ) : null}
-      {view.notice ? <Text dimColor>{truncateLine(view.notice, width)}</Text> : null}
+      {view.notice ? <Text dimColor>{view.notice}</Text> : null}
       {talkBlock}
-      {!compact && layout.rules ? Rule(ui, width, 'rule:options') : null}
-      {compact ? null : hintBlock}
+    </Box>
+  )
+}
+
+/**
+ * The decision screen's header (row 251): the bar, the kind as an inverse label in its colour, the title in bold,
+ * wrapped whole on a tall pane (258), then the crumb with `keys on` or `<key> to use` at its right.
+ */
+function DecisionHeader(ui: { Box: any; Text: any }, d: Decision, all: Decision[], isFocused: boolean, width: number, compact: boolean): any {
+  const { Box, Text } = ui
+  const colour = barColour(d)
+  const label = ` ${kindLabel(d.kind)} `
+  const lines = headerLines(d, width, compact)
+  const state = keysState(isFocused)
+  const usable = width - HEADER_RIGHT_GAP
+  const crumbRoom = Math.max(1, usable - 2 - state.length - 1)
+  const full = crumbFor(d, all)
+  // Compact cuts the crumb to its one line; tall wraps it whole, the keys state at the right of its last line (row 262).
+  const crumbLines = compact || full.length <= crumbRoom ? [truncateLine(full, crumbRoom)] : wrapLines(full, width - 2)
+  const crumb = crumbLines.at(-1)!
+  const isStateOwnLine = crumb.length > crumbRoom
+
+  return (
+    <Box key="header" flexDirection="column">
+      {lines.map((line, index) => (
+        <Box key={`title:${index}`}>
+          {Bar(ui, colour)}
+          {index === 0 ? (
+            <Text>
+              {' '}
+              <Text backgroundColor={kindColour(d.kind) ?? 'text'} color="inverseText" bold>
+                {label}
+              </Text>
+              {' '}
+            </Text>
+          ) : (
+            <Text>{' '.repeat(label.length + 2)}</Text>
+          )}
+          <Text bold>{line}</Text>
+        </Box>
+      ))}
+      {problemLines(d, width, compact).map((line, index) => (
+        <Box key={`problem:${index}`}>
+          {Bar(ui, colour)}
+          <Text>{' '.repeat(label.length + 2)}</Text>
+          <Text bold>{line}</Text>
+        </Box>
+      ))}
+      <Box key="crumb" flexDirection="column">
+        {crumbLines.map((line, index) => (
+          <Box key={`crumb:${index}`}>
+            {Bar(ui, colour)}
+            <Text dimColor>{` ${line}`}</Text>
+            {index === crumbLines.length - 1 && !isStateOwnLine ? <Text>{' '.repeat(Math.max(1, usable - 2 - line.length - state.length))}</Text> : null}
+            {index === crumbLines.length - 1 && !isStateOwnLine ? isFocused ? <Text bold>{state}</Text> : <Text dimColor>{state}</Text> : null}
+          </Box>
+        ))}
+        {isStateOwnLine ? (
+          <Box key="crumb:state">
+            {Bar(ui, colour)}
+            <Text>{' '.repeat(Math.max(1, usable - 1 - state.length))}</Text>
+            {isFocused ? <Text bold>{state}</Text> : <Text dimColor>{state}</Text>}
+          </Box>
+        ) : null}
+      </Box>
     </Box>
   )
 }

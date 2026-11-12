@@ -8,7 +8,7 @@
     {
       "name": "decisions",
       "source": "./",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "Moves Claude's questions and decisions out of the chat into a pane beside it, each with its own discussion.",
       "author": {
         "name": "Aaron Machin"

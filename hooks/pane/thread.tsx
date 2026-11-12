@@ -1,12 +1,15 @@
 import type { PaneView, PendingQuestion } from '../../types'
-import { RUN, askQuestion, currentMode, resendToFork } from '../discuss'
-import type { Decision, ThreadEntry } from '../store'
+import { RUN, askQuestion, currentMode, currentReplies, resendToFork } from '../discuss'
+import { readSession, sessionSummary } from '../session'
+import type { Decision, Revision, ThreadEntry } from '../store'
 import { focusLater, focusTo, openingOption, setView } from './decision'
-import { markSeen } from './seen'
+import { markSeen, when } from './seen'
+
+export { when }
 import { truncate } from './list'
 import { Rule } from './look'
+import { ChatEntry, chatRows } from './style'
 
-const WHO: Record<ThreadEntry['who'], string> = { person: 'you', claude: 'Claude', fork: 'Fork', quick: 'Quick model' }
 const MODE_NAME = { main: 'main session', fork: 'fork', quick: 'quick model' } as const
 const STATE_TEXT: Record<string, string> = {
   open: 'open',
@@ -15,8 +18,41 @@ const STATE_TEXT: Record<string, string> = {
   sent: 'answered and sent',
   parked: 'parked',
 }
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const FIXED_ROWS = 18
+
+/** One thing a revision changed, as the thread draws it under its ↻ line (row 252, extra 3). */
+export type RevisionChange =
+  | { kind: 'added'; text: string }
+  | { kind: 'recommendation'; text: string }
+  | { kind: 'renamed'; text: string; old: string; number: number; label: string }
+
+/** What changed from the version before a revision to the one after it: options added or renamed, the recommendation moving. */
+export function revisionChanges(before: Revision['before'], after: Pick<Decision, 'options' | 'recommendation'>): RevisionChange[] {
+  const added: RevisionChange[] = after.options
+    .filter(o => !before.options.some(b => b.id === o.id))
+    .map(o => ({ kind: 'added', text: `+ ${o.id}  ${o.label}` }))
+  const renamed: RevisionChange[] = after.options.flatMap(o => {
+    const was = before.options.find(b => b.id === o.id)
+    return was && was.label !== o.label ? [{ kind: 'renamed' as const, text: `~ ${o.id}  ${was.label} → ${o.label}`, old: was.label, number: o.id, label: o.label }] : []
+  })
+  const from = before.recommendation?.option
+  const to = after.recommendation?.option
+  const moved: RevisionChange[] = from !== to && to !== undefined ? [{ kind: 'recommendation', text: `★ recommendation ${from ?? 'none'} → ${to}` }] : []
+
+  return [...added, ...renamed, ...moved]
+}
+
+/** The version a revision led to: the next revision's `before`, or the decision as it is now. */
+export function versionAfter(d: Decision, index: number): Pick<Decision, 'options' | 'recommendation'> {
+  return d.revisions[index + 1]?.before ?? d
+}
+
+/** The changes under a ↻ line, or none when it is not one or nothing visible changed. */
+export function changesOf(d: Decision, e: ThreadEntry): RevisionChange[] {
+  const revision = e.revision === undefined ? undefined : d.revisions[e.revision]
+
+  return revision === undefined ? [] : revisionChanges(revision.before, versionAfter(d, e.revision!))
+}
 
 /** The dim line under a question that has no reply yet. */
 export function noteFor(p: PendingQuestion, run: string): string {
@@ -41,27 +77,12 @@ export function isResendable(p: PendingQuestion, run: string): boolean {
   return p.status === 'queued' || p.status === 'failed' || p.run !== run
 }
 
-/** `10:42` for today, `4 Nov 10:42` for any other day. */
-export function when(at: string, now: Date = new Date()): string {
-  const t = new Date(at)
-  if (Number.isNaN(t.getTime())) {
-    return ''
-  }
-  const hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
-  const isToday = t.getFullYear() === now.getFullYear() && t.getMonth() === now.getMonth() && t.getDate() === now.getDate()
-
-  return isToday ? hm : `${t.getDate()} ${MONTHS[t.getMonth()]} ${hm}`
-}
-
-/** Rows an entry takes: its label and wrapped text, or one row for a ↻ line. */
+/** Rows an entry takes: its chat line wrapped under itself, or one row for a ↻ line. */
 export function rowsOf(e: ThreadEntry, width: number): number {
   if (e.revision !== undefined) {
     return 1
   }
-  const wrap = Math.max(1, width - 2)
-
-  // Words wrap early, so count about 15% more than the characters alone say.
-  return 1 + e.text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil((line.length * 1.15) / wrap)), 0)
+  return chatRows(e, width)
 }
 
 /** An entry cut with `…` so it fits in `budget` rows; the same entry when it already does. */
@@ -195,7 +216,7 @@ export function ThreadView($: any, props: Props): any {
   const pendingFor = (e: ThreadEntry) => mine.filter(p => p.asked === e.at)
   const resendable = mine.find(p => isResendable(p, RUN))
   const budget = Math.max(4, rows - FIXED_ROWS)
-  const visible = visibleEntries(d.thread, view.threadSkip, budget, width, e => pendingFor(e).length * 2)
+  const visible = visibleEntries(d.thread, view.threadSkip, budget, width, e => pendingFor(e).length * 2 + changesOf(d, e).length)
   const { olderHidden, newerHidden } = visible
   const shown = visible.shown.length === 1 ? [clipToBudget(visible.shown[0]!, budget, width)] : visible.shown
   const draft = view.drafts[d.id] ?? ''
@@ -208,15 +229,33 @@ export function ThreadView($: any, props: Props): any {
       {olderHidden > 0 ? <Text dimColor>{`${olderHidden} earlier ${olderHidden === 1 ? 'entry' : 'entries'} · o`}</Text> : null}
       {shown.map(e =>
         e.revision !== undefined ? (
-          <Button key={`rev:${e.revision}`} plain onPress={() => setView($, v => ({ ...v, revisionIndex: e.revision }))}>
-            {truncate(e.text, width)}
-          </Button>
+          <Box key={`revision:${e.revision}`} flexDirection="column">
+            <Button key={`rev:${e.revision}`} plain onPress={() => setView($, v => ({ ...v, revisionIndex: e.revision }))}>
+              {truncate(e.text, width)}
+            </Button>
+            {changesOf(d, e).length > 0 ? (
+              <Box key={`changes:${e.revision}`} flexDirection="column">
+                {changesOf(d, e).map((c, index) =>
+                  c.kind === 'renamed' ? (
+                    <Text key={`change:${index}`}>
+                      {`  ~ ${c.number}  `}
+                      <Text strikethrough dimColor>
+                        {c.old}
+                      </Text>
+                      {` → ${c.label}`}
+                    </Text>
+                  ) : (
+                    <Text key={`change:${index}`} color={c.kind === 'added' ? 'success' : 'warning'}>
+                      {`  ${c.text}`}
+                    </Text>
+                  ),
+                )}
+              </Box>
+            ) : null}
+          </Box>
         ) : (
           <Box key={`entry:${e.at}:${e.who}`} flexDirection="column">
-            <Text dimColor>{`${WHO[e.who]} · ${when(e.at)}`}</Text>
-            <Box paddingLeft={2}>
-              <Text>{e.text}</Text>
-            </Box>
+            {ChatEntry(ui, e, width, `chat:${e.at}:${e.who}`)}
             {pendingFor(e).map(p => (
               <Box key={`note:${p.mode}`} paddingLeft={2} flexDirection="column">
                 <Text dimColor>{noteFor(p, RUN)}</Text>
@@ -246,7 +285,7 @@ export function ThreadView($: any, props: Props): any {
                 return { ...v, isAsking: false, drafts }
               })
             } else {
-              await askQuestion($, currentMode(), d.id, text.trim())
+              await askQuestion($, currentReplies(), d.id, text.trim(), sessionSummary(await readSession($).catch(() => undefined)))
             }
             focusLater($, 'ask')
             onChanged()

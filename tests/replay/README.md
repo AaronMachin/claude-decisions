@@ -21,7 +21,7 @@ A session is a JSON file: `{ "name": "...", "prompts": ["...", "..."] }`. The fi
 
 ## Seeded session for testers
 
-`seed-ux.ts` fills the store of the git repository it is run from: three choices (one with 12 options), six assumptions, a Pantry review with an Image uploads group, a parked decision and an answered one with a discussion.
+`seed-ux.ts` fills the store of the git repository it is run from: three choices (one with 12 options, the first with a problem line the small model wrote), six assumptions, a Pantry review with an Image uploads group, a parked decision, an answered one with a discussion, a Recipe printing group (an unread reply, two answers and a quick answer from the small model) and a session record for the Session page. Set `DECISIONS_SESSION` to the id you then start Claude with (`claude --session-id`), since the pane shows only that session's decisions.
 
 ```
 cd "$(mktemp -d)" && git init -q && npx -y tsx <repo>/tests/replay/seed-ux.ts

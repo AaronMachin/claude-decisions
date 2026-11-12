@@ -2,15 +2,17 @@ import type { PaneView } from '../../types'
 import { notePaneFocus } from '../band'
 import { sendTicked, readyDecisions } from '../send'
 import { readAll } from '../store'
-import { DecisionView, INITIAL_VIEW, PANE_ID, cancelHeldDigit, focusLater, focusTo, keysOffLines, openingOption, readView, setView } from './decision'
+import { DecisionView, INITIAL_VIEW, PANE_ID, cancelHeldDigit, focusLater, focusTo, openingOption, readView, setView } from './decision'
 import { Header, isCompact } from './look'
 import { ThreadView } from './thread'
 import type { Tab } from './list'
-import { ListView, ReviewView, activeTab, newestOpenTab, openReview, statusText, tabsFor, waitingElsewhere } from './list'
+import { ListView, ReviewView, activeTab, listFirstKey, openReview, statusText, tabsFor } from './list'
 import { foldAll, sectionsFor } from './sections'
 import { freezeOrder, frozenOrder, readSeen, thawOrder, visitSeenAt } from './seen'
 import type { Seen } from './seen'
 import { BatchView, batchRows } from './kinds'
+import { REFRESH_PROMPT, SessionView, openSessionPage } from './session-tab'
+import { readSession } from '../session'
 import { firstKey } from './sections'
 
 /** Sets the status line from what's in the store. */
@@ -25,15 +27,8 @@ export async function changed($: any): Promise<void> {
   $.ui.invalidate('ui.render')
 }
 
-/** Puts the list on the tab holding the newest decision that waits for the person; `onlyIfIdle` leaves a tab that has some of its own. */
-async function showNewestOpenTab($: any, onlyIfIdle: boolean): Promise<void> {
-  const tabs = tabsFor((await readAll($)).decisions)
-  const target = newestOpenTab(tabs)
-  if (target === undefined) {
-    return
-  }
-  await setView($, v => (onlyIfIdle && waitingElsewhere(tabs, activeTab(tabs, v)) === undefined ? v : { ...foldAll(v), tab: target.key }))
-}
+/** With one list (row 265) there is no tab to move to: a new decision lands in its group, which the list orders first. */
+async function showNewestOpenTab(_$: any, _onlyIfIdle: boolean): Promise<void> {}
 
 /** Whether the pane has the keys now; false when the engine can't say. */
 async function isPaneFocused($: any): Promise<boolean> {
@@ -103,10 +98,13 @@ export function leaveToList($: any): void {
  * list's own ring while its row is still drawn, else the first row of the open tab. A tab change while the prompt
  * had the keys can't move the ring (the engine refuses focus calls then), so without this it is left on a row that went.
  */
-export function ringTarget(view: PaneView, tabs: Tab[], seen: Seen = {}, frozen?: string[]): string | undefined {
+export function ringTarget(view: PaneView, tabs: Tab[], seen: Seen = {}, frozen?: string[], hasSession = false): string | undefined {
   if (view.screen === 'decision') {
     if (view.answerBox !== undefined) {
       return 'answer'
+    }
+    if (view.ring === 'ask-inline') {
+      return 'ask-inline'
     }
     const d = tabs.flatMap(t => t.decisions).find(x => x.id === view.decisionId)
 
@@ -118,19 +116,27 @@ export function ringTarget(view: PaneView, tabs: Tab[], seen: Seen = {}, frozen?
   if (view.screen !== 'list') {
     return undefined
   }
-  const current = activeTab(tabs, view)
   const ringed = /^row:(.+)$/.exec(view.ring ?? '')?.[1]
-  if (ringed !== undefined && current?.decisions.some(d => d.id === ringed)) {
+  if (ringed !== undefined && tabs.some(t => t.decisions.some(d => d.id === ringed))) {
     return view.ring
   }
 
-  return waitingElsewhere(tabs, current) ? 'goto-waiting' : firstKey(current, seen, frozen)
+  return listFirstKey(tabs, seen, frozen, hasSession)
+}
+
+/** Sends the refresh prompt; when it can't be sent the page says so, and `r` works again (row 286). */
+async function sendRefresh($: any): Promise<void> {
+  try {
+    await $.prompt.submit({ text: REFRESH_PROMPT })
+  } catch {
+    await setView($, v => ({ ...v, sessionRefresh: { askedAt: new Date().toISOString(), status: 'failed' } }))
+    $.ui.invalidate('ui.render')
+  }
 }
 
 async function focusFirstRow($: any): Promise<void> {
   const tabs = tabsFor((await readAll($)).decisions)
-  const current = activeTab(tabs, await readView($))
-  const key = waitingElsewhere(tabs, current) ? 'goto-waiting' : firstKey(current)
+  const key = listFirstKey(tabs, {}, undefined, (await readSession($)) !== undefined)
   if (key) {
     await focusTo($, key)
   }
@@ -155,11 +161,6 @@ function header(ui: any, width: number, isFocused: boolean, crumb: string | unde
   return (
     <Box key="top" flexDirection="column">
       {Header(ui, 'Decisions', isFocused, crumb, width)}
-      {(isFocused ? [] : keysOffLines(width, isCompact(rows))).map((line, index) => (
-        <Text key={`keys-off:${index}`} dimColor>
-          {line}
-        </Text>
-      ))}
     </Box>
   )
 }
@@ -176,7 +177,7 @@ export async function renderPane($: any, e: any): Promise<any> {
   const tabs = tabsFor(decisions, seen)
   if (keys === 'gained') {
     freezeOrder(tabs.flatMap(t => sectionsFor(t, seen).needsYou.map(d => d.id)))
-    const target = ringTarget(view, tabs, seen, frozenOrder())
+    const target = ringTarget(view, tabs, seen, frozenOrder(), (await readSession($)) !== undefined)
     if (target !== undefined) {
       focusLater($, target)
     }
@@ -219,6 +220,8 @@ export async function renderPane($: any, e: any): Promise<any> {
       d: decision,
       all: decisions,
       seenAt: visitSeenAt(decision.id, seen),
+      cwd: await $.session.cwd().catch(() => ''),
+      scrollOffset: e.props.scroll?.offset ?? 0,
       onSendThis: async () => {
         await setView($, v => openReview(v, ready.map(d => d.id), decision.id))
         focusLater($, 'confirm')
@@ -241,6 +244,22 @@ export async function renderPane($: any, e: any): Promise<any> {
       </Box>
     )
   }
+  if (view.screen === 'session') {
+    return (
+      <Box flexDirection="column">
+        {header(ui, width, e.props.isFocused === true, 'Session', rows)}
+        {SessionView($, {
+          ...common,
+          record: await readSession($),
+          view,
+          rows,
+          isFocused: e.props.isFocused === true,
+          onLeave: () => leaveToList($),
+          onRefresh: () => void sendRefresh($),
+        })}
+      </Box>
+    )
+  }
   if (view.screen === 'review') {
     return (
       <Box flexDirection="column">
@@ -249,12 +268,26 @@ export async function renderPane($: any, e: any): Promise<any> {
       </Box>
     )
   }
-  const tab = activeTab(tabs, view)
+  const record = await readSession($)
 
   return (
     <Box flexDirection="column">
       {top}
-      {ListView($, { ...common, tabs, view: { ...INITIAL_VIEW, ...view, tab: tab?.key }, readyCount: ready.length, unreadable, rows: e.props.scroll?.bodyRows, seen, frozen: frozenOrder() })}
+      {ListView($, {
+        ...common,
+        tabs,
+        view: { ...INITIAL_VIEW, ...view },
+        readyCount: ready.length,
+        unreadable,
+        rows: e.props.scroll?.bodyRows,
+        seen,
+        frozen: frozenOrder(),
+        session: record,
+        onOpenSession: async () => {
+          await openSessionPage($)
+          focusLater($, 'b')
+        },
+      })}
       {view.notice ? <Text dimColor>{view.notice}</Text> : null}
     </Box>
   )

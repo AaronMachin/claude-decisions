@@ -10,6 +10,10 @@ export type Option = {
   label: string
   /** What it would take and what changes if chosen. */
   changes?: string
+  /** The case for it, drawn `+ …` under its changes (row 260). */
+  why?: string
+  /** The case against it, drawn `− …` under its changes. */
+  whyNot?: string
   fromDiscussion?: boolean
 }
 
@@ -24,11 +28,14 @@ export type Answer = {
 }
 
 export type ThreadEntry = {
-  who: 'person' | 'claude' | 'fork' | 'quick'
+  /** `receipt`: the first line of Claude's reply to the turn that carried this decision's answer (row 252, extra 4). */
+  who: 'person' | 'claude' | 'fork' | 'quick' | 'receipt'
   text: string
   at: string
   /** On a ↻ line: the index into `Decision.revisions` of the version it replaced. */
   revision?: number
+  /** On a `quick` reply: the small model answered it under `auto` (question triage), so the pane offers the main session instead. */
+  via?: 'triage'
 }
 
 export type Revision = {
@@ -46,6 +53,10 @@ export type Decision = {
   section: Section
   kind: Kind
   title: string
+  /** One line, at most 140 characters, saying what the decision is about. */
+  problem?: string
+  /** Who wrote `problem`: Claude through a tool, or the small model. The model never replaces Claude's. */
+  problemBy?: 'claude' | 'model'
   scenario: string
   options: Option[]
   recommendation?: { option: number; reason: string }

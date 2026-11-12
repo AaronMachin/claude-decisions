@@ -56,14 +56,19 @@ export function shifted(input: Record<string, any>, offset: number): Record<stri
   return input.dependsOn ? { ...input, dependsOn: input.dependsOn.map((id: string) => `d${Number(id.slice(1)) + offset}`) } : input
 }
 
-/** What the seed does to an inbox decision after adding it: a reply nobody has read, or an answer saved without a turn. */
+/** What the seed does to an inbox decision after adding it: a reply nobody has read, a quick answer from triage, or an answer saved without a turn. */
 export type InboxEntry = {
   input: Record<string, any>
   reply?: { question: string; answer: string }
+  /** A question the small model answered under `auto` (rows 271, 274), so the decision screen offers `r`. */
+  quick?: { question: string; answer: string }
   answer?: { option?: number; condition?: string; text?: string }
 }
 
-/** The pane's inbox (205, 206, 208): one decision with an unread reply, one answered with a condition, one with Something else. */
+/**
+ * The pane's inbox (205, 206, 208): one decision with an unread reply, one answered with a condition, one with
+ * Something else, and one with a quick answer from triage.
+ */
 export const INBOX: InboxEntry[] = [
   {
     input: {
@@ -104,12 +109,49 @@ export const INBOX: InboxEntry[] = [
     },
     answer: { text: 'a QR code on the printed recipe card' },
   },
+  {
+    input: {
+      group: 'Recipe printing', kind: 'choice',
+      title: 'Which paper size a printed recipe is laid out for',
+      scenario: 'A cook in the US prints "Lemon tart" on Letter paper and the method runs onto a second page.',
+      options: [
+        { label: 'A4 only', changes: 'One layout. Letter cuts off the last lines.' },
+        { label: 'A4 and Letter', changes: 'Two layouts, picked from the printer setting.' },
+      ],
+      recommendation: { option: 2, reason: 'Cooks print on whatever paper their printer holds.' },
+    },
+    quick: { question: 'What does picked from the printer setting mean?', answer: 'The page reads the paper size the print dialog sends and uses the layout for it, so the cook never chooses.' },
+  },
 ]
 
-/** An inbox decision as the seed leaves it: the reply after it was made (so unread), or ready with its answer. */
+/** A problem line the small model wrote (row 272), seeded on the first decision so the header shows `◇ `. */
+export const MODEL_PROBLEM = 'A shared recipe link has to keep working on a phone a week later'
+
+/** The session record (rows 253, 265): the list's session card and the Session page, given as `decisions_session` input. */
+export const SESSION_RECORD: Record<string, any> = {
+  title: 'Pantry: sharing recipes by link',
+  summary: 'Planning how a cook shares a recipe with a friend by link, and reviewing the importer while that waits on decisions.',
+  now: { text: 'Choosing where share links live', waitsOn: ['d1'] },
+  plan: [
+    { text: 'Review the recipe importer', status: 'done', note: 'findings in the pane' },
+    {
+      text: 'Sharing by link', status: 'active', steps: [
+        { text: 'Pick where links live', status: 'active', waitsOn: ['d1'] },
+        { text: 'Build the share page', status: 'todo' },
+      ],
+    },
+    { text: 'Recipe printing', status: 'todo' },
+  ],
+  links: [{ url: 'https://github.com/example/pantry/pull/12', label: '#12 Recipe importer fixes', state: 'open' }],
+}
+
+/** An inbox decision as the seed leaves it: the reply or quick answer after it was made (so unread), or ready with its answer. */
 export function inboxState<D extends { createdAt: string; thread: any[] }>(d: D, entry: InboxEntry, at: string): D & Record<string, any> {
   if (entry.reply) {
     return { ...d, thread: [{ who: 'person', text: entry.reply.question, at }, { who: 'claude', text: entry.reply.answer, at }] }
+  }
+  if (entry.quick) {
+    return { ...d, state: 'live', thread: [{ who: 'person', text: entry.quick.question, at }, { who: 'quick', via: 'triage', text: entry.quick.answer, at }] }
   }
 
   return { ...d, state: 'ready', answer: { ...entry.answer, answeredAt: at } }

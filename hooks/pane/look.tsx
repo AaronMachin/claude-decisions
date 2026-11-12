@@ -1,3 +1,5 @@
+import { focusKeyName } from '../focus-key'
+
 /** The pieces of the pane's look (row 170) every screen shares: rules, key hints, the header, the card. */
 
 /** Below this many rows (`scroll.bodyRows`) the pane draws the compact layout (row 161). */
@@ -40,6 +42,8 @@ export type Hint = {
    * that matter most stay named. Without any hint marked, the labels all go together, as they always have.
    */
   keepLabel?: boolean
+  /** Drawn dim with no hotkey: the key is still there to keep the focusable elements in place, but does nothing by key. */
+  isInert?: boolean
 }
 
 const GAP = 2
@@ -130,6 +134,14 @@ function hintElement(ui: { Text: any; Button: any }, hint: Hint, withLabel: bool
   const { Text, Button } = ui
   const label = withLabel && hint.label !== '' ? hint.label : ''
   const pad = ' '.repeat(padOf(hint, label))
+  if (hint.isInert && hint.onPress) {
+    return (
+      <Button key={hint.id} plain onPress={hint.onPress}>
+        <Text dimColor>{hint.keyText}</Text>
+        {pad}
+      </Button>
+    )
+  }
   if (hint.onPress && hint.hotkey) {
     return (
       <Button key={hint.id} hotkey={hint.hotkey} plain autoFocus={hint.autoFocus} onPress={hint.onPress}>
@@ -180,9 +192,14 @@ export function KeyHints(ui: { Box: any; Text: any; Button: any }, hints: Hint[]
 /** Columns left clear at the header's right edge, where the engine draws the pane's close mark. */
 export const HEADER_RIGHT_GAP = 3
 
+/** What the header's right says: `keys on`, or the focus key and `to use` while the prompt has the keys (row 251). */
+export function keysState(isFocused: boolean): string {
+  return isFocused ? 'keys on' : `${focusKeyName()} to use`
+}
+
 export function Header(ui: { Box: any; Text: any }, title: string, isFocused: boolean, crumb: string | undefined, width: number): any {
   const { Box, Text } = ui
-  const state = isFocused ? 'keys on' : 'keys off'
+  const state = keysState(isFocused)
   const usable = width - HEADER_RIGHT_GAP
   const room = Math.max(1, usable - state.length - 1)
   const shown = cut(title, room)
@@ -197,34 +214,6 @@ export function Header(ui: { Box: any; Text: any }, title: string, isFocused: bo
       {crumb ? <Text dimColor>{cut(crumb, width)}</Text> : null}
     </Box>
   )
-}
-
-/** The highlighted row's frame: a rounded border in the `claude` colour; compact, no border (the row is tinted and starts `›`). */
-export function Card(ui: { Box: any }, compact: boolean, key: string, children: any): any {
-  const { Box } = ui
-  if (compact) {
-    return (
-      <Box key={key} flexDirection="column">
-        {children}
-      </Box>
-    )
-  }
-
-  return (
-    <Box key={key} flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
-      {children}
-    </Box>
-  )
-}
-
-/** Rows a card adds around what it holds. */
-export function cardFrame(compact: boolean): number {
-  return compact ? 0 : 2
-}
-
-/** Columns a card takes from its contents: the border and one cell of padding each side. */
-export function cardInset(compact: boolean): number {
-  return compact ? 0 : 4
 }
 
 function cut(text: string, width: number): string {

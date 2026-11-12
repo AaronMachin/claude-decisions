@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { INITIAL_VIEW } from './pane/decision'
 import type { PaneView } from '../types'
-import { PLACEHOLDER, RESENT_NOTICE, RUN, addWaiter, askMain, askQuestion, configure, currentMode, onTurnComplete, onTurnStart, resendToFork, useViewApi, askModel, isBusy, markLate, routeComplete, routeStart, sentText, contextFor, markAnswered, recordQuestion, recordReply } from './discuss'
+import { routeAnswerStart, routeAnswerComplete, recordReceipt, PLACEHOLDER, RESENT_NOTICE, RUN, addWaiter, askMain, askQuestion, configure, currentMode, onTurnComplete, onTurnStart, resendToFork, useViewApi, askModel, isBusy, markLate, routeComplete, routeStart, sentText, contextFor, markAnswered, recordQuestion, recordReply } from './discuss'
 import { buildAnswerPrompt } from './send'
 import { create, readOne, write } from './store'
 import type { Decision, StoreCtx } from './store'
@@ -378,4 +378,38 @@ test('m pressed twice sends one prompt while that question already has a main-se
   await askMain(w.$)
   await askMain(w.$)
   expect(w.submitted).toHaveLength(1)
+})
+
+test('an answer prompt claims the decisions it carried, and its turn writes a receipt on each', async () => {
+  const store = fakeStore()
+  const a = await make(store)
+  const b = await make(store)
+  const prompt = buildAnswerPrompt([{ ...a, answer: { option: 1, answeredAt: 't' } }, { ...b, answer: { option: 2, answeredAt: 't' } }])
+  expect(routeAnswerStart({ text: framed(prompt), turnId: 'r1' })).toEqual(['d1', 'd2'])
+  const ids = routeAnswerComplete({ turnId: 'r1', answer: '\n\nMoved the config to the root.\nThen ran the tests.' })
+  expect(ids).toEqual({ ids: ['d1', 'd2'], line: 'Moved the config to the root.' })
+  await recordReceipt(store, ids!.ids, 'Moved the config to the root.\nThen ran the tests.')
+  expect((await readOne(store, 'd1'))!.thread.at(-1)).toMatchObject({ who: 'receipt', text: 'Moved the config to the root.' })
+  expect((await readOne(store, 'd2'))!.thread.at(-1)).toMatchObject({ who: 'receipt' })
+})
+
+test('a queued answer prompt is matched to its own turn, not to the turn that ends first', () => {
+  const prompt = 'Answer from the decisions pane. This is the person\'s decision.\n\nDecision d7 · Pick a colour (Shed)\nChosen: 1. Red'
+  expect(routeAnswerStart({ text: 'carry on with the refactor', turnId: 'q0' })).toBeUndefined()
+  expect(routeAnswerStart({ text: framed(prompt), turnId: 'q1' })).toEqual(['d7'])
+  expect(routeAnswerComplete({ turnId: 'q0', answer: 'Refactored.' })).toBeUndefined()
+  expect(routeAnswerComplete({ turnId: 'q1', answer: 'Ordered red.' })).toEqual({ ids: ['d7'], line: 'Ordered red.' })
+})
+
+test("a subagent's turn never claims an answer prompt", () => {
+  const prompt = 'Answer from the decisions pane.\n\nDecision d3 · Units (Other)'
+  expect(routeAnswerStart({ text: prompt, turnId: 's1', agentId: 'agent-1' })).toBeUndefined()
+  expect(routeAnswerComplete({ turnId: 's1', agentId: 'agent-1', answer: 'x' })).toBeUndefined()
+})
+
+test('a receipt is the first non-empty line, cut at 200 characters', async () => {
+  const store = fakeStore()
+  await make(store)
+  await recordReceipt(store, ['d1'], `\n   \n${'x'.repeat(250)}\nmore`)
+  expect((await readOne(store, 'd1'))!.thread.at(-1)!.text).toHaveLength(200)
 })

@@ -6,7 +6,10 @@ import { changed, followFocus, isTabKey, openFocused, openForNewDecision, refres
 import { configure, onTurnComplete, onTurnStart } from './discuss'
 import { addContextBlock, addRulesSection, answerAskUserQuestion, noteAtSessionStart, noteOnSubmit, nudgeAfterTurn, onCompact, refuseSubagent } from './integrate'
 import { PANE_ID } from './pane/decision'
-import { ADD_TOOL, LIST_TOOL, UPDATE_TOOL, addDecision, listDecisions, registerTools, updateDecision } from './tool'
+import { startProblem } from './problem'
+import { dropRefresh } from './pane/session-tab'
+import { SESSION_TOOL, addCapturedLinks, captureLinks, carryOver, sessionTool } from './session'
+import { ADD_TOOL, ANSWER_TOOL, LIST_TOOL, UPDATE_TOOL, addDecision, answerDecision, listDecisions, registerTools, updateDecision } from './tool'
 
 export const register: Register = (on, options) => {
   configure(options)
@@ -28,7 +31,7 @@ export const register: Register = (on, options) => {
     if (refused) {
       return refused
     }
-    const answer = await addDecision($, e)
+    const answer = await addDecision($, e, d => startProblem($, d))
     if ('result' in answer) {
       await openForNewDecision($)
     }
@@ -43,13 +46,59 @@ export const register: Register = (on, options) => {
     if (refused) {
       return refused
     }
-    const answer = await updateDecision($, e)
+    const answer = await updateDecision($, e, d => startProblem($, d))
     if ('result' in answer) {
       await changed($)
     }
 
     return answer
   }).catch(() => ({ deny: 'decisions_update failed: the decision could not be read or written. Say so in chat instead of retrying.' }))
+
+  on('tool.call', { tool: ANSWER_TOOL }, async ($, e) => {
+    const refused = refuseSubagent(e)
+    if (refused) {
+      return refused
+    }
+    const answer = await answerDecision($, e)
+    if ('result' in answer) {
+      await changed($)
+    }
+
+    return answer
+  }).catch(() => ({ deny: 'decisions_answer failed: the decision could not be read or written. Say so in chat instead of retrying.' }))
+
+  // A decisions_session call redraws the pane but never opens it (my call): writing a summary is no reason to push it open.
+  on('tool.call', { tool: SESSION_TOOL }, async ($, e) => {
+    const refused = refuseSubagent(e)
+    if (refused) {
+      return refused
+    }
+    const answer = await sessionTool($, e)
+    if ('result' in answer) {
+      await changed($)
+    }
+
+    return answer
+  }).catch(() => ({ deny: 'decisions_session failed: the session record could not be written. Carry on without it.' }))
+
+  // Links the session made (row 253): a published artifact, a pull request from gh pr create. Subagents' calls count too.
+  on('tool.call', { tool: 'Artifact' }, async ($, e, next) => {
+    const done = await next(e)
+    if (await addCapturedLinks($, captureLinks('Artifact', e, done)).catch(() => false)) {
+      await changed($).catch(() => undefined)
+    }
+
+    return done
+  })
+
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const done = await next(e)
+    if (await addCapturedLinks($, captureLinks('Bash', e, done)).catch(() => false)) {
+      await changed($).catch(() => undefined)
+    }
+
+    return done
+  })
 
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e) => {
     const refused = refuseSubagent(e)
@@ -82,11 +131,20 @@ export const register: Register = (on, options) => {
 
   // After /clear (or an in-process /resume) the process goes on under a new session id, which has no decisions of its own yet,
   // and no session.start fires: redraw once the new id is in place so the pane and status line follow.
+  // The session record follows the new id too (my call), so the Session page keeps showing the same work.
   on('session.end', async ($, e, next) => {
+    const from = await $.session.id().catch(() => undefined)
     const done = await next(e)
     if (e.reason === 'clear' || e.reason === 'resume') {
+      await dropRefresh($).catch(() => undefined)
       $.clock.after(250, () => {
-        void changed($).catch(() => undefined)
+        void (async () => {
+          const to = await $.session.id()
+          if (from !== undefined && to !== from) {
+            await carryOver($, from, to)
+          }
+          await changed($)
+        })().catch(() => undefined)
       })
     }
 

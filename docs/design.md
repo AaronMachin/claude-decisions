@@ -92,14 +92,17 @@ A decision can be marked as blocking. Claude carries on with work that doesn't d
 One record per decision, grouped by the piece of work it belongs to (a ticket, a PR review, a plan). Fields, as a first pass:
 
 - `id`, `group`, `kind`, `title`, `scenario`
+- `problem`: one line on what the decision is about, and `problemBy` (`claude`, or `model` when the small model wrote it in the background, 272)
 - `options`: id, label, what it changes, and whether it came from a discussion
 - `recommendation`: option id and reason
 - `sources`: label and path or URL
 - `dependsOn`, `blocks`
 - `state`, `parkedReason`
 - `answer`: chosen option (optional), free text, condition
-- `thread`: who (person, Claude, fork, quick model), text, time
+- `thread`: who (person, Claude, fork, quick model), text, time; a quick answer from `auto` also carries `via: 'triage'`
 - `revisions`: what changed and when
+
+Each session also has a record beside its decisions, `session-<session id>.json` (253, 268): a title, a short summary, a now line with the decisions it waits on, a plan nested one level with each item `done`, `active` or `todo`, and links (pull requests and published pages, with a pull request's last known state and when it was checked). Claude writes it through `decisions_session`; the mod adds links itself. On `/clear` or `/resume` it is copied to the new session id.
 
 Decisions belong to the project, not the session. **(my call)** The project is the repository, shared by all its git worktrees, so a decision made in a worktree shows from the main checkout too. They are stored as files outside the repository, under `~/.claude/decisions/<project>/`, one JSON file per decision, so they're readable by any tool and never committed by accident. The mod's tool definition defines the schema.
 
@@ -111,6 +114,9 @@ Since 10 November each decision also records the session that added it, and the 
 - Writes a scenario and a recommendation with a reason for every decision, with plain titles and no shorthand only Claude understands. A finding's title starts with the area it's about ("Image upload size limit: one user can use up another's quota"), so it can be found by scanning the list.
 - Checks the pane before asking anything, and never re-asks something already answered or parked.
 - Keeps working on anything that doesn't depend on an open decision.
+- Gives each decision a one-line `problem` when it can; when it doesn't, the small model writes one in the background, and never replaces Claude's (272).
+- Keeps the session record up to date through `decisions_session`: at the start of real work, when the plan or focus changes, and when a plan step finishes (253).
+- Records an answer the person gives in the chat through `decisions_answer`, with their message quoted, so it's marked sent and never sent again (263).
 - When answers arrive, acts on them and marks them sent. A condition in the answer is treated as part of the answer.
 - For a large review, only the findings that need the person go in "needs you". The rest go in the folded "Claude's call" or "Already decided" sections.
 - Diagrams in a discussion are drawn as text in the thread. The terminal's `Image` element can show a picture in kitty, Ghostty and iTerm2 3.5+. Anything bigger goes in an artifact that is linked from the decision and never opened automatically.
@@ -140,29 +146,32 @@ This gets tested like the rest of the experience: replay sessions that produced 
 - The keys under an expanded item stand apart from its text (spacing and a different style), so they read as actions, not part of the description.
 - Sending answers opens a review screen of everything ready, all ticked. Untick any to hold them back, then confirm (Aaron, 6 November, prototype test).
 - **(my call)** A pane the person hid (`h` or `ctrl+x x`) stays hidden when Claude adds decisions. The status line count goes up, and `ctrl+q` / `/decisions` brings it back.
-- **One row of tabs, sections inside (Aaron, 6 November, after the prototype test).** Each tab is where decisions came from (a ticket's work, a PR review, Parked). Inside a tab, "Needs you" is open at the top, with "Claude's call" and "Already decided" as folded headings with counts beneath. Nothing needing the person is hidden behind a filter. In the prototype test the old two rows of tabs weren't seen as tabs, and their purpose wasn't clear.
-- Screens: the list, one decision with its discussion, assumptions batch, findings triage with "needs you" open at the top, and the main-screen layout. All prototyped privately, in their pre-findings form.
+- **One list, grouped by headings (Aaron, 12 November, decision 265).** The session's decisions are one list with no tab strip. Each group is a heading, `◆ <group> · N waiting` in bold; a group with nothing waiting folds to `▸ <group> · N answered`, dim, and `enter` unfolds it. Groups with unread replies come first, then those with decisions waiting, newest first, then the folded ones. Claude's call and Already decided are folded sub-headings inside their group; Parked and For you to do are headings at the bottom. Nothing needing the person is hidden behind a filter. This replaces the row of tabs from 6 November.
+- **The session card and page (253, 256, 257, 265, 269).** The list starts with the session card, `✻ <title>` then `▶ now: <text>`; `enter` opens the Session page and `b` returns. The page shows the title, the summary, the now line, the plan (`✓` done, `▶` active, `·` to do, numbered `1`, `2.1`), the links with each pull request's state, and how long ago the record was updated and by whom. Opening it checks each pull request with `gh pr view`, at most every 5 minutes per link. `m` folds done items; compact pages show the title, the now line and the plan with done folded, with the links behind `o`. `r` sends one prompt asking Claude to bring the record up to date and shows `✻ asked Claude to refresh` until the record changes or the turn ends.
+- Screens: the list, one decision with its discussion, the thread, the assumptions batch, the send screen and the Session page.
 - **The band (Aaron, 10 November, decision 157).** While decisions wait and the prompt has the keys, one line above the prompt names how many and the focus key: "3 decisions waiting · ctrl+x tab to answer, your draft stays". It names the key from the Focus key setting (decision 190), since the mod can't read a rebound key. An unread reply leads it ("● 1 new reply on d43 · ...") and shows even while the pane is hidden (223).
-- **The inbox (decisions 208 to 210, 222, 232).** Inside a tab, decisions with a reply the person hasn't read come first, marked `●` in the `claude` colour, with `claude · 2m ago: <first line>` under them on a tall pane. A tab holding one ends `●`. When each decision was last opened is kept in the mod's state, not the decision file. The order holds still while the pane has the keys (209).
-- **The look (Aaron, 10 November, decision 170).** The title in bold with keys on/off at the right, a dim crumb under it, thin rules between header, context, options and keys, the highlighted option or row as a card bordered in the `claude` colour, key hints as `k: label`, tabs as chips with the open one on the `claude` colour.
-- **Short panes (decisions 158, 161, 170 to 183).** Below 14 rows the pane is compact: no card borders (the ringed row is tinted and starts `›`), rules only where they fit, the keys under the title, and every screen paged with `o` so nothing scrolls and every number key stays armed. Taller panes page a decision's options too when they don't all fit.
-- **The ring (decision 159, 166, 167).** The row the ring is on starts with `›`, taken from the engine's `ui.focus` event. Up and down don't reach the tab strip; `t` changes tab.
-- **Tabs (Aaron, 10 November, decision 186).** The pane opens on the tab with the newest decision waiting, each tab shows its count, and a tab with nothing waiting says which tab has some.
+- **The inbox (decisions 208 to 210, 232, 265).** Decisions with a reply the person hasn't read come first, marked `●` in the `claude` colour, with `claude · 2m ago: <first line>` under them on a tall pane, and their group's heading says `● N new`. When each decision was last opened is kept in the mod's state, not the decision file. The order holds still while the pane has the keys (209).
+- **The look (Aaron, 12 November, decision 251, "Structured").** A one-column `▌` bar down the left of every row and decision, coloured by kind while it waits (choice `suggestion`, go-ahead `warning`, finding `claude`, question `error`, assumption plain), `success` once answered, dim once sent or parked. The ringed row keeps its colour on the theme's `subtle` background. List rows take two lines on a tall pane: the id in bold and the title (wrapped onto two lines at most), then a dim line with the problem line when there is one, the kind, `asked 4m ago` and, once answered, the answer in the person's words. Claude's backticks, bold, italic and links are drawn as the chat draws them (252).
+- **Short panes (decisions 158, 161, 262, 266).** Below 14 rows the pane is compact: one line per row and per option, the title and crumb cut to one line, rules only where they fit and the keys under the title. A decision is never paged or cut: every option is drawn with its own number key, and the pane scrolls when the screen is taller than it.
+- **The ring (decision 159, 166, 167, 265).** The row the ring is on starts with `›`, taken from the engine's `ui.focus` event. It starts on the first waiting row, else the session card.
+- **Nothing says done until it's sent (270).** Answering the last waiting decision goes straight to the send screen (`That was the last one.`); until the answers go, the list, the band and the status line say how many aren't sent.
 - **This session only (Aaron, 10 November, decision 192).** The pane, the status line, `decisions_list`, sending and the session note show only the decisions the current session added.
 
 ### Keyboard
 
 - `ctrl+x tab` (Claude Code's `abovePrompt:focus` action, `ctrl+q` in Aaron's setup) moves into the pane, and pressed again goes back to the prompt. `esc` always goes straight back to the prompt, and whatever was half-typed there is still there. A mod can't take `esc`.
-- `enter` answers with the highlighted option, `t` reaches the ask box, `o` opens the whole thread, `b` goes back to the list, `ctrl+x x` hides the pane, `/decisions` opens and focuses it.
+- `enter` answers with the highlighted option, `t` reaches the ask box, `o` opens the whole thread, `r` asks the main session instead of a quick answer (282), `b` goes back to the list, `ctrl+x x` hides the pane, `/decisions` opens and focuses it.
 - Hotkeys are single letters or digits only (the mod API refuses anything else).
 - Inside an nvim terminal tab with Aaron's config, `ctrl+x` leaves typing mode, so no `ctrl+x` chord reaches Claude Code, `ctrl+x x` included. The pane needs its own hide key (`h`) so closing it never depends on `ctrl+x x`, and the README should mention that terminal multiplexers and editors can swallow `ctrl+x` chords.
 - The README shows how to move `abovePrompt:focus` to another key in `~/.claude/keybindings.json`.
 
-### The decision screen (decisions 205 to 243)
+### The decision screen (decisions 205 to 243, 251, 252, 262, 266)
 
-Top to bottom on a pane 14 rows or taller: the title, then a crumb (`CHOICE · d41 · Code review · ●○ 1 of 2 answered`); the whole scenario with `⚑ Blocks ...`, dependencies and sources; each option with its text in full, `★ recommended` and its reason, `✓ your answer` and `⤷ only if ...` or `⤷ <typed answer>` once answered, and `↻ new` for two minutes on an option a discussion added; Something else; then "Talk it through with Claude" with the newest unread reply (or else the newest reply, at most 6 lines), how many earlier messages `o` opens, `✻ Claude is replying…` while a reply is coming, and the ask box; then the keys, on up to three lines.
+Top to bottom on a pane 14 rows or taller: the header, with the bar, the kind as an inverse label in its colour and the whole title in bold; the problem line in bold under the title, starting `◇ ` when the small model wrote it (272, 283); a dim crumb with the id, the group, `asked 4m ago` and, for a group of two or more, how many are answered, with `keys on` or `<key> to use` at its right; what the decision waits on and holds up; the key line; the whole scenario, with sources as links; each option with its text in full, its case for (`+`, `success`) and against (`−`, `warning`), `★ recommended` and its reason, `✓ your answer` and `⤷ only if ...` or `⤷ <typed answer>` once answered, then `↗ sent 12:04` and the first line of what Claude did next once sent (267), and `↻ new` for two minutes on an option a discussion added; Something else; then "Talk it through with Claude" with the newest unread reply (or else the newest reply, whole), how many earlier messages `o` opens, `✻ Claude is replying…` while a reply is coming, and the bordered ask box.
 
-`m` hides the detail: the options show their label only, apart from the highlighted one, and the scenario keeps 3 lines. When everything doesn't fit the pane, the screen draws it that way anyway and `m` isn't offered (236). Below 14 rows the compact layout stays, with Something else added, the scenario line kept above the options (241), and the conversation on the thread screen (`t` or `o`, 228).
+Nothing is cut (262). When the screen is taller than the pane, the pane scrolls, and the key line offers `↑↓ more options` while some are out of view. `m` hides every option's text but the highlighted one's, and the sources. Below 14 rows the compact layout stays, with no problem line, Something else added, the scenario above the options, and the conversation on the thread screen (`t` or `o`).
+
+A reply in the conversation reads as a chat line: the speaker in `suggestion` (you) or `claude`, its age dim, then the text. A quick answer from triage names itself `quick answer`, in a dim `claude` (281), and while it is the newest reply and its question hasn't gone to the main session, the key line offers `r ask the main session` (282).
 
 `s` on an answered decision shows exactly the block Claude will get for it and which other answers stay ready; `enter` sends only that one, `b` goes back to the decision (221).
 
@@ -174,9 +183,10 @@ The thread screen (`o`) holds the whole thread, with older and newer pages, the 
 
 Every decision keeps its whole thread for good: questions, replies, revisions and the final answer. Switching between decisions, or going back to one that was answered, sent or closed days ago, shows the full discussion in the pane, whichever mode replied and however long ago it scrolled out of the chat or was compacted away (Aaron, 6 November). The reply can revise the decision: add an option, change the recommendation, re-open dependents.
 
-Who replies is the `Discussion replies` setting: main session, fork or quick model. **The main session is the default (Aaron, 6 November: "it's the best option")**. The side agent is left out of the first release (Aaron, 6 November): in the spike its report also landed in the main conversation and Claude stopped mid-task to comment on it.
+Who replies is the `Discussion replies` setting: auto, main session, fork or quick model. **Auto is the default (271, 12 November); the main session was until then (Aaron, 6 November: "it's the best option")**. The side agent is left out of the first release (Aaron, 6 November): in the spike its report also landed in the main conversation and Claude stopped mid-task to comment on it.
 
-- **main session** (default): the question goes to the main conversation as a prompt marked as coming from the pane. Claude's reply appears in the main chat as normal, which Aaron is happy with (6 November), as long as the mod shows it properly: the question and reply are mirrored into the decision's thread, and in the chat the question row is labelled with the decision it belongs to ("on 3 · When a shared recipe link expires") so it doesn't read as a stray prompt. Full context and full tools, and every exchange uses the main conversation's context. In the spike the question only reached Claude when its current turn ended (20 to 29 seconds while Claude was busy), so the thread shows "queued, Claude is mid-step" and offers a key to send that one question to the fork instead (Aaron, 6 November). The mod can't relabel its own chat rows (the engine skips a plugin's hook for something the same plugin sent), so the question it sends starts "On decision 3 · When a shared recipe link expires:". The reply is the turn that begins with the engine's "The <plugin> plugin sent ..." text, not simply the next turn to end.
+- **auto** (default): the small model gets the decision, its thread and the session record's title, summary and now line, and either answers (kept as a quick answer, drawn as `quick answer` with `r` to ask the main session instead) or hands the question to the main session exactly as main session does. A model error or a reply not in the fixed form hands over. `docs/specs/10-small-model.md` has the prompt and the reply form.
+- **main session**: the question goes to the main conversation as a prompt marked as coming from the pane. Claude's reply appears in the main chat as normal, which Aaron is happy with (6 November), as long as the mod shows it properly: the question and reply are mirrored into the decision's thread, and in the chat the question row is labelled with the decision it belongs to ("on 3 · When a shared recipe link expires") so it doesn't read as a stray prompt. Full context and full tools, and every exchange uses the main conversation's context. In the spike the question only reached Claude when its current turn ended (20 to 29 seconds while Claude was busy), so the thread shows "queued, Claude is mid-step" and offers a key to send that one question to the fork instead (Aaron, 6 November). The mod can't relabel its own chat rows (the engine skips a plugin's hook for something the same plugin sent), so the question it sends starts "On decision 3 · When a shared recipe link expires:". The reply is the turn that begins with the engine's "The <plugin> plugin sent ..." text, not simply the next turn to end.
 - **fork**: one call (`$.model.fork`) with the whole conversation so far, served from the prompt cache. Replied in 3.5 seconds in the spike without touching the main conversation, and knew the conversation. The reply arrives whole rather than streaming. Whether it can read files is untested; if it can't, the side agent comes back up.
 - **quick model**: a single model call that only sees the decision. Fastest, but no conversation and no files.
 
@@ -184,7 +194,7 @@ Who replies is the `Discussion replies` setting: main session, fork or quick mod
 
 | Setting | Values | Default |
 | --- | --- | --- |
-| Discussion replies | main session, fork, quick model | main session |
+| Discussion replies | auto, main session, fork, quick model | auto |
 | Send answers to Claude | when I press s, straight away | when I press s (suggested, Aaron to confirm) |
 | Open the pane | when Claude adds one, only when I ask | when Claude adds one **(my call)** |
 
@@ -203,7 +213,7 @@ Behaviour tests with `claude plugin test` cover what each screen promises (kept 
 
 - Public repository under github.com/AaronMachin. **(my call)** Name: `claude-decisions`.
 - The README opens with a GIF, then install as two commands (`/plugin marketplace add AaronMachin/claude-decisions`, then `/plugin install decisions@claude-decisions`), then the keys, how to move the focus key, and the settings table.
-- GIFs: Aaron records them. When the mod is ready, prompt Aaron with a shot list: the list filling as Claude adds decisions, a live discussion that adds an option, the assumptions batch, findings triage, and the keyboard flow in and out. Recorded against the made-up demo project.
+- GIFs: Aaron records them. When the mod is ready, prompt Aaron with a shot list: the list filling as Claude adds decisions, a live discussion that adds an option, the assumptions batch, findings triage, the keyboard flow in and out, the Session page, and a quick answer. Recorded against the made-up demo project.
 - The public repository starts clean. The README and examples use a made-up demo project (Pantry, a recipe-sharing app), and limitations to do with managed security plugins are described in general terms in the docs.
 
 ## Open Questions
