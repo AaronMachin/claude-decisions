@@ -1,5 +1,4 @@
-import { readOne } from './store'
-import { arrowTarget } from './pane/arrows'
+import { arrowTarget, drawnStops, focusMove } from './pane/arrows'
 import { followResume } from './resume'
 import type { Register } from 'claude-code'
 
@@ -200,14 +199,12 @@ export const register: Register = (on, options) => {
     return done
   })
 
-  // An arrow on a long decision scrolled the pane instead of moving between options (row 293).
+  // An arrow on a long decision scrolled the pane, or lost the ring, instead of moving between options (rows 293, 296).
   on('ui.scroll', async ($, e, next) => {
     if (e.requestId !== PANE_ID) {
       return next(e)
     }
-    const view = await readView($)
-    const d = view.decisionId ? await readOne($, view.decisionId) : undefined
-    const target = d ? arrowTarget(e, view, d.options.length + 1) : undefined
+    const target = arrowTarget(e, await readView($), drawnStops().stops)
     if (target === undefined) {
       return next(e)
     }
@@ -226,6 +223,20 @@ export const register: Register = (on, options) => {
     }
     if (e.origin.kind === 'person' && isTabKey(e.element)) {
       return {}
+    }
+    const { stops, isScrolling } = drawnStops()
+    const move = focusMove(e, await readView($), stops, isScrolling)
+    if (move.kind === 'stay') {
+      await $.ui.scroll({ in: PANE_ID, to: move.scrollTo }).catch(() => undefined)
+      return {}
+    }
+    if (move.kind === 'redirect') {
+      const moved = await next({ ...e, element: move.element })
+      if (moved.deny === undefined) {
+        await followFocus($, move.element)
+        await $.ui.scroll({ in: PANE_ID, to: { key: move.element }, block: 'nearest' }).catch(() => undefined)
+      }
+      return moved
     }
     const moved = await next(e)
     if (moved.deny === undefined) {
