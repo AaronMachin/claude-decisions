@@ -56,7 +56,7 @@ function engine(on: On, options: { failSubmit?: boolean } = {}): Seen {
     return { value: undefined }
   })
   on('ui.invalidate', () => ({ value: undefined }))
-  on('ui.focus', { plugin: '*' } as any, (_: any, e: any) => {
+  ;(on as any)('ui.focus', { plugin: '*' }, (_: any, e: any) => {
     seen.focused.push(String(e.key ?? e.element))
     return { value: {} }
   })

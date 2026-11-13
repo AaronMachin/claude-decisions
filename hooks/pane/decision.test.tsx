@@ -28,6 +28,7 @@ import {
   unparkDecision,
 } from './decision'
 import type { Typing } from './decision'
+import { INPUT_MAX_ROWS, inputRows } from './style'
 
 function fakeStore(): StoreCtx {
   const files = new Map<string, string>()
@@ -544,7 +545,7 @@ function engine(on: On): Engine {
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.close', () => ({ value: undefined }))
   on('ui.invalidate', () => ({ value: undefined }))
-  on('ui.focus', () => ({ value: {} }))
+  ;(on as any)('ui.focus', { plugin: '*' }, () => ({ value: {} }))
   on('tool.register', () => ({ value: {} }))
   on('command.register', (_: any, e: any) => ({ value: { command: e.name } }))
   on('prompt.submit', (_: any, e: any) => {
@@ -786,6 +787,27 @@ test('an empty pane offers another session with decisions waiting, and enter bri
   const again = await mountHolding($, rowsOf(40))
   expect(await again.find({ key: 'row:d1' })).toBeTruthy()
   await again.unmount()
+})
+
+test('the ask box and the answer box grow to show what is typed, up to 6 lines (row 294)', async ($, on) => {
+  await begin($, on)
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'ask-inline' }))?.props.rows).toBe(1)
+  const long = 'role chain? Does this not exist already in the platform, and if so why would we build another one for partners here '.repeat(2)
+  await ui.input({ key: 'ask-inline', text: long, kind: 'change' })
+  const rows = (await ui.find({ key: 'ask-inline' }))?.props.rows
+  expect(rows).toBeGreaterThan(1)
+  expect(rows).toBeLessThanOrEqual(INPUT_MAX_ROWS)
+  await ui.unmount()
+})
+
+test('inputRows counts wrapped lines and newlines, from 1 to the most', () => {
+  expect(inputRows('', 40)).toBe(1)
+  expect(inputRows('x'.repeat(39), 40)).toBe(1)
+  expect(inputRows('x'.repeat(40), 40)).toBe(2)
+  expect(inputRows('a\nb\nc', 40)).toBe(3)
+  expect(inputRows('x'.repeat(4000), 40)).toBe(INPUT_MAX_ROWS)
 })
 
 test('the session card shows the summary, now, plan progress and links under its title (row 288)', async ($, on) => {

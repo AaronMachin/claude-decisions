@@ -406,3 +406,17 @@ export function ChatEntry(ui: { Box: any; Text: any; Link?: any }, e: Pick<Threa
     </Box>
   )
 }
+
+/** The most lines a typed-answer or ask box grows to; past it the text scrolls inside the box. */
+export const INPUT_MAX_ROWS = 6
+
+/**
+ * How many lines an Input needs to show `text` whole in `room` columns, from 1 up to
+ * INPUT_MAX_ROWS, so a long answer or question is never cut to one line with … (row 294).
+ */
+export function inputRows(text: string, room: number): number {
+  const columns = Math.max(8, room)
+  const lines = text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil((line.length + 1) / columns)), 0)
+
+  return Math.min(INPUT_MAX_ROWS, Math.max(1, lines))
+}
