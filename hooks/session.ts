@@ -326,14 +326,31 @@ export async function addCapturedLinks($: StoreCtx, links: SessionLink[]): Promi
 
 /** On `/clear` or an in-process `/resume` the session id changes: the record follows to the new id (my call), saying where it came from. */
 export async function carryOver($: StoreCtx, fromId: string, toId: string): Promise<void> {
-  if (fromId === toId || (await readFor($, toId)) !== undefined) {
+  if (fromId === toId) {
     return
   }
   const record = await readFor($, fromId)
   if (record === undefined) {
     return
   }
-  const next: SessionRecord = { ...record, session: toId, continuedFrom: fromId }
+  const existing = await readFor($, toId)
+  // The mod may already have started a record under the new id to hold a link it caught. Fill in
+  // what that record lacks from the old one and keep both sets of links; never overwrite what the
+  // new one already says (row 297).
+  const next: SessionRecord = existing
+    ? {
+        ...existing,
+        title: existing.title ?? record.title,
+        summary: existing.summary ?? record.summary,
+        now: existing.now ?? record.now,
+        plan: existing.plan.length > 0 ? existing.plan : record.plan,
+        links: [...record.links.filter(l => !existing.links.some(e => e.url === l.url)), ...existing.links],
+        continuedFrom: existing.continuedFrom ?? fromId,
+      }
+    : { ...record, session: toId, continuedFrom: fromId }
+  if (existing && JSON.stringify(next) === JSON.stringify(existing)) {
+    return
+  }
   await $.fs.write(fileOf(await storeDir($), toId), JSON.stringify(next, null, 2))
 }
 
