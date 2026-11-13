@@ -111,6 +111,32 @@ test('a repeat publish of the same URL adds nothing', async () => {
   expect((await readSession($))!.links).toEqual([link])
 })
 
+test('carryOver into a record the mod already started for its links fills in what it lacks and keeps both sets of links (row 297)', async () => {
+  const $ = fake('old-id')
+  await sessionTool($, { title: 'Pantry: sharing links', summary: 'Building the share flow.', now: { text: 'Expiry' }, plan: [{ text: 'Share flow', status: 'active' }] })
+  await sessionTool($, { links: [{ url: 'https://github.com/o/r/pull/1', label: '#1', state: 'merged' }] })
+  $.setSession('new-id')
+  await sessionTool($, { links: [{ url: 'https://github.com/o/r/pull/2', label: '#2', state: 'open' }] })
+  await carryOver($, 'old-id', 'new-id')
+  const record = (await readSession($))!
+  expect(record.title).toBe('Pantry: sharing links')
+  expect(record.summary).toBe('Building the share flow.')
+  expect(record.plan.map(p => p.text)).toEqual(['Share flow'])
+  expect(record.links.map(l => l.label)).toEqual(['#1', '#2'])
+  expect(record.continuedFrom).toBe('old-id')
+})
+
+test('carryOver never overwrites what the new record already says', async () => {
+  const $ = fake('old-id')
+  await sessionTool($, { title: 'Old title', summary: 'Old summary' })
+  $.setSession('new-id')
+  await sessionTool($, { title: 'New title' })
+  await carryOver($, 'old-id', 'new-id')
+  const record = (await readSession($))!
+  expect(record.title).toBe('New title')
+  expect(record.summary).toBe('Old summary')
+})
+
 test('carryOver copies the record to the new session id, saying where it came from', async () => {
   const $ = fake('old-id')
   await sessionTool($, { title: 'Pantry: sharing links' })
