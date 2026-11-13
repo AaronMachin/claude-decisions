@@ -28,6 +28,7 @@ import {
   unparkDecision,
 } from './decision'
 import type { Typing } from './decision'
+import { draftLines } from './style'
 
 function fakeStore(): StoreCtx {
   const files = new Map<string, string>()
@@ -544,7 +545,7 @@ function engine(on: On): Engine {
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.close', () => ({ value: undefined }))
   on('ui.invalidate', () => ({ value: undefined }))
-  on('ui.focus', () => ({ value: {} }))
+  ;(on as any)('ui.focus', { plugin: '*' }, () => ({ value: {} }))
   on('tool.register', () => ({ value: {} }))
   on('command.register', (_: any, e: any) => ({ value: { command: e.name } }))
   on('prompt.submit', (_: any, e: any) => {
@@ -768,6 +769,94 @@ test('a question has only Something else, and no line about typing in the discus
 })
 
 const at = (msAgo: number) => new Date(Date.now() - msAgo).toISOString()
+
+test('an empty pane offers another session with decisions waiting, and enter brings them here (row 291)', async ($, on) => {
+  const seen = await begin($, on)
+  edit(seen, 'd1', d => ({ ...d, session: 'old-id' }))
+  const ui = await mountHolding($, rowsOf(40))
+  const all = await texts(ui)
+  expect(all).toContain('Carry on from another session in this repository:')
+  expect(all.some((t: string) => /^↩ Code review · 1 waiting · just now$/.test(t))).toBe(true)
+  await ui.press({ key: 'adopt:old-id' })
+  for (let i = 0; i < 40; i++) {
+    await Promise.resolve()
+  }
+  const path = [...seen.files.keys()].find(p => p.endsWith('/d1.json'))!
+  expect(JSON.parse(seen.files.get(path)!).movedFrom).toBe('old-id')
+  await ui.unmount()
+  const again = await mountHolding($, rowsOf(40))
+  expect(await again.find({ key: 'row:d1' })).toBeTruthy()
+  await again.unmount()
+})
+
+test('a question longer than the ask box is drawn whole above it, so none of it is cut (row 294)', async ($, on) => {
+  await begin($, on)
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect(await ui.find({ key: 'ask-draft:0' })).toBeUndefined()
+  const long = 'role chain? Does this not exist already in the platform, and if so why would we build another one for partners here'
+  await ui.input({ key: 'ask-inline', text: long, kind: 'change' })
+  const drawn = (await texts(ui)).filter((t: string) => long.includes(t.trim()) && t.trim().length > 10)
+  expect(drawn.join(' ').replace(/\s+/g, ' ')).toContain('why would we build another one for partners here')
+  await ui.unmount()
+})
+
+test('draftLines is empty while the text fits, and wraps the whole text once it does not', () => {
+  expect(draftLines('short', 40)).toEqual([])
+  const lines = draftLines('one two three four five six seven eight nine ten eleven', 20)
+  expect(lines.length).toBeGreaterThan(1)
+  expect(lines.join(' ').replace(/\s+/g, ' ').trim()).toBe('one two three four five six seven eight nine ten eleven')
+  expect(draftLines('a\nb', 40)).toEqual(['a', 'b'])
+})
+
+test('the session card shows the summary, now, plan progress and links under its title (row 288)', async ($, on) => {
+  await begin($, on)
+  await $.tool.call({
+    tool: SESSION_TOOL,
+    title: 'Pantry importer review',
+    summary: 'Reviewing the recipe importer.',
+    now: { text: 'Choosing where comments go' },
+    plan: [{ text: 'Read it', status: 'done' }, { text: 'Comment', status: 'active', waitsOn: ['d1'] }],
+    links: [{ url: 'https://github.com/o/r/pull/4', label: '#4 Importer', state: 'open' }],
+  })
+  const ui = await mountHolding($, rowsOf(40))
+  const all = await texts(ui)
+  expect(all).toContain('  Reviewing the recipe importer.')
+  expect(all).toContain('  ▶ now: Choosing where comments go')
+  expect(all).toContain('  Plan 1 of 2 done · next: Comment (waits on d1)')
+  expect(all).toContain('  #4 open')
+  await ui.unmount()
+})
+
+test('a question with no reply yet is drawn under the heading, newest last, after the reply before it', async ($, on) => {
+  const seen = await begin($, on)
+  edit(seen, 'd1', d => ({
+    ...d,
+    thread: [
+      { who: 'person', text: 'Would PR comments spam the author?', at: at(500_000) },
+      { who: 'claude', text: 'No, one comment per finding.', at: at(400_000) },
+      { who: 'person', text: 'could we just save it against the session id?', at: at(60_000) },
+    ],
+  }))
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const all = await texts(ui)
+  expect((await ui.find({ key: 'talk:reply' }))?.text).toMatch(/^claude · \d+m {2}No, one comment/)
+  expect((await ui.find({ key: 'talk:asked' }))?.text).toMatch(/^you · 1m {2}could we just save it against the/)
+  expect(all).toContain('1 earlier message · o: whole thread')
+  await ui.unmount()
+})
+
+test('a first question with no reply yet is drawn, not just counted', async ($, on) => {
+  const seen = await begin($, on)
+  edit(seen, 'd1', d => ({ ...d, thread: [{ who: 'person', text: 'why not just reload it?', at: at(60_000) }] }))
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const all = await texts(ui)
+  expect((await ui.find({ key: 'talk:asked' }))?.text).toMatch(/^you · 1m {2}why not just reload it\?/)
+  expect(all.some((t: string) => /o: whole thread/.test(t))).toBe(false)
+  await ui.unmount()
+})
 
 test('the conversation sits under the options: counts, the unread reply, and the earlier messages', async ($, on) => {
   const seen = await begin($, on)

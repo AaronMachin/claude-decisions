@@ -1,3 +1,6 @@
+import type { OtherSession } from '../resume'
+import { cardLines } from './card'
+import type { SessionRecord } from '../session'
 import type { PaneView } from '../../types'
 import type { Decision } from '../store'
 import { focusLater, openDecision, readView, ringMark, setView } from './decision'
@@ -349,7 +352,10 @@ type ListProps = {
   /** The order to keep while the pane has the keys. */
   frozen?: string[]
   /** The session record, for the card at the top (row 265). */
-  session?: { title?: string; now?: { text: string } }
+  /** With no decisions here: other sessions in this repository with decisions waiting, to carry on from (row 291). */
+  others?: OtherSession[]
+  onAdopt?: (session: string) => void
+  session?: Pick<SessionRecord, 'title' | 'summary' | 'now' | 'plan' | 'links'>
   /** Enter on the session card. */
   onOpenSession?: () => void
   onSend: () => void
@@ -623,7 +629,11 @@ export function ListView($: any, props: ListProps): any {
         {mark('session-card')}
         <Text bold>{truncate(`✻ ${props.session.title ?? 'This session'}`, width - 2)}</Text>
       </Button>
-      {!compact && props.session.now ? <Text dimColor>{truncate(`  ▶ now: ${props.session.now.text}`, width)}</Text> : null}
+      {cardLines(props.session, width, compact).map((line, index) => (
+        <Text key={`session-card:${index}`} dimColor={line.dim}>
+          {line.text}
+        </Text>
+      ))}
     </Box>
   ) : null
 
@@ -632,6 +642,13 @@ export function ListView($: any, props: ListProps): any {
       <Box flexDirection="column">
         {card}
         <Text dimColor>No decisions yet. Claude adds them here when it needs you.</Text>
+        {(props.others ?? []).length > 0 ? <Text key="others:heading">{'Carry on from another session in this repository:'}</Text> : null}
+        {(props.others ?? []).map(o => (
+          <Button key={`adopt:${o.session}`} plain onPress={() => props.onAdopt?.(o.session)}>
+            {mark(`adopt:${o.session}`)}
+            <Text>{truncate(`↩ ${o.title} · ${o.waiting} waiting · ${ago(o.at)}`, width - 2)}</Text>
+          </Button>
+        ))}
         {KeyHints(ui, hints.filter(hint => hint.id === 'h'), width, 1)}
       </Box>
     )

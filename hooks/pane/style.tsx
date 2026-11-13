@@ -406,3 +406,17 @@ export function ChatEntry(ui: { Box: any; Text: any; Link?: any }, e: Pick<Threa
     </Box>
   )
 }
+
+/**
+ * Claude Code's Input keeps a long line on one row, cut with …, and `rows` only adds rows for
+ * newlines. So once the text is longer than the field, the whole of it is drawn wrapped above the
+ * field, dim, so an answer or question can always be read back before it is sent (row 294).
+ */
+export function draftLines(text: string, room: number): string[] {
+  const columns = Math.max(8, room)
+  if (text.length < columns && !text.includes('\n')) {
+    return []
+  }
+
+  return text.split('\n').flatMap(line => wrapInline(line, columns).map(segments => segments.map(seg => seg.text).join('')))
+}

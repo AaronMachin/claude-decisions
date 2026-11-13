@@ -1,3 +1,4 @@
+import { draftLines } from './style'
 import { atom, read, update } from 'claude-code'
 
 import type { PaneView } from '../../types'
@@ -114,6 +115,22 @@ export async function back(
   state.option = undefined
 
   return { ...view, screen: 'list', decisionId: undefined, highlight: undefined, answerBox: undefined, isParking: false, notice: undefined }
+}
+
+/**
+ * Takes a sent decision back to ready, keeping its answer, so it can be changed or sent again:
+ * for a send whose prompt was cancelled, or a change of mind (row 292). Undefined unless it was sent.
+ */
+export async function unsend(store: StoreCtx, d: Decision): Promise<Decision | undefined> {
+  const current = (await readOne(store, d.id)) ?? d
+  if (current.state !== 'sent') {
+    return undefined
+  }
+  const { sentAt: _sentAt, ...rest } = current
+  const next: Decision = { ...rest, state: 'ready' }
+  await write(store, next)
+
+  return next
 }
 
 /** Records the answer and makes the decision ready. Refused (undefined) once it is sent, or for an option that isn't there. */
@@ -453,6 +470,8 @@ export type Conversation = {
   unread: number
   /** The newest unread reply, else the newest reply: always drawn whole (row 262). */
   reply?: ThreadEntry
+  /** The person's newest question when nothing has answered it yet: drawn after the reply, so a question never looks lost. */
+  asked?: ThreadEntry
   earlier?: string
   empty?: string[]
 }
@@ -470,10 +489,12 @@ export function conversationLines(d: Decision, seenAt: string | undefined, width
   if (messages.length === 0) {
     return { heading, messages: 0, unread: 0, empty: wrapLines(ASK_EMPTY, width) }
   }
-  const rest = shown ? messages.length - 1 : messages.length
-  const earlier = rest > 0 ? `${rest} ${shown ? 'earlier ' : ''}${rest === 1 ? 'message' : 'messages'}` : undefined
+  const newest = messages.at(-1)
+  const asked = newest?.who === 'person' && newest !== shown ? newest : undefined
+  const rest = messages.length - (shown ? 1 : 0) - (asked ? 1 : 0)
+  const earlier = rest > 0 ? `${rest} ${shown || asked ? 'earlier ' : ''}${rest === 1 ? 'message' : 'messages'}` : undefined
 
-  return { heading, messages: messages.length, unread: unread.length, reply: shown, earlier }
+  return { heading, messages: messages.length, unread: unread.length, reply: shown, asked, earlier }
 }
 
 /** The newest reply, when it is a quick answer from triage that can still go to the main session: the `r` key's target. */
@@ -484,9 +505,13 @@ export function mainInsteadReply(d: Decision, pending: PaneView['pending']): str
 }
 
 /** Rows the conversation block takes, rule included: heading, the reply, earlier line, replying line, the bordered ask box. */
-function conversationRows(c: Conversation, isReplying: boolean, width: number): number {
-  return 2 + (c.reply ? chatRows(c.reply, width) : 0) + (c.earlier ? 1 : 0) + (c.empty?.length ?? 0) + (isReplying ? 1 : 0) + 3
+function conversationRows(c: Conversation, isReplying: boolean, width: number, draft = ''): number {
+  // The heading and the rule, then the bordered ask box: its border and its lines (row 294).
+  return 2 + (c.reply ? chatRows(c.reply, width) : 0) + (c.asked ? chatRows(c.asked, width) : 0) + (c.earlier ? 1 : 0) + (c.empty?.length ?? 0) + (isReplying ? 1 : 0) + 3 + draftLines(draft, width - 4 - INPUT_SUBMIT_COLUMNS).length
 }
+
+/** Columns the engine draws beside a focused Input for its `⏎ submit`. */
+const INPUT_SUBMIT_COLUMNS = 10
 
 type HintCtx = {
   d: Decision
@@ -519,6 +544,7 @@ type Handlers = {
   park: () => void
   send: () => void
   hide: () => void
+  unsend: () => void
 }
 
 const NO_HANDLERS: Handlers = {
@@ -534,6 +560,7 @@ const NO_HANDLERS: Handlers = {
   park: () => {},
   send: () => {},
   hide: () => {},
+  unsend: () => {},
 }
 
 /** The decision screen's key hints. */
@@ -566,6 +593,10 @@ export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
   }
   if (!isSent && isOption) {
     hints.push({ id: 'c', keyText: 'c', label: 'condition', hotkey: 'c', onPress: on.condition, keepLabel: true })
+  }
+  if (isSent) {
+    // Taking it back keeps the answer: change it, or send it again (row 292).
+    hints.push({ id: 'u', keyText: 'u', label: 'unsend', hotkey: 'u', onPress: on.unsend, keepLabel: true })
   }
   hints.push({ id: 't', keyText: 't', label: 'talk', hotkey: 't', onPress: on.talk })
   hints.push({ id: 'o', keyText: 'o', label: 'thread', hotkey: 'o', onPress: on.thread })
@@ -801,7 +832,7 @@ export function decisionLayout(
   const hasOptionsOutOfView = start < scrollOffset || end > scrollOffset + rows
   const hints = hasOptionsOutOfView ? hintsFor(true) : plainHints
   // Blank lines between options only while the whole screen fits; past that they only add scrolling.
-  const total = end + (conversation ? conversationRows(conversation, isReplying(view, d), width) : 0)
+  const total = end + (conversation ? conversationRows(conversation, isReplying(view, d), width, view.drafts[d.id] ?? '') : 0)
   const hasGaps = isFull && total <= rows
 
   return {
@@ -1058,6 +1089,11 @@ export function DecisionView($: any, props: Props): any {
     await markSeen($, d.id)
   }
   const handlers: Handlers = {
+    unsend: async () => {
+      if (await unsend($, d)) {
+        props.onChanged()
+      }
+    },
     recommend: async () => {
       const option = d.recommendation?.option
       if (option !== undefined && d.options.some(o => o.id === option)) {
@@ -1231,6 +1267,11 @@ export function DecisionView($: any, props: Props): any {
     const answerBox =
       box !== undefined && box.option === o.id ? (
         <Box key="answer-box" flexDirection="column" borderStyle="round" borderColor="claude" marginLeft={DETAIL_INDENT - 1} paddingX={1}>
+          {draftLines(view.answerDrafts[d.id] ?? '', width - (DETAIL_INDENT - 1) - 4 - (box.kind === 'text' ? 12 : 8) - INPUT_SUBMIT_COLUMNS).map((line, index) => (
+            <Text key={`answer-draft:${index}`} dimColor>
+              {line}
+            </Text>
+          ))}
           <Input
             key="answer"
             autoFocus
@@ -1306,13 +1347,20 @@ export function DecisionView($: any, props: Props): any {
       </Box>
       {talk.earlier ? <Text key="talk:earlier" dimColor>{`${talk.earlier} · o: whole thread`}</Text> : null}
       {talk.reply ? ChatEntry(ui, talk.reply, width, 'talk:reply') : null}
+      {talk.asked ? ChatEntry(ui, talk.asked, width, 'talk:asked') : null}
       {(talk.empty ?? []).map((line, index) => (
         <Text key={`talk:empty:${index}`} dimColor>
           {line}
         </Text>
       ))}
       {isReplying(view, d) ? <Text key="talk:replying" color="claude">{REPLYING}</Text> : null}
-      <Box key="ask-box" borderStyle="round" borderColor="subtle" paddingX={1}>
+      <Box key="ask-box" flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1}>
+        {draftLines(draft, width - 4 - INPUT_SUBMIT_COLUMNS).map((line, index) => (
+          <Text key={`ask-draft:${index}`} dimColor>
+            {line}
+          </Text>
+        ))}
+        <Box key="ask-row">
         {draft === '' ? <Text dimColor>{`${ASK_PLACEHOLDER} `}</Text> : null}
         <Input
           key="ask-inline"
@@ -1331,6 +1379,7 @@ export function DecisionView($: any, props: Props): any {
             onChanged()
           }}
         />
+        </Box>
       </Box>
     </Box>
   ) : null

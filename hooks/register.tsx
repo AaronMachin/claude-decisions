@@ -1,3 +1,6 @@
+import { readOne } from './store'
+import { arrowTarget } from './pane/arrows'
+import { followResume } from './resume'
 import type { Register } from 'claude-code'
 
 import { renderBand } from './band'
@@ -5,11 +8,38 @@ import { configureFocusKey } from './focus-key'
 import { changed, followFocus, isTabKey, openFocused, openForNewDecision, refreshStatus, renderPane } from './pane/render'
 import { configure, onTurnComplete, onTurnStart } from './discuss'
 import { addContextBlock, addRulesSection, answerAskUserQuestion, noteAtSessionStart, noteOnSubmit, nudgeAfterTurn, onCompact, refuseSubagent } from './integrate'
-import { PANE_ID } from './pane/decision'
+import { PANE_ID, readView } from './pane/decision'
 import { startProblem } from './problem'
 import { dropRefresh } from './pane/session-tab'
 import { SESSION_TOOL, addCapturedLinks, captureLinks, carryOver, sessionTool } from './session'
 import { ADD_TOOL, ANSWER_TOOL, LIST_TOOL, UPDATE_TOOL, addDecision, answerDecision, listDecisions, registerTools, updateDecision } from './tool'
+
+const adoptedFor = new Set<string>()
+
+/** Follows a resume once per session id: adopts the earlier session's decisions and redraws. */
+async function adoptFromConversation($: any): Promise<void> {
+  try {
+    const id = await $.session.id()
+    if (adoptedFor.has(id)) {
+      return
+    }
+    const from = await followResume($)
+    let seen = 0
+    try {
+      seen = (await $.session.messages()).length
+    } catch {
+      seen = 0
+    }
+    if (seen > 0) {
+      adoptedFor.add(id)
+    }
+    if (from.length > 0) {
+      await changed($)
+    }
+  } catch {
+    // Following a resume is best effort; the pane still offers other sessions when it is empty.
+  }
+}
 
 export const register: Register = (on, options) => {
   configure(options)
@@ -20,6 +50,10 @@ export const register: Register = (on, options) => {
     await registerTools($)
     await refreshStatus($).catch(() => undefined)
     await noteAtSessionStart($).catch(() => undefined)
+    // A resume in a new process comes back under a new session id: take over the decisions the
+    // conversation already has (row 291). The conversation may not be loaded yet, so the first
+    // turn tries again.
+    $.clock.after(1000, () => void adoptFromConversation($))
 
     return next(e)
   })
@@ -151,13 +185,39 @@ export const register: Register = (on, options) => {
     return done
   })
 
-  on('turn.start', ($, e, next) => onTurnStart($, e, next))
+  on('turn.start', async ($, e, next) => {
+    if ((e as { agentId?: string }).agentId === undefined) {
+      void adoptFromConversation($)
+    }
+
+    return onTurnStart($, e, next)
+  })
 
   on('turn.complete', async ($, e, next) => {
     const done = await onTurnComplete($, e, next)
     await nudgeAfterTurn($, e).catch(() => undefined)
 
     return done
+  })
+
+  // An arrow on a long decision scrolled the pane instead of moving between options (row 293).
+  on('ui.scroll', async ($, e, next) => {
+    if (e.requestId !== PANE_ID) {
+      return next(e)
+    }
+    const view = await readView($)
+    const d = view.decisionId ? await readOne($, view.decisionId) : undefined
+    const target = d ? arrowTarget(e, view, d.options.length + 1) : undefined
+    if (target === undefined) {
+      return next(e)
+    }
+    const moved = await $.ui.focus({ requestId: PANE_ID, key: target }).catch(() => ({ deny: 'failed' }))
+    if (moved.deny !== undefined) {
+      return next(e)
+    }
+    await $.ui.scroll({ in: PANE_ID, to: { key: target }, block: 'nearest' }).catch(() => undefined)
+
+    return {}
   })
 
   on('ui.focus', async ($, e, next) => {

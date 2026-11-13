@@ -88,7 +88,7 @@ function fileOf(dir: string, session: string): string {
   return `${dir}/session-${session.replace(/[^A-Za-z0-9_-]/g, '-')}.json`
 }
 
-async function readFor($: StoreCtx, session: string): Promise<SessionRecord | undefined> {
+export async function readFor($: StoreCtx, session: string): Promise<SessionRecord | undefined> {
   try {
     const record = JSON.parse(await $.fs.read(fileOf(await storeDir($), session))) as SessionRecord
 

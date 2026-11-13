@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PROBLEM_MAX, cleanProblemReply, needsProblem, problemPrompt, writeProblem } from './problem'
+import { MODEL_PROBLEM_MAX, PROBLEM_MAX, cleanProblemReply, needsProblem, problemPrompt, writeProblem } from './problem'
 import { readOne, write } from './store'
 import type { StoreCtx } from './store'
 import { ADD_INPUT_SCHEMA, ADD_TOOL, UPDATE_INPUT_SCHEMA, UPDATE_TOOL, addDecision, updateDecision, validateAdd, validateUpdate } from './tool'
@@ -105,11 +105,11 @@ test('the model writes a problem only when there is none or it wrote the last on
   expect(needsProblem({ ...base, problem: 'x', problemBy: 'claude' })).toBe(false)
 })
 
-test('the model\'s line is trimmed, unquoted, one line and at most 140 characters', () => {
+test('the model\'s line is trimmed, unquoted and one line', () => {
   expect(cleanProblemReply('  "Where the settings file is read from"  ')).toBe('Where the settings file is read from')
   expect(cleanProblemReply('Problem: Which file wins\nsecond line')).toBe('Which file wins')
   expect(cleanProblemReply('\n\nWhich file wins')).toBe('Which file wins')
-  expect(cleanProblemReply('x'.repeat(200))).toHaveLength(PROBLEM_MAX)
+  expect(cleanProblemReply('x'.repeat(200))).toBe('x'.repeat(200))
   expect(cleanProblemReply('   ')).toBeUndefined()
 })
 
@@ -244,4 +244,15 @@ test('decisions_update with a blank problem and nothing else is refused as nothi
   const answer = await updateDecision($, { id: 'd1', summary: 's', problem: '' })
   expect('deny' in answer).toBe(true)
   expect((await readOne($, 'd1'))!.revisions).toHaveLength(0)
+})
+
+test('a model line a little over the limit is kept whole, and a very long one is cut at a word with …, never mid-word', () => {
+  const over = 'The session card\'s contents: whether it should show summary, progress, and PR links alongside the current title and "now" line, or stay as it is'
+  expect(over.length).toBeGreaterThan(PROBLEM_MAX)
+  expect(cleanProblemReply(over)).toBe(over)
+  const long = Array.from({ length: 60 }, (_, i) => `word${i}`).join(' ')
+  const cut = cleanProblemReply(long)!
+  expect(cut.length).toBeLessThanOrEqual(MODEL_PROBLEM_MAX)
+  expect(cut.endsWith('…')).toBe(true)
+  expect(long.startsWith(cut.slice(0, -1).trimEnd() + ' ')).toBe(true)
 })

@@ -25,7 +25,9 @@ The pane is one list of this session's decisions, grouped by the piece of work t
 
 A bar down the left of each row is coloured by its kind while it waits, green once answered and dim once sent. On a tall pane a row has a dim second line: the problem the decision is about (when it has one), its kind, how long ago it was asked and, once answered, your answer (`1 Red · only if in stock`).
 
-At the top, the session card (`✻` and the session's title, then `▶ now:` and what Claude is doing) opens the Session page (below).
+If you resume a session (`claude --resume`), the pane takes back the decisions the conversation already had, even though Claude Code gives the resumed session a new id. When the pane is empty it also offers other sessions in the same repository with decisions waiting, and enter brings one's decisions here.
+
+At the top, the session card shows `✻` and the session's title, the summary, `▶ now:` and what Claude is doing, how far through the plan it is and what's next, and its pull requests and pages (`#1 merged · 2 pages`). Enter on it opens the Session page (below). A short pane keeps only the title and the now line.
 
 <!-- GIF: findings triage with folded sections (shot 4) -->
 
@@ -49,6 +51,7 @@ The pane's keys work once the pane has focus. Its header says `keys on` when it 
 | `m` | On a decision, hides the detail (every option's text and the sources) and shows it again; on a short pane, shows the dependencies and sources instead. On the Session page, folds the plan's done items |
 | `b` | Goes back |
 | `p` | Parks the decision with a reason (it moves under Parked); `p` on a parked one brings it back |
+| `u` | On a sent decision, unsends it: the answer stays, the decision is ready again, and you can change it or send it again with `s`. For when you cancelled the prompt it went in, or changed your mind |
 | `n` / `o` | Next and earlier page of a long group, or newer and older messages on the thread screen. On a short pane, `o` also pages the assumptions batch and the send screen |
 | `s` | On the list, or on a decision that isn't answered, opens the review screen of answers ready to send: `enter` ticks or unticks a row, `c` sends the ticked ones to Claude, `b` goes back. On an answered decision, shows exactly what Claude will get for that one and which other answers stay behind; `enter` sends just it, `b` goes back to the decision |
 | `h` | Hides the pane. `/decisions` (with an empty prompt) brings it back |
