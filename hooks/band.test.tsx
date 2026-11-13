@@ -42,7 +42,7 @@ function engine(on: On, panes: { list: Pane[] }, options: { unreadable?: boolean
   })
   on('ui.close', () => ({ value: undefined }))
   on('ui.invalidate', () => ({ value: undefined }))
-  on('ui.focus', () => ({ value: {} }))
+  on('ui.focus', { plugin: '*' } as any, () => ({ value: {} }))
   on('ui.panes', () => ({ value: panes.list }))
   on('tool.register', () => ({ value: {} }))
   on('command.register', (_: any, e: any) => ({ value: { command: e.name } }))
