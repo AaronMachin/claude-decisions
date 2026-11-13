@@ -1,4 +1,4 @@
-import { inputRows } from './style'
+import { draftLines } from './style'
 import { atom, read, update } from 'claude-code'
 
 import type { PaneView } from '../../types'
@@ -507,7 +507,7 @@ export function mainInsteadReply(d: Decision, pending: PaneView['pending']): str
 /** Rows the conversation block takes, rule included: heading, the reply, earlier line, replying line, the bordered ask box. */
 function conversationRows(c: Conversation, isReplying: boolean, width: number, draft = ''): number {
   // The heading and the rule, then the bordered ask box: its border and its lines (row 294).
-  return 2 + (c.reply ? chatRows(c.reply, width) : 0) + (c.asked ? chatRows(c.asked, width) : 0) + (c.earlier ? 1 : 0) + (c.empty?.length ?? 0) + (isReplying ? 1 : 0) + 2 + inputRows(draft, width - 4 - INPUT_SUBMIT_COLUMNS)
+  return 2 + (c.reply ? chatRows(c.reply, width) : 0) + (c.asked ? chatRows(c.asked, width) : 0) + (c.earlier ? 1 : 0) + (c.empty?.length ?? 0) + (isReplying ? 1 : 0) + 3 + draftLines(draft, width - 4 - INPUT_SUBMIT_COLUMNS).length
 }
 
 /** Columns the engine draws beside a focused Input for its `⏎ submit`. */
@@ -1267,12 +1267,16 @@ export function DecisionView($: any, props: Props): any {
     const answerBox =
       box !== undefined && box.option === o.id ? (
         <Box key="answer-box" flexDirection="column" borderStyle="round" borderColor="claude" marginLeft={DETAIL_INDENT - 1} paddingX={1}>
+          {draftLines(view.answerDrafts[d.id] ?? '', width - (DETAIL_INDENT - 1) - 4 - (box.kind === 'text' ? 12 : 8) - INPUT_SUBMIT_COLUMNS).map((line, index) => (
+            <Text key={`answer-draft:${index}`} dimColor>
+              {line}
+            </Text>
+          ))}
           <Input
             key="answer"
             autoFocus
             label={box.kind === 'text' ? 'Your answer ' : 'Only if '}
             value={view.answerDrafts[d.id] ?? ''}
-            rows={inputRows(view.answerDrafts[d.id] ?? '', width - (DETAIL_INDENT - 1) - 4 - (box.kind === 'text' ? 12 : 8) - INPUT_SUBMIT_COLUMNS)}
             onInput={(text: string) => void setView($, v => ({ ...v, answerDrafts: { ...v.answerDrafts, [d.id]: text } }))}
             onSubmit={(text: string) => void saveBox(text)}
           />
@@ -1350,12 +1354,17 @@ export function DecisionView($: any, props: Props): any {
         </Text>
       ))}
       {isReplying(view, d) ? <Text key="talk:replying" color="claude">{REPLYING}</Text> : null}
-      <Box key="ask-box" borderStyle="round" borderColor="subtle" paddingX={1}>
+      <Box key="ask-box" flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1}>
+        {draftLines(draft, width - 4 - INPUT_SUBMIT_COLUMNS).map((line, index) => (
+          <Text key={`ask-draft:${index}`} dimColor>
+            {line}
+          </Text>
+        ))}
+        <Box key="ask-row">
         {draft === '' ? <Text dimColor>{`${ASK_PLACEHOLDER} `}</Text> : null}
         <Input
           key="ask-inline"
           value={draft}
-          rows={inputRows(draft, width - 4 - INPUT_SUBMIT_COLUMNS)}
           onInput={(text: string) => void setView($, v => ({ ...v, drafts: { ...v.drafts, [d.id]: text } }))}
           onSubmit={async (text: string) => {
             if (text.trim() === '') {
@@ -1370,6 +1379,7 @@ export function DecisionView($: any, props: Props): any {
             onChanged()
           }}
         />
+        </Box>
       </Box>
     </Box>
   ) : null

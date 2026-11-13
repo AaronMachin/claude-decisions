@@ -1,4 +1,4 @@
-import { inputRows } from './style'
+import { draftLines } from './style'
 import type { PaneView, PendingQuestion } from '../../types'
 import { RUN, askQuestion, currentMode, currentReplies, resendToFork } from '../discuss'
 import { readSession, sessionSummary } from '../session'
@@ -271,6 +271,13 @@ export function ThreadView($: any, props: Props): any {
       {view.notice ? <Text dimColor>{view.notice}</Text> : null}
       {Rule(ui, width)}
       <Text dimColor>{`Replies from: ${MODE_NAME[currentMode()]}`}</Text>
+      {view.isAsking
+        ? draftLines(draft, width - 4 - 10).map((line, index) => (
+            <Text key={`ask-draft:${index}`} dimColor>
+              {line}
+            </Text>
+          ))
+        : null}
       {view.isAsking ? (
         <Input
           key="ask-input"
@@ -278,7 +285,6 @@ export function ThreadView($: any, props: Props): any {
           label="Ask "
           placeholder="enter sends, empty enter cancels"
           value={draft}
-          rows={inputRows(draft, width - 4 - 10)}
           onInput={(text: string) => void setView($, v => ({ ...v, drafts: { ...v.drafts, [d.id]: text } }))}
           onSubmit={async (text: string) => {
             if (text.trim() === '') {

@@ -28,7 +28,7 @@ import {
   unparkDecision,
 } from './decision'
 import type { Typing } from './decision'
-import { INPUT_MAX_ROWS, inputRows } from './style'
+import { draftLines } from './style'
 
 function fakeStore(): StoreCtx {
   const files = new Map<string, string>()
@@ -789,25 +789,24 @@ test('an empty pane offers another session with decisions waiting, and enter bri
   await again.unmount()
 })
 
-test('the ask box and the answer box grow to show what is typed, up to 6 lines (row 294)', async ($, on) => {
+test('a question longer than the ask box is drawn whole above it, so none of it is cut (row 294)', async ($, on) => {
   await begin($, on)
   const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
-  expect((await ui.find({ key: 'ask-inline' }))?.props.rows).toBe(1)
-  const long = 'role chain? Does this not exist already in the platform, and if so why would we build another one for partners here '.repeat(2)
+  expect(await ui.find({ key: 'ask-draft:0' })).toBeUndefined()
+  const long = 'role chain? Does this not exist already in the platform, and if so why would we build another one for partners here'
   await ui.input({ key: 'ask-inline', text: long, kind: 'change' })
-  const rows = (await ui.find({ key: 'ask-inline' }))?.props.rows
-  expect(rows).toBeGreaterThan(1)
-  expect(rows).toBeLessThanOrEqual(INPUT_MAX_ROWS)
+  const drawn = (await texts(ui)).filter((t: string) => long.includes(t.trim()) && t.trim().length > 10)
+  expect(drawn.join(' ').replace(/\s+/g, ' ')).toContain('why would we build another one for partners here')
   await ui.unmount()
 })
 
-test('inputRows counts wrapped lines and newlines, from 1 to the most', () => {
-  expect(inputRows('', 40)).toBe(1)
-  expect(inputRows('x'.repeat(39), 40)).toBe(1)
-  expect(inputRows('x'.repeat(40), 40)).toBe(2)
-  expect(inputRows('a\nb\nc', 40)).toBe(3)
-  expect(inputRows('x'.repeat(4000), 40)).toBe(INPUT_MAX_ROWS)
+test('draftLines is empty while the text fits, and wraps the whole text once it does not', () => {
+  expect(draftLines('short', 40)).toEqual([])
+  const lines = draftLines('one two three four five six seven eight nine ten eleven', 20)
+  expect(lines.length).toBeGreaterThan(1)
+  expect(lines.join(' ').replace(/\s+/g, ' ').trim()).toBe('one two three four five six seven eight nine ten eleven')
+  expect(draftLines('a\nb', 40)).toEqual(['a', 'b'])
 })
 
 test('the session card shows the summary, now, plan progress and links under its title (row 288)', async ($, on) => {
