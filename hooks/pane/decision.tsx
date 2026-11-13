@@ -1,3 +1,4 @@
+import { noteStops } from './arrows'
 import { draftLines } from './style'
 import { atom, read, update } from 'claude-code'
 
@@ -715,6 +716,8 @@ export type DecisionLayout = {
   conversation?: Conversation
   /** Some option rows are out of the pane's window, so ↑↓ is offered. */
   hasOptionsOutOfView: boolean
+  /** The screen is taller than the pane, so the arrows walk the stops (row 296). */
+  isScrolling?: boolean
 }
 
 const KEYS_OFF_TALL = (key: string) => `Press the pane focus key (${key} unless you moved it) to use it with a draft kept, or run /decisions with an empty prompt.`
@@ -855,6 +858,7 @@ export function decisionLayout(
     keysOff: [],
     conversation,
     hasOptionsOutOfView,
+    isScrolling: total > rows,
   }
 }
 
@@ -995,6 +999,11 @@ export function DecisionView($: any, props: Props): any {
   const all = props.all ?? []
   const layout = decisionLayout(d, view, width, props.rows ?? 30, isFocused, readyCount, all, props.seenAt, props.scrollOffset ?? 0)
   const { compact } = layout
+  // The arrows' stops on a scrolling decision: the options, then the ask box (row 296).
+  noteStops(
+    [...(d.state === 'sent' ? [] : drawnOptions(d).map(o => `opt:${o.id}`)), ...(layout.conversation ? ['ask-inline'] : [])],
+    layout.isScrolling === true,
+  )
   const now = Date.now()
   const colour = barColour(d)
   const box = isSent ? undefined : view.answerBox
