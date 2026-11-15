@@ -7,6 +7,7 @@ import { movePage, pageSize } from './sections'
 import { ago, when } from './seen'
 import { HEADER_RIGHT_GAP } from './look'
 import { INITIAL_VIEW, ringMark } from './decision'
+import { drawnStops } from './arrows'
 import { ListView, ReviewView, allClear, toggleGroup, counts, rowSecondLine, tabChipText, visibleTabs, nextTab, openReview, rowMeta, rowText, secondLine, sectionsFor, statusText, tabsFor, toggleTick, truncate } from './list'
 
 let counter = 0
@@ -694,4 +695,16 @@ test('the dim line leads with the problem when there is one, before the kind and
   )
   const ready = make({ createdAt: asked, problem: 'Where settings are read from', state: 'ready', answer: { option: 1, answeredAt: 't' } })
   expect(rowSecondLine(ready, {}, now).text).toBe('Where settings are read from · choice · asked 4m ago · 1 Project root')
+})
+
+test('the list notes its rows, in drawing order, as the stops the arrows walk', async ($, on) => {
+  counter = 0
+  const all = [make(), make(), make({ state: 'ready', answer: { option: 2, answeredAt: 't' } }), make({ group: 'Sharing links' })]
+  const tabs = tabsFor(all)
+  on('ui.render', ($$, e) =>
+    ListView($$, { ui: $$.ui.resolve(e), tabs, view: { ...INITIAL_VIEW, screen: 'list' }, width: 49, readyCount: 1, unreadable: 0, onSend: () => {}, onHide: () => {} }),
+  )
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(drawnStops()).toEqual({ stops: ['row:d4', 'row:d1', 'row:d2', 'row:d3'], isScrolling: false, screen: 'list' })
+  await ui.unmount()
 })

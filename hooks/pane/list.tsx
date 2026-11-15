@@ -1,4 +1,5 @@
 import type { OtherSession } from '../resume'
+import { noteStops } from './arrows'
 import { cardLines } from './card'
 import type { SessionRecord } from '../session'
 import type { PaneView } from '../../types'
@@ -434,7 +435,14 @@ export function ListView($: any, props: ListProps): any {
   const isIdle = newestOpenTab(groups) === undefined
   const isFocused = props.isFocused === true
   const compact = isCompact(rows)
-  const mark = (key: string) => `${ringMark(key, view.ring, isFocused)} `
+  // Every row the ring can land on is drawn through mark, so it also collects the arrows' stops in drawing order.
+  const stops: string[] = []
+  const mark = (key: string) => {
+    if (!stops.includes(key)) {
+      stops.push(key)
+    }
+    return `${ringMark(key, view.ring, isFocused)} `
+  }
   const first = listFirstKey(groups, seen, props.frozen, props.session !== undefined)
   const lookRows = compact ? -2 : 1
 
@@ -638,7 +646,7 @@ export function ListView($: any, props: ListProps): any {
   ) : null
 
   if (groups.length === 0) {
-    return (
+    const empty = (
       <Box flexDirection="column">
         {card}
         <Text dimColor>No decisions yet. Claude adds them here when it needs you.</Text>
@@ -652,9 +660,11 @@ export function ListView($: any, props: ListProps): any {
         {KeyHints(ui, hints.filter(hint => hint.id === 'h'), width, 1)}
       </Box>
     )
+    noteStops(stops, false, 'list')
+    return empty
   }
 
-  return (
+  const tree = (
     <Box flexDirection="column">
       {card}
       {compact ? null : Rule(ui, width, 'rule:sections')}
@@ -679,6 +689,10 @@ export function ListView($: any, props: ListProps): any {
       {KeyHints(ui, hints, width, 1)}
     </Box>
   )
+  // The rows were drawn above, so their stops are all collected by now (rows 293, 296).
+  noteStops(stops, false, 'list')
+
+  return tree
 }
 
 type ReviewProps = {

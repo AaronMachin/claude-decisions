@@ -15,17 +15,19 @@ function home(view: View, stops: string[]): string | undefined {
  * While a pane has rows to scroll, Claude Code spends an arrow key on scrolling the window a row,
  * so on a long decision the ring stayed put or got lost. For an arrow (the person's, no pointer, one
  * row) on the decision screen, this is where the ring goes instead, along the stops: the options,
- * then the ask box. Undefined lets the window scroll: up from the first option shows the context
+ * then the ask box. The list is walked the same way along its rows. Undefined lets the window scroll: up from the first option shows the context
  * above it, down from the last stop shows what is below, and the wheel and page keys scroll as
  * before (rows 293, 296).
  */
 export function arrowTarget(e: ScrollEvent, view: View, stops: string[]): string | undefined {
-  if (e.origin.kind !== 'person' || e.pointer !== undefined || Math.abs(e.by) !== 1 || view.screen !== 'decision' || stops.length === 0) {
+  const isWalked = view.screen === 'decision' || view.screen === 'list'
+  if (e.origin.kind !== 'person' || e.pointer !== undefined || Math.abs(e.by) !== 1 || !isWalked || stops.length === 0) {
     return undefined
   }
   const at = stops.indexOf(view.ring ?? '')
   if (at === -1) {
-    return home(view, stops)
+    // On the list a ring off the rows (the key line) lets the window scroll rather than jump to the top.
+    return view.screen === 'decision' ? home(view, stops) : undefined
   }
   const next = at + Math.sign(e.by)
 
@@ -60,13 +62,15 @@ export function focusMove(e: FocusEvent, view: View, stops: string[], isScrollin
   return { kind: 'redirect', element: stops[at + 1]! }
 }
 
-let drawn: { stops: string[]; isScrolling: boolean } = { stops: [], isScrolling: false }
+type Drawn = { stops: string[]; isScrolling: boolean; screen: 'decision' | 'list' }
 
-/** The decision screen notes its stops and whether it is taller than the pane as it draws (module memory, never state). */
-export function noteStops(stops: string[], isScrolling: boolean): void {
-  drawn = { stops, isScrolling }
+let drawn: Drawn = { stops: [], isScrolling: false, screen: 'decision' }
+
+/** The decision screen and the list note their stops (and the decision whether it is taller than the pane) as they draw (module memory, never state). */
+export function noteStops(stops: string[], isScrolling: boolean, screen: Drawn['screen'] = 'decision'): void {
+  drawn = { stops, isScrolling, screen }
 }
 
-export function drawnStops(): { stops: string[]; isScrolling: boolean } {
+export function drawnStops(): Drawn {
   return drawn
 }

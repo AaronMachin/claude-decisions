@@ -199,12 +199,15 @@ export const register: Register = (on, options) => {
     return done
   })
 
-  // An arrow on a long decision scrolled the pane, or lost the ring, instead of moving between options (rows 293, 296).
+  // An arrow on a long decision or list scrolled the pane, or lost the ring, instead of moving between options or rows (rows 293, 296).
   on('ui.scroll', async ($, e, next) => {
     if (e.requestId !== PANE_ID) {
       return next(e)
     }
-    const target = arrowTarget(e, await readView($), drawnStops().stops)
+    const view = await readView($)
+    const drawnNow = drawnStops()
+    // Stops noted by another screen are stale: the list's rows are no use on a decision, and the other way round.
+    const target = drawnNow.screen === view.screen ? arrowTarget(e, view, drawnNow.stops) : undefined
     if (target === undefined) {
       return next(e)
     }
@@ -224,8 +227,9 @@ export const register: Register = (on, options) => {
     if (e.origin.kind === 'person' && isTabKey(e.element)) {
       return {}
     }
-    const { stops, isScrolling } = drawnStops()
-    const move = focusMove(e, await readView($), stops, isScrolling)
+    const { stops, isScrolling, screen } = drawnStops()
+    const view = await readView($)
+    const move = screen === view.screen ? focusMove(e, view, stops, isScrolling) : { kind: 'allow' as const }
     if (move.kind === 'stay') {
       await $.ui.scroll({ in: PANE_ID, to: move.scrollTo }).catch(() => undefined)
       return {}

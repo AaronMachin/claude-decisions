@@ -27,7 +27,7 @@ test('the wheel, page keys, a plugin\'s scroll and other screens scroll as befor
   expect(arrowTarget({ ...person, pointer: { row: 3, column: 2 } } as any, view, STOPS)).toBeUndefined()
   expect(arrowTarget({ ...person, by: 12 } as any, view, STOPS)).toBeUndefined()
   expect(arrowTarget({ origin: { kind: 'plugin', name: 'decisions' }, by: 1 } as any, view, STOPS)).toBeUndefined()
-  expect(arrowTarget(person as any, { ...view, screen: 'list' }, STOPS)).toBeUndefined()
+  expect(arrowTarget(person as any, { ...view, screen: 'review' }, STOPS)).toBeUndefined()
 })
 
 test('a person\'s ring move off the stops on a scrolling decision is kept on the stops', () => {
@@ -39,4 +39,18 @@ test('a person\'s ring move off the stops on a scrolling decision is kept on the
   expect(move('enter-choose', 'a')).toEqual({ kind: 'redirect', element: 'opt:2' })
   expect(move('opt:3', 'b', false)).toEqual({ kind: 'allow' })
   expect(focusMove({ origin: { kind: 'plugin', name: 'decisions' }, element: 'b' } as any, { ...view, ring: 'opt:3' }, STOPS, true)).toEqual({ kind: 'allow' })
+})
+
+const ROWS = ['session-card', 'row:d138', 'row:d139', 'row:d140']
+const list = { screen: 'list', ring: 'row:d138' } as any
+
+test('an arrow on a list taller than the pane moves the ring down the rows, not the window', () => {
+  expect(arrowTarget(person as any, list, ROWS)).toBe('row:d139')
+  expect(arrowTarget({ ...person, by: -1 } as any, list, ROWS)).toBe('session-card')
+  expect(arrowTarget(person as any, { ...list, ring: 'row:d140' }, ROWS)).toBeUndefined()
+  expect(arrowTarget({ ...person, by: -1 } as any, { ...list, ring: 'session-card' }, ROWS)).toBeUndefined()
+})
+
+test('on the list, a ring that is not on a row lets the window scroll instead of jumping to the top', () => {
+  expect(arrowTarget(person as any, { ...list, ring: 'h' }, ROWS)).toBeUndefined()
 })
