@@ -1,3 +1,4 @@
+import { forgetFields } from './pane/field'
 import { arrowTarget, drawnStops, focusMove } from './pane/arrows'
 import { followResume } from './resume'
 import type { Register } from 'claude-code'
@@ -248,6 +249,15 @@ export const register: Register = (on, options) => {
     }
 
     return moved
+  })
+
+  // A field opened again after the pane closes takes the saved draft (row 299).
+  on('ui.close', async ($, e, next) => {
+    if (e.id === PANE_ID) {
+      forgetFields()
+    }
+
+    return next(e)
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, ($, e) => renderPane($, e))

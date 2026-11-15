@@ -1,4 +1,5 @@
 import { noteStops } from './arrows'
+import { fieldValue } from './field'
 import { draftLines } from './style'
 import { atom, read, update } from 'claude-code'
 
@@ -1285,9 +1286,13 @@ export function DecisionView($: any, props: Props): any {
             key="answer"
             autoFocus
             label={box.kind === 'text' ? 'Your answer ' : 'Only if '}
-            value={view.answerDrafts[d.id] ?? ''}
-            onInput={(text: string) => void setView($, v => ({ ...v, answerDrafts: { ...v.answerDrafts, [d.id]: text } }))}
-            onSubmit={(text: string) => void saveBox(text)}
+            value={fieldValue(`answer:${d.id}:${box.kind}:${box.option}`, view.answerDrafts[d.id] ?? '')}
+            onInput={(text: string) => {
+              void setView($, v => ({ ...v, answerDrafts: { ...v.answerDrafts, [d.id]: text } }))
+            }}
+            onSubmit={(text: string) => {
+              void saveBox(text)
+            }}
           />
           <Text dimColor>{BOX_LINE}</Text>
         </Box>
@@ -1373,8 +1378,10 @@ export function DecisionView($: any, props: Props): any {
         {draft === '' ? <Text dimColor>{`${ASK_PLACEHOLDER} `}</Text> : null}
         <Input
           key="ask-inline"
-          value={draft}
-          onInput={(text: string) => void setView($, v => ({ ...v, drafts: { ...v.drafts, [d.id]: text } }))}
+          value={fieldValue(`ask-inline:${d.id}`, draft)}
+          onInput={(text: string) => {
+            void setView($, v => ({ ...v, drafts: { ...v.drafts, [d.id]: text } }))
+          }}
           onSubmit={async (text: string) => {
             if (text.trim() === '') {
               return
@@ -1414,8 +1421,10 @@ export function DecisionView($: any, props: Props): any {
           autoFocus
           label="Why park it "
           placeholder="a few words, empty cancels"
-          value={view.parkDraft}
-          onInput={(text: string) => void setView($, v => ({ ...v, parkDraft: text }))}
+          value={fieldValue(`park:${d.id}`, view.parkDraft)}
+          onInput={(text: string) => {
+            void setView($, v => ({ ...v, parkDraft: text }))
+          }}
           onSubmit={async (text: string) => {
             const isParked = await parkDecision($, d, text)
             if (isParked) {

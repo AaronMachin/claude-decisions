@@ -728,6 +728,8 @@ test('the answer box open when the pane is hidden comes back with its draft on t
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'c' })
   await ui.input({ key: 'answer', text: 'only on stag', kind: 'change' })
+  // h hides the pane: the open fields are forgotten, and the drafts come back when it is shown again (row 299).
+  await ui.press({ key: 'h' })
   await ui.unmount()
   ui = await mountHolding($, rowsOf(40))
   expect((await ui.find({ key: 'answer' }))?.props.label).toBe('Only if ')

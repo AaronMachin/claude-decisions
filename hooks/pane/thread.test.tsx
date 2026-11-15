@@ -220,18 +220,18 @@ test('a question sent while a turn runs shows the queued note and the f key, and
   await ui.unmount()
 })
 
-test('a half-typed question survives hiding the pane and reopening the thread', async ($, on) => {
+test('a half-typed question is not put back to an older draft when the pane draws again (row 299)', async ($, on) => {
   engine(on)
   const ui = await openThread($)
   await ui.press({ key: 'ask' })
+  const opened = (await ui.find({ key: 'ask-input' }))?.props.value
   await ui.input({ key: 'ask-input', text: 'half a thou', kind: 'change' })
+  // The draft is saved and the pane draws again; the field keeps the value it opened with, so the engine leaves the typing alone.
+  expect((await ui.find({ key: 'ask-input' }))?.props.value).toBe(opened)
+  await ui.input({ key: 'ask-input', text: '' })
+  expect(await ui.find({ key: 'ask-input' })).toBeUndefined()
+  expect(await ui.find({ key: 'ask' })).toBeDefined()
   await ui.unmount()
-  const again = await mountHolding($, { ...PANE, surface: 'terminal' })
-  expect((await again.find({ key: 'ask-input' }))?.text).toContain('half a thou')
-  await again.input({ key: 'ask-input', text: '' })
-  expect(await again.find({ key: 'ask-input' })).toBeUndefined()
-  expect(await again.find({ key: 'ask' })).toBeDefined()
-  await again.unmount()
 })
 
 test('the thread no longer answers: a typed answer goes in Something else, and b comes back to the decision ready for it', async ($, on) => {

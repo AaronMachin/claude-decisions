@@ -1,3 +1,4 @@
+import { beginFieldPass, endFieldPass, forgetFields } from './field'
 import { adoptSessions, otherSessions } from '../resume'
 import type { PaneView } from '../../types'
 import { notePaneFocus } from '../band'
@@ -61,6 +62,7 @@ export async function openForNewDecision($: any): Promise<void> {
 
 export async function hidePane($: any): Promise<void> {
   await setView($, v => ({ ...v, isHidden: true }))
+  forgetFields()
   await $.ui.close({ id: PANE_ID })
 }
 
@@ -168,6 +170,15 @@ function header(ui: any, width: number, isFocused: boolean, crumb: string | unde
 
 /** The `ui.render` hook for the pane: reads the files and the view, then draws the screen the view names. */
 export async function renderPane($: any, e: any): Promise<any> {
+  beginFieldPass()
+  try {
+    return await drawPane($, e)
+  } finally {
+    endFieldPass()
+  }
+}
+
+async function drawPane($: any, e: any): Promise<any> {
   const keys = notePaneFocus($, e.props.isFocused === true)
   const ui = $.ui.resolve(e)
   const { Box, Text } = ui
