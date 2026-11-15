@@ -1,3 +1,4 @@
+import { fieldValue } from './field'
 import { draftLines } from './style'
 import type { PaneView, PendingQuestion } from '../../types'
 import { RUN, askQuestion, currentMode, currentReplies, resendToFork } from '../discuss'
@@ -284,8 +285,10 @@ export function ThreadView($: any, props: Props): any {
           autoFocus
           label="Ask "
           placeholder="enter sends, empty enter cancels"
-          value={draft}
-          onInput={(text: string) => void setView($, v => ({ ...v, drafts: { ...v.drafts, [d.id]: text } }))}
+          value={fieldValue(`ask-input:${d.id}`, draft)}
+          onInput={(text: string) => {
+            void setView($, v => ({ ...v, drafts: { ...v.drafts, [d.id]: text } }))
+          }}
           onSubmit={async (text: string) => {
             if (text.trim() === '') {
               await setView($, v => {

@@ -295,6 +295,8 @@ test('a parked draft survives hiding the pane, and an empty enter cancels', asyn
   await ui.press({ key: 'row:d1' })
   await ui.press({ key: 'p' })
   await ui.input({ key: 'park', text: 'waiting', kind: 'change' })
+  // h hides the pane: the open fields are forgotten, and the drafts come back when it is shown again (row 299).
+  await ui.press({ key: 'h' })
   await ui.unmount()
   ui = await mountHolding($, { ...PANE, surface: 'terminal' })
   expect((await ui.find({ key: 'park' }))?.text).toContain('waiting')
