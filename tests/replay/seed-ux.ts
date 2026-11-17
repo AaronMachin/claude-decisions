@@ -12,47 +12,11 @@
  *
  *   cd "$(mktemp -d)" && git init -q && npx -y tsx <repo>/tests/replay/seed-ux.ts
  */
-import { addDecision } from '../../hooks/tool'
-import { readOne, write } from '../../hooks/store'
-import { sessionTool } from '../../hooks/session'
-import { INBOX, MODEL_PROBLEM, SEEDED, SESSION_RECORD, inboxState } from './ux-fixture'
+import { SEEDED, seedUx } from './ux-fixture'
 import { store } from '../../hooks/pane/seed-review'
 
-async function add(input) {
-  const answer = await addDecision(store, input)
-  if ('deny' in answer) {
-    throw new Error(answer.deny)
-  }
-}
-
 async function main() {
-  for (const input of SEEDED) {
-    await add(input)
-  }
-  const total = SEEDED.length - INBOX.length - 2
-  const parked = await readOne(store, `d${total + 1}`)
-  await write(store, { ...parked, state: 'parked', parkedReason: 'waiting on the product owner' })
-  const answered = await readOne(store, `d${total + 2}`)
-  const at = new Date().toISOString()
-  await write(store, {
-    ...answered, state: 'sent', answer: { option: 2, answeredAt: at }, sentAt: at,
-    thread: [
-      { who: 'person', text: 'Why weekly and not daily?', at },
-      { who: 'claude', text: 'Daily doubles the storage and nobody edits recipes that often.', at },
-    ],
-  })
-  // A minute on, so the reply is after the decision was made and counts as unread.
-  const later = new Date(Date.now() + 60_000).toISOString()
-  for (const [index, entry] of INBOX.entries()) {
-    const id = `d${total + 3 + index}`
-    await write(store, inboxState(await readOne(store, id), entry, later))
-  }
-  const first = await readOne(store, 'd1')
-  await write(store, { ...first, problem: MODEL_PROBLEM, problemBy: 'model' })
-  const recorded = await sessionTool(store, SESSION_RECORD)
-  if ('deny' in recorded) {
-    throw new Error(recorded.deny)
-  }
+  await seedUx(store)
   console.log(`Seeded ${SEEDED.length} decisions.`)
 }
 

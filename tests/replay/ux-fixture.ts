@@ -1,5 +1,9 @@
 /** What the testers' seeded session holds: pure data in the shape of `decisions_add` input. */
 import { REVIEW_47 } from '../../hooks/pane/review-47'
+import { sessionTool } from '../../hooks/session'
+import { readOne, write } from '../../hooks/store'
+import type { StoreCtx } from '../../hooks/store'
+import { addDecision } from '../../hooks/tool'
 
 const labels = (n: number) => Array.from({ length: n }, (_, i) => ({ label: `Option ${i + 1}`, changes: `What changes if option ${i + 1} is picked.` }))
 
@@ -164,3 +168,42 @@ export const SEEDED: Record<string, any>[] = [
   ...BACKUPS,
   ...INBOX.map(entry => entry.input),
 ]
+
+/**
+ * Fills a store with the seeded session: every decision in SEEDED through the tool's own
+ * `addDecision`, the parked one, the answered one with a discussion, the inbox states, the
+ * model-written problem line and the session record. `seed-ux.ts` runs it on a real repository,
+ * the size tests on a test's files.
+ */
+export async function seedUx(store: StoreCtx, now: Date = new Date()): Promise<void> {
+  for (const input of SEEDED) {
+    const answer = await addDecision(store, input as any)
+    if ('deny' in answer) {
+      throw new Error(answer.deny)
+    }
+  }
+  const total = SEEDED.length - INBOX.length - 2
+  const parked = await readOne(store, `d${total + 1}`)
+  await write(store, { ...parked!, state: 'parked', parkedReason: 'waiting on the product owner' } as any)
+  const answered = await readOne(store, `d${total + 2}`)
+  const at = now.toISOString()
+  await write(store, {
+    ...answered!, state: 'sent', answer: { option: 2, answeredAt: at }, sentAt: at,
+    thread: [
+      { who: 'person', text: 'Why weekly and not daily?', at },
+      { who: 'claude', text: 'Daily doubles the storage and nobody edits recipes that often.', at },
+    ],
+  } as any)
+  // A minute on, so the reply is after the decision was made and counts as unread.
+  const later = new Date(now.getTime() + 60_000).toISOString()
+  for (const [index, entry] of INBOX.entries()) {
+    const id = `d${total + 3 + index}`
+    await write(store, inboxState((await readOne(store, id))!, entry, later) as any)
+  }
+  const first = await readOne(store, 'd1')
+  await write(store, { ...first!, problem: MODEL_PROBLEM, problemBy: 'model' } as any)
+  const recorded = await sessionTool(store as any, SESSION_RECORD)
+  if ('deny' in recorded) {
+    throw new Error(recorded.deny)
+  }
+}
