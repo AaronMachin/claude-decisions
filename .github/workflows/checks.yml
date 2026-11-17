@@ -1,0 +1,28 @@
+# Runs the mod's own checks on every pull request and on main. The type check (tsc) is not here:
+# the mod API's types are written into .claude-plugin/types/ by a signed-in Claude Code loading the
+# mod, they are git-ignored, and CI has no signed-in Claude Code. Run tsc locally (CONTRIBUTING.md).
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # The Claude Code the tests were last run against. Move it on when the mod needs a newer one.
+      CLAUDE_CODE_VERSION: 2.1.326
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Claude Code
+        run: npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+      - name: Validate the manifest
+        run: claude plugin validate .
+      - name: Run the tests
+        run: claude plugin test .
