@@ -91,7 +91,7 @@ export type Decision = {
 
 /** The part of `$` the store uses, so tests can hand it a fake. */
 export type StoreCtx = {
-  env: { get: (name: 'HOME') => Promise<string | undefined> }
+  env: { get: (name: string) => Promise<string | undefined> }
   session: { cwd: () => Promise<string>; id: () => Promise<string> }
   process: { run: (argv: string[]) => Promise<{ exitCode: number; stdout: string }> }
   fs: {

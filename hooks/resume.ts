@@ -82,12 +82,92 @@ export async function followResume($: StoreCtx & { session: { messages: () => Pr
   return from
 }
 
-export type OtherSession = { session: string; title: string; waiting: number; at: string }
+/**
+ * `activeAt` is when the session's conversation was last written, set only when that was within
+ * `RECENTLY_ACTIVE_MS`: the session may still be open in another tab, so the pane hides it behind a
+ * row rather than offering it (row 300).
+ */
+export type OtherSession = { session: string; title: string; waiting: number; at: string; activeAt?: string }
 
 const WAITING = new Set(['open', 'live', 'ready'])
 
-/** Other sessions in this repository with decisions not yet sent, newest first, at most three: what an empty pane offers to carry on from. */
-export async function otherSessions($: StoreCtx): Promise<OtherSession[]> {
+/** A conversation written to within this long may still be open in another tab (row 300). */
+export const RECENTLY_ACTIVE_MS = 30 * 60_000
+
+type StatCtx = StoreCtx & { fs: StoreCtx['fs'] & { stat: (path: string) => Promise<{ mtimeMs: number }> } }
+
+/** Where each session's transcript was found, so a redraw stats one file rather than searching again. */
+const transcriptPaths = new Map<string, string>()
+/** Sessions whose transcript wasn't found, and when that was, so a search isn't repeated on every redraw. */
+const notFoundAt = new Map<string, number>()
+const SEARCH_AGAIN_MS = 60_000
+
+/** Claude Code's folder name for a working directory under `projects`: every character but a letter or digit becomes `-`. */
+export function projectFolder(cwd: string): string {
+  return cwd.replace(/[^A-Za-z0-9]/g, '-')
+}
+
+/**
+ * When a session's conversation was last written, from its transcript file's modified time, or
+ * undefined when the file can't be found. The transcript is `<id>.jsonl` in Claude Code's
+ * `projects` folder, under this working directory's folder or, for a session started in another
+ * worktree, another one.
+ */
+export async function transcriptWrittenAt($: StatCtx, session: string, now = Date.now()): Promise<number | undefined> {
+  const at = async (path: string) => {
+    try {
+      return (await $.fs.stat(path)).mtimeMs
+    } catch {
+      return undefined
+    }
+  }
+  const known = transcriptPaths.get(session)
+  if (known !== undefined) {
+    const written = await at(known)
+    if (written !== undefined) {
+      return written
+    }
+    transcriptPaths.delete(session)
+  }
+  if (now - (notFoundAt.get(session) ?? -Infinity) < SEARCH_AGAIN_MS) {
+    return undefined
+  }
+  const config = (await $.env.get('CLAUDE_CONFIG_DIR').catch(() => undefined)) || `${(await $.env.get('HOME')) ?? ''}/.claude`
+  const projects = `${config.replace(/\/+$/, '')}/projects`
+  const own = projectFolder(await $.session.cwd())
+  let folders: string[] = [own]
+  try {
+    folders = [own, ...(await $.fs.list(projects)).map(entry => entry.name).filter(name => name !== own)]
+  } catch {
+    // No projects folder to search; the guess above is all there is.
+  }
+  for (const folder of folders) {
+    const path = `${projects}/${folder}/${session}.jsonl`
+    const written = await at(path)
+    if (written !== undefined) {
+      transcriptPaths.set(session, path)
+      notFoundAt.delete(session)
+
+      return written
+    }
+  }
+  notFoundAt.set(session, now)
+
+  return undefined
+}
+
+/** Forgets where transcripts were found; for tests. */
+export function forgetTranscripts(): void {
+  transcriptPaths.clear()
+  notFoundAt.clear()
+}
+
+/**
+ * Other sessions in this repository with decisions not yet sent, newest first: what an empty pane
+ * offers to carry on from. At most three that haven't been active for 30 minutes, which the pane
+ * offers, and at most three that have (with `activeAt`), which it keeps behind a row (row 300).
+ */
+export async function otherSessions($: StoreCtx, now = Date.now()): Promise<OtherSession[]> {
   const current = await $.session.id()
   const by = new Map<string, Decision[]>()
   for (const d of await readEvery($)) {
@@ -104,8 +184,11 @@ export async function otherSessions($: StoreCtx): Promise<OtherSession[]> {
     }
     const newest = [...ds].sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : -1))[0]!
     const title = (await readFor($, session))?.title ?? newest.group ?? 'Another session'
-    out.push({ session, title, waiting: waiting.length, at: newest.updatedAt })
+    const written = await transcriptWrittenAt($ as StatCtx, session, now)
+    const isRecent = written !== undefined && now - written < RECENTLY_ACTIVE_MS
+    out.push({ session, title, waiting: waiting.length, at: newest.updatedAt, ...(isRecent ? { activeAt: new Date(written).toISOString() } : {}) })
   }
+  const sorted = out.sort((a, b) => (b.at > a.at ? 1 : -1))
 
-  return out.sort((a, b) => (b.at > a.at ? 1 : -1)).slice(0, 3)
+  return [...sorted.filter(o => o.activeAt === undefined).slice(0, 3), ...sorted.filter(o => o.activeAt !== undefined).slice(0, 3)]
 }
