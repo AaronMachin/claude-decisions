@@ -32,6 +32,9 @@ Use a scratch project (`mktemp -d`, then `git init`), not a real one, while tryi
 | Validation | `claude plugin validate .` | no errors |
 | Types | `tsc -p .` (after the mod has loaded once, so `.claude-plugin/types/` exists) | no errors |
 | Real session | `claude --plugin-dir .` in a scratch project | every layer you touched seen working, not only in tests |
+| Scripted real session | `tests/real/run.sh` (see `tests/real/README.md`) | for a change to the pane's keys, focus or typing: every check passes but the known failure the README names |
+
+Every pull request runs `claude plugin validate .` and `claude plugin test .` on GitHub (`.github/workflows/checks.yml`); the type check and the scripted real session need a signed-in Claude Code, so they stay with you. The tests include every screen drawn at every pane size (`tests/sizes/README.md`).
 
 The real-session check isn't optional. Twice during the spikes, the test kit accepted a shape the real engine refused (a tool result as an object, an AskUserQuestion result as a string). Say in your commit or PR what you tried and what you saw.
 
