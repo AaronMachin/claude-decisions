@@ -67,6 +67,8 @@ export type PaneView = {
   sessionLinksOpen?: boolean
   /** Session page: `r` asked Claude to refresh at `askedAt`; `no-update` once that turn ended without a new record (row 256). */
   sessionRefresh?: { askedAt: string; status: 'asked' | 'no-update' | 'failed' }
+  /** Empty list: the other sessions active in the last 30 minutes are shown, not just counted (row 300). */
+  isRecentShown?: boolean
 }
 
 declare module 'claude-code' {

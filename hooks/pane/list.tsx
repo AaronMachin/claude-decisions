@@ -363,6 +363,16 @@ type ListProps = {
   onHide: () => void
 }
 
+/**
+ * The row an empty pane keeps the recently active other sessions behind (row 300): they may still be open in another tab,
+ * so they are counted, not offered, until enter shows them.
+ */
+export function recentHeading(count: number, hasOffered: boolean, isShown: boolean): string {
+  const sessions = hasOffered ? `${count} more` : `${count} session${count === 1 ? '' : 's'}`
+
+  return `${isShown ? '▾' : '▸'} ${sessions} active in the last 30m, maybe open`
+}
+
 /** The groups that sit at the bottom of the list, folded when nothing in them waits. */
 const BOTTOM = new Set(['todo', 'parked'])
 
@@ -646,17 +656,39 @@ export function ListView($: any, props: ListProps): any {
   ) : null
 
   if (groups.length === 0) {
+    const offered = (props.others ?? []).filter(o => o.activeAt === undefined)
+    const recentOthers = (props.others ?? []).filter(o => o.activeAt !== undefined)
     const empty = (
       <Box flexDirection="column">
         {card}
         <Text dimColor>No decisions yet. Claude adds them here when it needs you.</Text>
         {(props.others ?? []).length > 0 ? <Text key="others:heading">{'Carry on from another session in this repository:'}</Text> : null}
-        {(props.others ?? []).map(o => (
-          <Button key={`adopt:${o.session}`} plain onPress={() => props.onAdopt?.(o.session)}>
-            {mark(`adopt:${o.session}`)}
-            <Text>{truncate(`↩ ${o.title} · ${o.waiting} waiting · ${ago(o.at)}`, width - 2)}</Text>
-          </Button>
+        {offered.map(o => (
+          <Box key={`adopt-box:${o.session}`} flexDirection="column">
+            <Button key={`adopt:${o.session}`} plain onPress={() => props.onAdopt?.(o.session)}>
+              {mark(`adopt:${o.session}`)}
+              <Text>{truncate(`↩ ${o.title}`, width - 2)}</Text>
+            </Button>
+            <Text key={`adopt-line:${o.session}`} dimColor>{truncate(`    ${o.waiting} waiting · ${ago(o.at)} · moves them here`, width)}</Text>
+          </Box>
         ))}
+        {recentOthers.length > 0 ? (
+          <Button key="others:recent" plain onPress={() => setView($, v => ({ ...v, isRecentShown: !v.isRecentShown }))}>
+            {mark('others:recent')}
+            <Text dimColor>{truncate(recentHeading(recentOthers.length, offered.length > 0, view.isRecentShown === true), width - 2)}</Text>
+          </Button>
+        ) : null}
+        {view.isRecentShown === true
+          ? recentOthers.map(o => (
+              <Box key={`adopt-box:${o.session}`} flexDirection="column">
+                <Button key={`adopt:${o.session}`} plain onPress={() => props.onAdopt?.(o.session)}>
+                  {mark(`adopt:${o.session}`)}
+                  <Text>{truncate(`↩ ${o.title}`, width - 2)}</Text>
+                </Button>
+                <Text key={`adopt-line:${o.session}`} dimColor>{truncate(`    ${o.waiting} waiting · active ${ago(o.activeAt!)} · moves them here`, width)}</Text>
+              </Box>
+            ))
+          : null}
         {KeyHints(ui, hints.filter(hint => hint.id === 'h'), width, 1)}
       </Box>
     )

@@ -3,15 +3,19 @@ import { expect, test } from 'claude-code/testing'
 import { readSession, writeSession } from './session'
 import { readAll, storeDir } from './store'
 import type { Decision, StoreCtx } from './store'
-import { adoptSessions, followResume, idsInConversation, otherSessions, sessionsToAdopt } from './resume'
+import { RECENTLY_ACTIVE_MS, adoptSessions, followResume, forgetTranscripts, idsInConversation, otherSessions, projectFolder, sessionsToAdopt, transcriptWrittenAt } from './resume'
 
 function fake(session = "new-id"): any {
   const files = new Map<string, string>()
   const messages: any[] = []
+  const written = new Map<string, number>()
+  const stats: string[] = []
 
   return {
     files,
     messages,
+    written,
+    stats,
     env: { get: async () => '/home/test' },
     session: { cwd: async () => '/work/pantry', id: async () => session, messages: async () => messages } as any,
     process: { run: async () => ({ exitCode: 0, stdout: '/work/pantry/.git\n' }) },
@@ -25,7 +29,15 @@ function fake(session = "new-id"): any {
       },
       write: async (path: string, text: string) => void files.set(path, text),
       exists: async (path: string) => files.has(path),
-      list: async (dir: string) => [...files.keys()].filter(p => p.startsWith(dir + '/')).map(p => ({ name: p.slice(dir.length + 1) })),
+      list: async (dir: string) => [...new Set([...files.keys(), ...written.keys()].filter(p => p.startsWith(dir + '/')).map(p => p.slice(dir.length + 1).split('/')[0]!))].map(name => ({ name })),
+      stat: async (path: string) => {
+        stats.push(path)
+        const mtimeMs = written.get(path)
+        if (mtimeMs === undefined) {
+          throw new Error('ENOENT')
+        }
+        return { mtimeMs }
+      },
     },
   } as any
 }
@@ -102,4 +114,49 @@ test('other sessions: those with decisions still waiting, newest first, at most 
   expect(others.map(o => o.session)).toEqual(['b', 'a', 'd'])
   expect(others[0]).toMatchObject({ title: 'Imports', waiting: 1, at: '2026-11-12T11:00:00.000Z' })
   expect(others[1]?.title).toBe('Sharing links work')
+})
+
+const NOW = Date.parse('2026-11-12T12:00:00.000Z')
+const PROJECTS = '/home/test/.claude/projects'
+
+test('a transcript is found under this working directory\'s project folder, or under another one, and its place is remembered', async () => {
+  forgetTranscripts()
+  const $ = fake('new-id')
+  $.env.get = async (name: string) => (name === 'HOME' ? '/home/test' : undefined)
+  expect(projectFolder('/work/pantry')).toBe('-work-pantry')
+  $.written.set(`${PROJECTS}/-work-pantry/here.jsonl`, NOW - 1000)
+  $.written.set(`${PROJECTS}/-work-pantry-worktree/there.jsonl`, NOW - 2000)
+  expect(await transcriptWrittenAt($, 'here', NOW)).toBe(NOW - 1000)
+  expect(await transcriptWrittenAt($, 'there', NOW)).toBe(NOW - 2000)
+  $.stats.length = 0
+  expect(await transcriptWrittenAt($, 'there', NOW)).toBe(NOW - 2000)
+  expect($.stats).toEqual([`${PROJECTS}/-work-pantry-worktree/there.jsonl`])
+  expect(await transcriptWrittenAt($, 'nowhere', NOW)).toBeUndefined()
+  $.stats.length = 0
+  expect(await transcriptWrittenAt($, 'nowhere', NOW + 1000)).toBeUndefined()
+  expect($.stats).toEqual([])
+})
+
+test('CLAUDE_CONFIG_DIR moves the projects folder', async () => {
+  forgetTranscripts()
+  const $ = fake('new-id')
+  $.env.get = async (name: string) => (name === 'HOME' ? '/home/test' : '/elsewhere/config/')
+  $.written.set('/elsewhere/config/projects/-work-pantry/s.jsonl', NOW)
+  expect(await transcriptWrittenAt($, 's', NOW)).toBe(NOW)
+})
+
+test('other sessions written to in the last 30 minutes are marked active and kept apart from those offered (row 300)', async () => {
+  forgetTranscripts()
+  const $ = fake('new-id')
+  $.env.get = async (name: string) => (name === 'HOME' ? '/home/test' : undefined)
+  await put($,
+    decision(1, 'closed', { updatedAt: '2026-11-12T09:00:00.000Z' }),
+    decision(2, 'open-tab', { updatedAt: '2026-11-12T11:00:00.000Z' }),
+    decision(3, 'no-transcript', { updatedAt: '2026-11-12T08:00:00.000Z' }),
+  )
+  $.written.set(`${PROJECTS}/-work-pantry/closed.jsonl`, NOW - RECENTLY_ACTIVE_MS - 1)
+  $.written.set(`${PROJECTS}/-work-pantry/open-tab.jsonl`, NOW - 5 * 60_000)
+  const others = await otherSessions($, NOW)
+  expect(others.map(o => o.session)).toEqual(['closed', 'no-transcript', 'open-tab'])
+  expect(others.map(o => o.activeAt)).toEqual([undefined, undefined, new Date(NOW - 5 * 60_000).toISOString()])
 })

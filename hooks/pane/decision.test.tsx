@@ -520,11 +520,11 @@ for (const hasRecommendation of [true, false]) {
 
 type On = (event: string, hook: (...args: any[]) => any) => unknown
 
-type Engine = { files: Map<string, string>; submitted: string[]; statuses: (string | undefined)[] }
+type Engine = { files: Map<string, string>; submitted: string[]; statuses: (string | undefined)[]; written: Map<string, number> }
 
 /** Answers everything the mod asks of the engine, from memory. */
 function engine(on: On): Engine {
-  const seen: Engine = { files: new Map(), submitted: [], statuses: [] }
+  const seen: Engine = { files: new Map(), submitted: [], statuses: [], written: new Map() }
   on('env.get', () => ({ value: '/home/test' }))
   on('session.cwd', () => ({ value: '/work/pantry' }))
   on('session.id', () => ({ value: 'session-1' }))
@@ -535,6 +535,14 @@ function engine(on: On): Engine {
     return { value: undefined }
   })
   on('fs.exists', (_: any, e: any) => ({ value: seen.files.has(e.path) }))
+  // A transcript's modified time, by file name: `seen.written.set('<session>.jsonl', mtimeMs)`.
+  on('fs.stat', (_: any, e: any) => {
+    const mtimeMs = seen.written.get(String(e.path).split('/').pop() ?? '')
+    if (mtimeMs === undefined) {
+      throw new Error('ENOENT')
+    }
+    return { value: { kind: 'file', size: 1, mtimeMs, isLink: false } }
+  })
   on('fs.list', (_: any, e: any) => ({
     value: [...seen.files.keys()].filter(p => p.startsWith(e.path + '/')).map(p => ({ name: p.slice(e.path.length + 1), kind: 'file', size: 0, mtimeMs: 0, isLink: false })),
   }))
@@ -778,7 +786,8 @@ test('an empty pane offers another session with decisions waiting, and enter bri
   const ui = await mountHolding($, rowsOf(40))
   const all = await texts(ui)
   expect(all).toContain('Carry on from another session in this repository:')
-  expect(all.some((t: string) => /^↩ Code review · 1 waiting · just now$/.test(t))).toBe(true)
+  expect(all).toContain('↩ Code review')
+  expect(all).toContain('    1 waiting · just now · moves them here')
   await ui.press({ key: 'adopt:old-id' })
   for (let i = 0; i < 40; i++) {
     await Promise.resolve()
@@ -789,6 +798,34 @@ test('an empty pane offers another session with decisions waiting, and enter bri
   const again = await mountHolding($, rowsOf(40))
   expect(await again.find({ key: 'row:d1' })).toBeTruthy()
   await again.unmount()
+})
+
+test('a session active in the last 30 minutes is kept behind a row, shown with enter, and can still be brought here (row 300)', async ($, on) => {
+  const seen = await begin($, on)
+  await $.tool.call({ tool: ADD_TOOL, ...CHOICE, title: 'Where the build cache lives' })
+  edit(seen, 'd1', d => ({ ...d, session: 'closed-tab' }))
+  edit(seen, 'd2', d => ({ ...d, session: 'open-tab', group: 'Imports' }))
+  seen.written.set('open-tab.jsonl', Date.now() - 5 * 60_000)
+  seen.written.set('closed-tab.jsonl', Date.now() - 3 * 60 * 60_000)
+  const ui = await mountHolding($, rowsOf(40))
+  let all = await texts(ui)
+  expect(all).toContain('↩ Code review')
+  expect(all).toContain('    1 waiting · just now · moves them here')
+  expect(all).toContain('▸ 1 more active in the last 30m, maybe open')
+  expect(await ui.find({ key: 'adopt:open-tab' })).toBeUndefined()
+  await ui.press({ key: 'others:recent' })
+  all = await texts(ui)
+  expect(all).toContain('▾ 1 more active in the last 30m, maybe open')
+  expect(all).toContain('↩ Imports')
+  expect(all).toContain('    1 waiting · active 5m ago · moves them here')
+  const path = [...seen.files.keys()].find(p => p.endsWith('/d2.json'))!
+  expect(JSON.parse(seen.files.get(path)!).session).toBe('open-tab')
+  await ui.press({ key: 'adopt:open-tab' })
+  for (let i = 0; i < 40; i++) {
+    await Promise.resolve()
+  }
+  expect(JSON.parse(seen.files.get(path)!).movedFrom).toBe('open-tab')
+  await ui.unmount()
 })
 
 test('a question longer than the ask box is drawn whole above it, so none of it is cut (row 294)', async ($, on) => {
