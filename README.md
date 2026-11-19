@@ -81,7 +81,7 @@ Coming back after a while, groups with a reply you haven't read come first, mark
 
 <!-- GIF: a live discussion that adds an option (shot 2) -->
 
-Nothing reaches Claude until you send. Answers (typed ones and conditions too) and parked decisions all wait in the pane until `s`. Questions asked from a decision are the exception: they go as you ask them. When you answer the last decision waiting, the pane goes straight to the send screen (`That was the last one.`): `enter` sends, `b` holds them. Until they're sent the list says `2 answers not sent yet · s sends them`, and so does the line above the prompt. With nothing waiting and nothing to send, the list says `✓ Nothing needs you` and shows the last answers sent.
+Nothing reaches Claude until you send. Answers (typed ones and conditions too) and parked decisions all wait in the pane until `s`. Questions asked from a decision are the exception: they go as you ask them. When answers are sent, a discussion Claude's main session already took part in isn't repeated: the prompt says it took place and how many messages it had, and writes out only what Claude never saw, such as quick answers and fork replies. When you answer the last decision waiting, the pane goes straight to the send screen (`That was the last one.`): `enter` sends, `b` holds them. Until they're sent the list says `2 answers not sent yet · s sends them`, and so does the line above the prompt. With nothing waiting and nothing to send, the list says `✓ Nothing needs you` and shows the last answers sent.
 
 If you answer a decision in the chat instead, Claude records your answer in the pane with your words quoted, so it's never sent twice.
 
