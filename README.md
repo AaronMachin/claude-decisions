@@ -2,7 +2,7 @@
 
 <!-- GIF: the list filling as Claude adds decisions (docs/gif-shot-list.md, shot 1) -->
 
-A Claude Code mod that moves Claude's questions and decisions out of the chat and into a pane beside it. Each decision has a plain title, a concrete scenario, numbered options with what each changes, Claude's recommendation and a discussion of its own. You answer by number or in your own words, then send the answers back to Claude when you're ready.
+A Claude Code mod that moves Claude's questions and decisions out of the chat and into a pane beside it. Each decision has a plain title, a concrete scenario, numbered options with what each changes and its pros and cons, Claude's recommendation and a discussion of its own. You answer by number or in your own words, then send the answers back to Claude when you're ready.
 
 ## Install
 
@@ -73,7 +73,7 @@ What the numbers mean depends on the kind of decision. Every kind ends with one 
 
 A decision's header has its kind, the whole title and, under it in bold, one line on the problem it's about. Claude writes that line when it adds the decision; when it doesn't, a small model writes it shortly after and the line starts `◇`. Under the header are the id, the group, how long ago it was asked, and what the decision waits on and holds up.
 
-On a tall pane a decision shows everything: the whole scenario, every option's text with the case for (`+`) and against (`−`) when Claude gave them, and the reason for the recommendation. Nothing is cut: when it's taller than the pane, the pane scrolls. Once a decision is sent, its answer shows when it went (`↗ sent 12:04`) and the first line of what Claude did next.
+On a tall pane a decision shows everything: the whole scenario, every option's text with its pros (`+`, one line each) and cons (`−`), a dim `Not picked: ...` line under each option Claude didn't recommend saying why, and the reason for the recommendation. The `Not picked` line never shows under the option recommended now, so it goes when a discussion moves the recommendation there. Nothing is cut: when it's taller than the pane, the pane scrolls. Once a decision is sent, its answer shows when it went (`↗ sent 12:04`) and the first line of what Claude did next.
 
 Under the options, "Talk it through with Claude" shows the newest reply (the newest unread one if there is one) and a box to ask. Type a question and press `enter`. With the default setting (see Settings), a small model answers first when the decision and its discussion already hold the answer, such as what an option means. Its answer shows as `quick answer`, lighter than Claude's, and `r` asks the main session the same question instead. Anything else goes to the main session, and `✻ Claude is replying…` shows until the reply lands. Messages only discuss: to answer, pick an option or type in Something else. If Claude's reply changes the decision (a new option, a different recommendation), the new option is marked `↻ new` for two minutes, and on the thread screen (`o`) a `↻` line shows what changed and opens the earlier version. While a question is waiting for the main session, `f` on the thread screen sends it to the fork instead.
 
@@ -135,7 +135,7 @@ Focus key only changes what the pane and the line above the prompt tell you to p
 
 | Tool | What Claude uses it for |
 | --- | --- |
-| `decisions_add` | Adds a decision: the title, a scenario, options with what each changes, a recommendation with its reason, sources, and optionally a one-line problem |
+| `decisions_add` | Adds a decision: the title, a scenario, options with what each changes, their pros and cons and why each one not recommended wasn't, a recommendation with its reason, sources, and optionally a one-line problem |
 | `decisions_update` | Revises a decision after a discussion: adds options, moves the recommendation, changes what it waits on or holds up, its section or its problem line. The earlier version is kept |
 | `decisions_list` | Reads what's open, parked and recently answered, at the start of a conversation and after compaction or `/clear` |
 | `decisions_answer` | Records an answer you gave in the chat, with your message quoted, and marks it sent so it never goes twice |
