@@ -24,13 +24,29 @@ function block(d: Decision): string {
     `Chosen: ${chosen ? `${chosen.id}. ${chosen.label}` : chosenText(d.answer?.text)}`,
     `Condition: ${d.answer?.condition ?? 'none'}`,
   ]
-  if (d.thread.length === 0) {
-    lines.push('Discussion: none')
-  } else {
-    lines.push('Discussion:', ...d.thread.map(entry => `  ${entry.who}: ${entry.text}`))
-  }
+  lines.push(...discussionLines(d))
 
   return lines.join('\n')
+}
+
+/**
+ * The discussion as the answers prompt carries it (decision 304). The main session already saw the questions handed
+ * to it, its own replies and its own ↻ lines, so those are left out and counted in one line; whatever it never saw
+ * (the small model's or a fork's replies, questions only they answered, entries from before this was recorded) is
+ * written out in full, in order.
+ */
+export function discussionLines(d: Pick<Decision, 'thread'>): string[] {
+  if (d.thread.length === 0) {
+    return ['Discussion: none']
+  }
+  const seen = d.thread.filter(e => e.seenByMain === true).length
+  const unseen = d.thread.filter(e => e.seenByMain !== true).map(entry => `  ${entry.who}: ${entry.text}`)
+  if (seen === 0) {
+    return ['Discussion:', ...unseen]
+  }
+  const note = `Discussion: you discussed this with the person earlier (${seen} ${seen === 1 ? 'message' : 'messages'}), not repeated here.`
+
+  return unseen.length === 0 ? [note] : [note, 'Not seen by you:', ...unseen]
 }
 
 /** One decision's block as the prompt carries it, line by line, for the preview before sending it alone (decision 221). */

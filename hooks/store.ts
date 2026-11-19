@@ -42,6 +42,12 @@ export type ThreadEntry = {
   revision?: number
   /** On a `quick` reply: the small model answered it under `auto` (question triage), so the pane offers the main session instead. */
   via?: 'triage'
+  /**
+   * The main session saw this entry: a question handed to it, its own reply, a ↻ line from its decisions_update, its
+   * receipt. The answers prompt leaves these out and says a discussion took place (decision 304). Entries written
+   * before this existed have none, so they count as unseen and are still sent.
+   */
+  seenByMain?: true
 }
 
 export type Revision = {

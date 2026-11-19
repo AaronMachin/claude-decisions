@@ -29,7 +29,7 @@ recommendation (required for a choice): { option, reason }. option is the NUMBER
 sources, dependsOn (ids such as "d2" that must be answered first) and blocks (in words, what cannot go on until this is answered) are optional.
 
 WHAT COMES BACK
-Answers do not come back through this tool: they arrive later as a prompt that carries each decision's id, the chosen option, any condition and the outcome of any discussion. Treat a condition as part of the answer; never assume an answer you were not given.
+Answers do not come back through this tool: they arrive later as a prompt that carries each decision's id, the chosen option, any condition and any discussion you didn't see. Treat a condition as part of the answer; never assume an answer you were not given.
 
 REFUSALS
 A decision is refused, with the reason, when a field is missing or blank, an option or recommendation is wrong for the kind, or dependsOn names an unknown id. Fix the field and call again; do not ask in chat instead.
@@ -432,7 +432,7 @@ export async function updateDecision(
     ...(input.blocks !== undefined ? (isBlank(input.blocks) ? { blocks: undefined } : { blocks: String(input.blocks).trim() }) : {}),
     ...(input.section !== undefined ? { section: input.section } : {}),
     revisions: [...d.revisions, { at, summary, before }],
-    thread: [...d.thread, { who: 'claude', text: `↻ ${summary}`, at, revision: d.revisions.length }],
+    thread: [...d.thread, { who: 'claude', text: `↻ ${summary}`, at, revision: d.revisions.length, seenByMain: true }],
   }
   await write($, next)
   onUpdated?.(next)
@@ -484,7 +484,7 @@ export async function answerDecision($: StoreCtx, input: Record<string, any>): P
     state: 'sent',
     sentAt: at,
     answer,
-    thread: [...d.thread, { who: 'person', text: `Answered in chat: ${String(input.quote).trim()}`, at }],
+    thread: [...d.thread, { who: 'person', text: `Answered in chat: ${String(input.quote).trim()}`, at, seenByMain: true }],
   }
   await write($, next)
   const changed = previous !== undefined && (previous.option !== answer.option || previous.text !== answer.text || previous.condition !== condition)
