@@ -23,6 +23,7 @@ import {
   parkDecision,
   pressDigit,
   pressOption,
+  ringBackLater,
   cancelHeldDigit,
   setView,
   unparkDecision,
@@ -1729,4 +1730,41 @@ test('the focusable keys above the ask box are the same before and after the rin
   expect(await keysInOrder(ui)).toEqual(before)
   expect((await ui.findAll({ type: 'Input' })).map((i: any) => String(i.props.key))).toEqual(inputsBefore)
   await ui.unmount()
+})
+
+test('the ring is put back on the stop the view has it on when the put-back fires, not when it was asked for (row 306)', async () => {
+  const values = new Map<string, { value: unknown; version: number }>()
+  const fires: (() => void)[] = []
+  const focused: string[] = []
+  const $ = {
+    state: {
+      get: async (ref: { key: string }) => values.get(ref.key) ?? { value: undefined, version: 0 },
+      set: async (ref: { key: string }, value: unknown) => {
+        const version = (values.get(ref.key)?.version ?? 0) + 1
+        values.set(ref.key, { value, version })
+        return { isSet: true, version }
+      },
+    },
+    clock: { after: (_ms: number, fn: () => void) => void fires.push(fn) },
+    ui: { focus: async (args: { key: string }) => (focused.push(args.key), {}) },
+  }
+  const settle = async () => {
+    for (let i = 0; i < 20; i++) {
+      await Promise.resolve()
+    }
+  }
+  const stops = ['opt:1', 'opt:2', 'opt:3', 'ask-inline:d1']
+  // `r` left the key line while the ring was on 3; `a` then moved the view's ring to 2 before the put-back fired.
+  await setView($, v => ({ ...v, ring: 'opt:3' }))
+  ringBackLater($, stops)
+  await setView($, v => ({ ...v, ring: 'opt:2' }))
+  fires.shift()!()
+  await settle()
+  expect(focused).toEqual(['opt:2'])
+  // A ring off the stops (a box being answered in, a key on the key line) is left where it is.
+  await setView($, v => ({ ...v, ring: 'answer:d1' }))
+  ringBackLater($, stops)
+  fires.shift()!()
+  await settle()
+  expect(focused).toEqual(['opt:2'])
 })

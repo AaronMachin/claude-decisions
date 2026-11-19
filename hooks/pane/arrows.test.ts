@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { arrowTarget, focusMove } from './arrows'
+import { arrowTarget, focusMove, keysAboveChanged } from './arrows'
 
 const person = { origin: { kind: 'person' }, by: 1 }
 const view = { screen: 'decision', ring: 'opt:2', highlight: 2 } as any
@@ -53,4 +53,17 @@ test('an arrow on a list taller than the pane moves the ring down the rows, not 
 
 test('on the list, a ring that is not on a row lets the window scroll instead of jumping to the top', () => {
   expect(arrowTarget(person as any, { ...list, ring: 'h' }, ROWS)).toBeUndefined()
+})
+
+test('the keys above the options count as changed only when one comes or goes on the same decision (row 306)', () => {
+  const before = ['a', 'c', 't', 'o', 'r', 'm', 'b', 'p', 'h']
+  keysAboveChanged('d1', before)
+  expect(keysAboveChanged('d1', before)).toBe(false)
+  // Claude replied, so `r` went.
+  expect(keysAboveChanged('d1', ['a', 'c', 't', 'o', 'm', 'b', 'p', 'h'])).toBe(true)
+  // The ring went to Something else, so `c` went.
+  expect(keysAboveChanged('d1', ['a', 't', 'o', 'm', 'b', 'p', 'h'])).toBe(true)
+  expect(keysAboveChanged('d1', ['a', 't', 'o', 'm', 'b', 'p', 'h'])).toBe(false)
+  // Opening another decision is a fresh screen, not a change.
+  expect(keysAboveChanged('d2', before)).toBe(false)
 })

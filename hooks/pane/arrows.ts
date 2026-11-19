@@ -74,3 +74,20 @@ export function noteStops(stops: string[], isScrolling: boolean, screen: Drawn['
 export function drawnStops(): Drawn {
   return drawn
 }
+
+let above: { decision: string; keys: string[] } | undefined
+
+/**
+ * Claude Code puts the ring back after a draw by its place among the focusable elements, not by its key (row 285). The key
+ * line sits above the options and its keys come and go: `r` once a quick answer lands and goes once Claude replies, `c`
+ * only while an option is highlighted. Each time one did, the ring moved one element along while the `›` stayed put, so
+ * `enter` pressed the option beside the one marked, or typed into the ask box, and `a` seemed to do nothing (row 306).
+ * Noted on every draw of a decision (module memory, never state): whether the keys above the options changed since the
+ * last draw of the same decision, so the ring needs putting back.
+ */
+export function keysAboveChanged(decision: string, keys: string[]): boolean {
+  const before = above
+  above = { decision, keys }
+
+  return before !== undefined && before.decision === decision && before.keys.join('\n') !== keys.join('\n')
+}
