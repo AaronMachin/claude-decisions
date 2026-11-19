@@ -1,4 +1,5 @@
-import type { Decision, Option, ThreadEntry } from './store'
+import { caseLines } from './option-cases'
+import type { Decision, ThreadEntry } from './store'
 
 /** What the small model is told about the session, from the session record when there is one. */
 export type SessionSummary = { title?: string; summary?: string; now?: string }
@@ -13,7 +14,7 @@ export const TRIAGE_TIMEOUT_MS = 20000
 
 const SPEAKER: Record<ThreadEntry['who'], string> = { person: 'you', claude: 'claude', fork: 'claude', quick: 'quick model', receipt: 'claude' }
 
-/** The decision as plain lines: title, problem, scenario, options with what each changes, recommendation, sources. */
+/** The decision as plain lines: title, problem, scenario, options with what each changes and its case, recommendation, sources. */
 export function decisionText(d: Decision): string {
   const lines = [`Decision ${d.number}: ${d.title}`]
   if (d.problem) {
@@ -22,14 +23,8 @@ export function decisionText(d: Decision): string {
   lines.push(`Scenario: ${d.scenario}`)
   if (d.options.length > 0) {
     lines.push('Options:')
-    for (const o of d.options as (Option & { why?: string; whyNot?: string })[]) {
-      lines.push(`${o.id}. ${o.label}${o.changes ? `: ${o.changes}` : ''}`)
-      if (o.why) {
-        lines.push(`   why: ${o.why}`)
-      }
-      if (o.whyNot) {
-        lines.push(`   why not: ${o.whyNot}`)
-      }
+    for (const o of d.options) {
+      lines.push(`${o.id}. ${o.label}${o.changes ? `: ${o.changes}` : ''}`, ...caseLines(d, o, '   '))
     }
   }
   if (d.recommendation) {

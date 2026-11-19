@@ -24,8 +24,8 @@ group (always give one): the piece of work, such as "Sharing links" or "Search r
 kind (required): choice, go-ahead, assumption, finding or question. Only choice takes options; a question has none and the person types its answer in the pane's Something else row. section (optional): needs-you (default), claudes-call or already-decided.
 title (required): a short plain sentence for someone who has not read the conversation, such as "Where the config file lives". No ticket shorthand, no abbreviations you invented, no function or class names as the headline. A finding's title starts with the area it is about, such as "Image uploads: one user can use another's quota".
 scenario (required): a concrete example of what happens today, for someone who was not in the conversation. Not "the lookup could be slow" but "run from a subfolder, it takes eight seconds walking up to the root".
-options (choice only, 1 to 12): each is { label, changes }. label is a few words. changes says what it would take and what changes for the person or the work if chosen. They are numbered by position, 1 first.
-recommendation (required for a choice): { option, reason }. option is the NUMBER of the option you would pick (1 for the first), and reason is why, in a sentence. Always give one, even when it is close.
+options (choice only, 1 to 12): each is { label, changes, pros, cons, notChosen }. label: a few words. changes: what it would take and what changes if chosen. Give every option pros and cons, and each one you don't recommend notChosen (why not), in short phrases, not paragraphs. Numbered from 1.
+recommendation (required for a choice): { option, reason }. option is the NUMBER of the option you would pick, and reason is why, in a sentence. Always give one, even when it is close.
 sources, dependsOn (ids such as "d2" that must be answered first) and blocks (in words, what cannot go on until this is answered) are optional.
 
 WHAT COMES BACK
@@ -35,10 +35,22 @@ REFUSALS
 A decision is refused, with the reason, when a field is missing or blank, an option or recommendation is wrong for the kind, or dependsOn names an unknown id. Fix the field and call again; do not ask in chat instead.
 
 EXAMPLE
-group "Config file plan", kind "choice", title "Where the config file lives", scenario "You run the tool from packages/api and it needs its settings: one file at the root, or a copy in each package.", options [{ label "Project root", changes "one file, found by walking up, shared by every package" }, { label "Per package", changes "a file in each package, so settings can differ" }], recommendation { option 1, reason "every other tool in this repository already reads from the root" }.`
+group "Config file plan", kind "choice", title "Where the config file lives", scenario "It runs from packages/api and needs settings.", options [{ label "Project root", changes "one file at the root", pros ["one place to look"] }, { label "Per package", changes "a file in each package", cons ["copies drift"], notChosen "no package needs its own" }], recommendation { option 1, reason "other tools read from the root" }.`
 
 export const LIST_DESCRIPTION =
   'Lists the decisions in the decisions pane that are still open, answered but not yet sent, or parked. Call it at the start of a conversation and after /clear or compaction, and before adding a decision, so you never ask again what is already there. Answered and sent decisions are left out.'
+
+/** An option's fields, the same on decisions_add and on decisions_update's addOptions. why and whyNot are still taken from older callers. */
+const OPTION_PROPERTIES = {
+  label: { type: 'string' },
+  changes: { type: 'string', description: 'What it would take and what changes if chosen.' },
+  pros: { type: 'array', items: { type: 'string' }, description: 'The case for it: short phrases, one item each. Strongly recommended on every option.' },
+  cons: { type: 'array', items: { type: 'string' }, description: 'The case against it: short phrases, one item each. Strongly recommended on every option.' },
+  notChosen: {
+    type: 'string',
+    description: "Why you didn't recommend it, in a sentence. Strongly recommended on every option but the recommended one, where it is refused.",
+  },
+}
 
 export const ADD_INPUT_SCHEMA = {
   type: 'object',
@@ -68,15 +80,11 @@ export const ADD_INPUT_SCHEMA = {
       type: 'array',
       minItems: 1,
       maxItems: 12,
-      description: 'Required for choice only; refused for every other kind. Each may add why and whyNot, a sentence for and against it.',
+      description:
+        "Required for choice only; refused for every other kind. Give every option its pros and cons, and every option you don't recommend its notChosen, each as a sentence or short phrases, not paragraphs.",
       items: {
         type: 'object',
-        properties: {
-          label: { type: 'string' },
-          changes: { type: 'string', description: 'What it would take and what changes if chosen.' },
-          why: { type: 'string', description: 'Optional: the case for it.' },
-          whyNot: { type: 'string', description: 'Optional: the case against it.' },
-        },
+        properties: OPTION_PROPERTIES,
         required: ['label'],
       },
     },
@@ -110,7 +118,7 @@ The person sometimes asks about a decision from the pane. Their message then sta
 THE FIELDS
 id (required): the decision, such as "d3".
 summary (required): one plain line for the thread, such as "Added option 3, Per workspace" or "Recommendation moved to 2".
-addOptions (optional): [{ label, changes }] appended after the existing options, so they take the next numbers. A decision has 12 options at most.
+addOptions (optional): [{ label, changes, pros, cons, notChosen }] appended after the existing options, so they take the next numbers. Give each its pros and cons, and notChosen unless this call recommends it, as for decisions_add. A decision has 12 options at most.
 recommendation (optional): { option, reason }. option is the option's NUMBER, counting any you add in this call.
 Give at least one of addOptions, recommendation, dependsOn, blocks, section (a decision moved to another section, for example into needs-you) and problem.
 
@@ -127,7 +135,7 @@ export const UPDATE_INPUT_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        properties: { label: { type: 'string' }, changes: { type: 'string' }, why: { type: 'string' }, whyNot: { type: 'string' } },
+        properties: OPTION_PROPERTIES,
         required: ['label'],
       },
     },
@@ -167,24 +175,51 @@ function isBlank(value: unknown): boolean {
   return typeof value !== 'string' || value.trim() === ''
 }
 
-/** The refusal for an option whose why or whyNot is not a string, or undefined. */
-function caseRefusal(tool: string, options: any[], firstNumber: number): string | undefined {
+/**
+ * The refusal for an option whose case is the wrong shape, or undefined. pros and cons are a list of phrases or one
+ * string; why, whyNot and notChosen are a sentence. `recommended` is the option the call recommends, which can't
+ * also say why it wasn't picked.
+ */
+function caseRefusal(tool: string, options: any[], firstNumber: number, recommended?: number): string | undefined {
   for (const [index, option] of options.entries()) {
-    for (const field of ['why', 'whyNot']) {
-      if (option?.[field] !== undefined && typeof option[field] !== 'string') {
-        return `${tool} refused: option ${firstNumber + index} ${field} must be a sentence (a string), or left out.`
+    const number = firstNumber + index
+    for (const field of ['pros', 'cons']) {
+      const value = option?.[field]
+      if (value === undefined || typeof value === 'string') {
+        continue
       }
+      if (!Array.isArray(value) || value.some((item: unknown) => typeof item !== 'string')) {
+        return `${tool} refused: option ${number} ${field} must be a list of short phrases (strings), or left out.`
+      }
+    }
+    for (const field of ['why', 'whyNot', 'notChosen']) {
+      if (option?.[field] !== undefined && typeof option[field] !== 'string') {
+        return `${tool} refused: option ${number} ${field} must be a sentence (a string), or left out.`
+      }
+    }
+    if (number === recommended && !isBlank(option?.notChosen)) {
+      return `${tool} refused: option ${number} is the recommended one, so it has no notChosen. Leave it out, or give it to the options you didn't recommend.`
     }
   }
 
   return undefined
 }
 
-/** An option's why and whyNot, trimmed, the empty ones dropped. */
-function cases(option: any): { why?: string; whyNot?: string } {
+function phrases(value: unknown): string[] {
+  const list = typeof value === 'string' ? [value] : Array.isArray(value) ? value : []
+
+  return list.filter((item): item is string => typeof item === 'string' && item.trim() !== '').map(item => item.trim())
+}
+
+/** An option's pros, cons and notChosen, trimmed, the empty ones dropped. An older caller's why is a pro, whyNot a con. */
+function cases(option: any): { pros?: string[]; cons?: string[]; notChosen?: string } {
+  const pros = [...phrases(option?.why), ...phrases(option?.pros)]
+  const cons = [...phrases(option?.whyNot), ...phrases(option?.cons)]
+
   return {
-    ...(isBlank(option?.why) ? {} : { why: String(option.why).trim() }),
-    ...(isBlank(option?.whyNot) ? {} : { whyNot: String(option.whyNot).trim() }),
+    ...(pros.length > 0 ? { pros } : {}),
+    ...(cons.length > 0 ? { cons } : {}),
+    ...(isBlank(option?.notChosen) ? {} : { notChosen: String(option.notChosen).trim() }),
   }
 }
 
@@ -246,7 +281,7 @@ export function validateAdd(input: Record<string, any>, existingIds: string[]): 
         return `decisions_add refused: option ${index + 1} has no label.`
       }
     }
-    const badCase = caseRefusal('decisions_add', options, 1)
+    const badCase = caseRefusal('decisions_add', options, 1, input.recommendation?.option)
     if (badCase !== undefined) {
       return badCase
     }
@@ -344,7 +379,7 @@ export function validateUpdate(input: Record<string, any>, d: Decision | undefin
       return `decisions_update refused: option ${d.options.length + index + 1} has no label.`
     }
   }
-  const badCase = caseRefusal('decisions_update', added, d.options.length + 1)
+  const badCase = caseRefusal('decisions_update', added, d.options.length + 1, input.recommendation?.option)
   if (badCase !== undefined) {
     return badCase
   }

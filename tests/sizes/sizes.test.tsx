@@ -152,9 +152,9 @@ async function problemsAtEverySize(ui: any, screen: string, check: Check = {}): 
 }
 
 /**
- * Kinds the seeded session doesn't have, a decision with a long unbroken word in its title and a
- * label that needs wrapping, and one written in Chinese, Japanese and emoji, which take two columns
- * a character.
+ * Kinds the seeded session doesn't have, a decision with a long unbroken word in its title, a
+ * label that needs wrapping and options with long pros, cons and a reason it wasn't picked, and one
+ * written in Chinese, Japanese and emoji, which take two columns a character.
  */
 const EXTRA: Record<string, any>[] = [
   { group: 'Release', kind: 'go-ahead', title: 'Push the release branch and tag it', scenario: 'The branch is ready and the checks pass.' },
@@ -166,8 +166,19 @@ const EXTRA: Record<string, any>[] = [
     title: 'How long a shared link lasts, with an unbroken word: supercalifragilisticexpialidocious-recipe-sharing-link',
     scenario: 'A cook shares a recipe with a friend, who opens it on a phone a week later.',
     options: [
-      { label: 'A week', changes: 'Links stop working after seven days' },
-      { label: 'Never expires, and a label long enough to need wrapping on any pane narrower than a hundred columns', changes: 'Links live for ever' },
+      {
+        label: 'A week',
+        changes: 'Links stop working after seven days',
+        pros: ['a leaked link stops working on its own', 'nothing to clean up'],
+        cons: ['a friend who opens it late gets an error, and has to ask the cook to share the recipe all over again'],
+      },
+      {
+        label: 'Never expires, and a label long enough to need wrapping on any pane narrower than a hundred columns',
+        changes: 'Links live for ever',
+        pros: ['always works'],
+        cons: ['a leaked link works for ever', 'no way to take one back'],
+        notChosen: 'a link that never stops working is a bigger risk than a friend asking again, and the cook can always share it a second time',
+      },
     ],
     recommendation: { option: 1, reason: 'Shorter is safer' },
   },
@@ -178,8 +189,14 @@ const EXTRA: Record<string, any>[] = [
     problem: '共有されたレシピ 🍲 が一週間後に開けない',
     scenario: '料理人が友人にレシピを共有し 📱 a friend opens it on a phone a week later. 一週間後に開く。',
     options: [
-      { label: '一週間 🗓️ a week', changes: '七日後にリンクが切れる, links stop after seven days' },
-      { label: '期限なし ♾️ never expires, 食谱链接永久有效 and a label long enough to wrap 🍜', changes: 'リンクは永久に有効' },
+      { label: '一週間 🗓️ a week', changes: '七日後にリンクが切れる, links stop after seven days', pros: ['漏れたリンクも自然に切れる 🔒'], cons: ['遅れて開いた友人はエラーになる 😢'] },
+      {
+        label: '期限なし ♾️ never expires, 食谱链接永久有效 and a label long enough to wrap 🍜',
+        changes: 'リンクは永久に有効',
+        pros: ['いつでも開ける ✅'],
+        cons: ['漏れたリンクが永久に使える', '取り消せない 🚫'],
+        notChosen: '永久に有効なリンクは危険が大きい 🔓, a friend can always ask again',
+      },
     ],
     recommendation: { option: 1, reason: '短い方が安全 🔒' },
   },

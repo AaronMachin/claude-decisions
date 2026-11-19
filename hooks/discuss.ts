@@ -6,6 +6,7 @@ import { readAll, readOne, write } from './store'
 import type { Decision, StoreCtx, ThreadEntry } from './store'
 import { triage } from './triage'
 import type { SessionSummary } from './triage'
+import { caseLines } from './option-cases'
 
 /** Appends the person's question to the thread and moves an open decision to live. Undefined when the decision is missing. */
 export async function recordQuestion(store: StoreCtx, id: string, text: string): Promise<{ asked: string } | undefined> {
@@ -75,9 +76,9 @@ export type ModelCtx = {
   }
 }
 
-/** The decision as the fork or quick model is given it: title, scenario, numbered options, recommendation. */
+/** The decision as the fork or quick model is given it: title, scenario, numbered options with their case, recommendation. */
 export function contextFor(d: Decision): string {
-  const options = d.options.map(o => `${o.id}. ${o.label}${o.changes ? ` (${o.changes})` : ''}`)
+  const options = d.options.flatMap(o => [`${o.id}. ${o.label}${o.changes ? ` (${o.changes})` : ''}`, ...caseLines(d, o, '   ')])
   const lines = [`Decision ${d.number}: ${d.title}`, `Today: ${d.scenario}`, 'Options:', ...options]
   if (d.recommendation) {
     lines.push(`Recommended: ${d.recommendation.option}, because ${d.recommendation.reason}`)

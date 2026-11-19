@@ -1469,6 +1469,55 @@ test('why and why not draw under an option in full detail, in success and warnin
   await ui.unmount()
 })
 
+const WITH_CASE = {
+  ...CHOICE,
+  options: [
+    { label: 'In the chat', changes: 'the comments stay here', pros: ['nothing to set up', 'quick'], cons: ['nobody else sees them'], notChosen: 'the author never reads the chat' },
+    { label: 'As PR comments', changes: 'each finding sits on its line', pros: ['beside the code'], cons: ['needs the PR open', 'noisy on big PRs'] },
+  ],
+}
+
+test('every pro and con gets its own line, and an option not recommended says why it was not picked, dim', async ($, on) => {
+  await begin($, on, WITH_CASE)
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const spans = (await ui.findAll({ type: 'Text' })) as any[]
+  for (const line of ['+ nothing to set up', '+ quick', '+ beside the code']) {
+    expect(spans.find(t => t.text === line)?.props.color).toBe('success')
+  }
+  for (const line of ['− nobody else sees them', '− needs the PR open', '− noisy on big PRs']) {
+    expect(spans.find(t => t.text === line)?.props.color).toBe('warning')
+  }
+  const notPicked = spans.find(t => t.text === 'Not picked: the author never reads the chat')
+  expect(notPicked?.props.dimColor).toBe(true)
+  expect(notPicked?.props.color).toBeUndefined()
+  const text = await allTexts(ui)
+  expect(text.indexOf('− nobody else sees them')).toBeLessThan(text.indexOf('Not picked:'))
+  expect(text.indexOf('Not picked:')).toBeLessThan(text.indexOf('2: As PR comments') === -1 ? text.indexOf('As PR comments') : text.indexOf('2: As PR comments'))
+  await ui.unmount()
+})
+
+test('Not picked is never drawn under the option recommended now, after an update moves the recommendation', async ($, on) => {
+  const seen = await begin($, on, WITH_CASE)
+  edit(seen, 'd1', d => ({ ...d, recommendation: { option: 1, reason: 'the chat is enough after all' } }))
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  expect(await allTexts(ui)).not.toContain('Not picked')
+  expect(await allTexts(ui)).toContain('+ nothing to set up')
+  await ui.unmount()
+})
+
+test('a stored decision written with why and whyNot still draws them as a pro and a con', async ($, on) => {
+  const seen = await begin($, on)
+  edit(seen, 'd1', d => ({ ...d, options: [{ ...d.options[0], why: 'nothing to set up', whyNot: 'nobody else sees them' }, d.options[1]] }))
+  const ui = await mountHolding($, rowsOf(40))
+  await ui.press({ key: 'row:d1' })
+  const text = await allTexts(ui)
+  expect(text).toContain('+ nothing to set up')
+  expect(text).toContain('− nobody else sees them')
+  await ui.unmount()
+})
+
 test('an option without why or why not draws neither', async ($, on) => {
   await begin($, on)
   const ui = await mountHolding($, rowsOf(40))

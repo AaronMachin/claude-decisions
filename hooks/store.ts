@@ -10,9 +10,15 @@ export type Option = {
   label: string
   /** What it would take and what changes if chosen. */
   changes?: string
-  /** The case for it, drawn `+ …` under its changes (row 260). */
+  /** The case for it, short phrases, each drawn `+ …` under its changes (decision 303). */
+  pros?: string[]
+  /** The case against it, each drawn `− …` under its changes. */
+  cons?: string[]
+  /** On an option other than the recommended one: why Claude didn't recommend it, drawn `Not picked: …`. */
+  notChosen?: string
+  /** Older decisions: one sentence for it, read as a pro (row 260). New ones are written with `pros`. */
   why?: string
-  /** The case against it, drawn `− …` under its changes. */
+  /** Older decisions: one sentence against it, read as a con. */
   whyNot?: string
   fromDiscussion?: boolean
 }

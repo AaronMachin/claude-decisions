@@ -413,3 +413,30 @@ test('a receipt is the first non-empty line, cut at 200 characters', async () =>
   await recordReceipt(store, ['d1'], `\n   \n${'x'.repeat(250)}\nmore`)
   expect((await readOne(store, 'd1'))!.thread.at(-1)!.text).toHaveLength(200)
 })
+
+test('the fork and the quick model are given each option with its pros, cons and why it was not picked', () => {
+  const d = {
+    number: 4,
+    title: 'Where the config file lives',
+    scenario: 'It runs from packages/api.',
+    options: [
+      { id: 1, label: 'Project root', changes: 'one file', pros: ['one place to look'], cons: ['same settings everywhere'] },
+      { id: 2, label: 'Per package', why: 'settings can differ', notChosen: 'no package needs its own' },
+    ],
+    recommendation: { option: 1, reason: 'other tools read from the root' },
+  } as unknown as Decision
+  expect(contextFor(d)).toBe(
+    [
+      'Decision 4: Where the config file lives',
+      'Today: It runs from packages/api.',
+      'Options:',
+      '1. Project root (one file)',
+      '   + one place to look',
+      '   - same settings everywhere',
+      '2. Per package',
+      '   + settings can differ',
+      '   not picked: no package needs its own',
+      'Recommended: 1, because other tools read from the root',
+    ].join('\n'),
+  )
+})

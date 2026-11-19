@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { RULE_PHRASES } from './integrate'
 import { create, readAll, write } from './store'
 import type { StoreCtx } from './store'
-import { ADD_DESCRIPTION, ADD_INPUT_SCHEMA, ADD_TOOL, ANSWER_DESCRIPTION, ANSWER_TOOL, LIST_TOOL, UPDATE_DESCRIPTION, addDecision, answerDecision, listDecisions, registerTools, updateDecision, validateAdd, validateUpdate } from './tool'
+import { ADD_DESCRIPTION, ADD_INPUT_SCHEMA, ADD_TOOL, ANSWER_DESCRIPTION, ANSWER_TOOL, LIST_TOOL, UPDATE_DESCRIPTION, UPDATE_INPUT_SCHEMA, addDecision, answerDecision, listDecisions, registerTools, updateDecision, validateAdd, validateUpdate } from './tool'
 
 function fake(): StoreCtx {
   const files = new Map<string, string>()
@@ -346,30 +346,70 @@ test('the tool text says a question is answered in the pane, in its Something el
   expect(ADD_DESCRIPTION.slice(0, 4096)).toContain("Something else row")
 })
 
-test('an option may carry why and why not: stored trimmed, empty ones dropped, on add and on update', async () => {
+test('an option carries pros, cons and notChosen: stored trimmed, empty ones dropped, on add and on update', async () => {
   const $ = fake()
   const options = [
-    { label: 'Project root', changes: 'one file', why: '  every tool reads it  ', whyNot: 'a monorepo wants one per package' },
-    { label: 'Per package', why: '', whyNot: '   ' },
+    { label: 'Project root', changes: 'one file', pros: ['  every tool reads it  ', ''], cons: ['a monorepo wants one per package'] },
+    { label: 'Per package', pros: [], cons: '  a copy to keep in step  ', notChosen: '  nothing needs settings that differ ' },
   ]
-  expect(await addDecision($, { ...GOOD, options })).toHaveProperty('result')
+  expect(await addDecision($, { ...GOOD, options, recommendation: { option: 1, reason: 'one place' } })).toHaveProperty('result')
   const [d] = (await readAll($)).decisions
-  expect(d!.options[0]).toMatchObject({ why: 'every tool reads it', whyNot: 'a monorepo wants one per package' })
-  expect(d!.options[1]).not.toHaveProperty('why')
-  expect(d!.options[1]).not.toHaveProperty('whyNot')
-  await updateDecision($, { id: 'd1', summary: 'Added option 3, Both', addOptions: [{ label: 'Both', why: 'no move needed', whyNot: 'two places to look' }] })
-  expect((await readAll($)).decisions[0]!.options[2]).toMatchObject({ why: 'no move needed', whyNot: 'two places to look' })
+  expect(d!.options[0]).toMatchObject({ pros: ['every tool reads it'], cons: ['a monorepo wants one per package'] })
+  expect(d!.options[0]).not.toHaveProperty('notChosen')
+  expect(d!.options[1]).toMatchObject({ cons: ['a copy to keep in step'], notChosen: 'nothing needs settings that differ' })
+  expect(d!.options[1]).not.toHaveProperty('pros')
+  await updateDecision($, { id: 'd1', summary: 'Added option 3, Both', addOptions: [{ label: 'Both', pros: 'no move needed', cons: ['two places to look'], notChosen: 'more to explain' }] })
+  expect((await readAll($)).decisions[0]!.options[2]).toMatchObject({ pros: ['no move needed'], cons: ['two places to look'], notChosen: 'more to explain' })
 })
 
-test('why and why not must be strings', async () => {
+test('an older caller\'s why and whyNot are kept as a pro and a con', async () => {
   const $ = fake()
+  const options = [
+    { label: 'Project root', why: '  every tool reads it  ', whyNot: 'a monorepo wants one per package', pros: ['one place to look'] },
+    { label: 'Per package', why: '', whyNot: '   ' },
+  ]
+  expect(await addDecision($, { ...GOOD, options, recommendation: { option: 1, reason: 'one place' } })).toHaveProperty('result')
+  const [d] = (await readAll($)).decisions
+  expect(d!.options[0]).toMatchObject({ pros: ['every tool reads it', 'one place to look'], cons: ['a monorepo wants one per package'] })
+  expect(d!.options[0]).not.toHaveProperty('why')
+  expect(d!.options[1]).not.toHaveProperty('pros')
+  expect(d!.options[1]).not.toHaveProperty('cons')
+  await updateDecision($, { id: 'd1', summary: 'Added option 3, Both', addOptions: [{ label: 'Both', why: 'no move needed', whyNot: 'two places to look' }] })
+  expect((await readAll($)).decisions[0]!.options[2]).toMatchObject({ pros: ['no move needed'], cons: ['two places to look'] })
+})
+
+test('pros and cons must be strings, why, whyNot and notChosen a sentence', async () => {
+  const $ = fake()
+  expect(validateAdd({ ...GOOD, options: [{ label: 'A', pros: ['fine', 3] }] }, [])).toMatch(/option 1 pros must be a list of short phrases/)
+  expect(validateAdd({ ...GOOD, options: [{ label: 'A', cons: { a: 1 } }] }, [])).toMatch(/option 1 cons/)
   expect(validateAdd({ ...GOOD, options: [{ label: 'A', why: 3 }] }, [])).toMatch(/why/)
   expect(validateAdd({ ...GOOD, options: [{ label: 'A', whyNot: ['x'] }] }, [])).toMatch(/whyNot/)
+  expect(validateAdd({ ...GOOD, options: [{ label: 'A', notChosen: ['x'] }] }, [])).toMatch(/notChosen/)
   await addDecision($, GOOD)
   expect(await updateDecision($, { id: 'd1', summary: 's', addOptions: [{ label: 'B', why: true }] })).toHaveProperty('deny')
-  const schema = (ADD_INPUT_SCHEMA.properties.options.items as any).properties
-  expect(schema.why.type).toBe('string')
-  expect(schema.whyNot.type).toBe('string')
+  expect(await updateDecision($, { id: 'd1', summary: 's', addOptions: [{ label: 'B', pros: [null] }] })).toHaveProperty('deny')
+  for (const schema of [(ADD_INPUT_SCHEMA.properties.options.items as any).properties, (UPDATE_INPUT_SCHEMA.properties.addOptions.items as any).properties]) {
+    expect(schema.pros).toMatchObject({ type: 'array', items: { type: 'string' } })
+    expect(schema.cons).toMatchObject({ type: 'array', items: { type: 'string' } })
+    expect(schema.notChosen.type).toBe('string')
+  }
+})
+
+test('the recommended option has no notChosen: refused at add, and on an option an update adds and recommends', async () => {
+  const $ = fake()
+  const options = [{ label: 'A', notChosen: 'why not' }, { label: 'B' }]
+  expect(validateAdd({ ...GOOD, options, recommendation: { option: 1, reason: 'r' } }, [])).toMatch(/option 1 is the recommended one, so it has no notChosen/)
+  expect(validateAdd({ ...GOOD, options, recommendation: { option: 2, reason: 'r' } }, [])).toBeUndefined()
+  await addDecision($, { ...GOOD, options: [{ label: 'A' }, { label: 'B' }], recommendation: { option: 1, reason: 'r' } })
+  expect(await updateDecision($, { id: 'd1', summary: 's', addOptions: [{ label: 'C', notChosen: 'x' }], recommendation: { option: 3, reason: 'r' } })).toHaveProperty('deny')
+  expect(await updateDecision($, { id: 'd1', summary: 's', addOptions: [{ label: 'C', notChosen: 'x' }] })).toHaveProperty('result')
+})
+
+test('the tool descriptions ask for pros, cons and notChosen on every option', () => {
+  expect(ADD_DESCRIPTION).toContain("Give every option pros and cons, and each one you don't recommend notChosen")
+  expect(ADD_DESCRIPTION).toContain('not paragraphs')
+  expect(UPDATE_DESCRIPTION).toContain('addOptions (optional): [{ label, changes, pros, cons, notChosen }]')
+  expect(ADD_INPUT_SCHEMA.properties.options.description).toContain('pros and cons')
 })
 
 test('decisions_answer records a chat answer as sent, with the quote in the thread', async () => {
