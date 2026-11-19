@@ -21,7 +21,7 @@ REVIEWS: when asked to review, audit, check or find problems (even "tell me what
 
 THE FIELDS
 group (always give one): the piece of work, such as "Sharing links" or "Search review". Reuse the exact text for the same work.
-kind (required): choice, go-ahead, assumption, finding or question. Only choice takes options; a question has none and the person types its answer in the pane's Something else row. section (optional): needs-you (default), claudes-call or already-decided.
+kind (required): choice, go-ahead, assumption, finding or question. Only choice takes options; a question has none and the person types its answer in the pane's answer box. section (optional): needs-you (default), claudes-call or already-decided.
 title (required): a short plain sentence for someone who has not read the conversation, such as "Where the config file lives". No ticket shorthand, no abbreviations you invented, no function or class names as the headline. A finding's title starts with the area it is about, such as "Image uploads: one user can use another's quota".
 scenario (required): a concrete example of what happens today, for someone who was not in the conversation. Not "the lookup could be slow" but "run from a subfolder, it takes eight seconds walking up to the root".
 options (choice only, 1 to 12): each is { label, changes, pros, cons, notChosen }. label: a few words. changes: what it would take and what changes if chosen. Give every option pros and cons, and each one you don't recommend notChosen (why not), in short phrases, not paragraphs. Numbered from 1.
@@ -60,7 +60,7 @@ export const ADD_INPUT_SCHEMA = {
       type: 'string',
       enum: ['choice', 'go-ahead', 'assumption', 'finding', 'question'],
       description:
-        'choice: pick between your numbered options. go-ahead: yes or no to an action with side effects (1 Yes, 2 No). assumption: something you assumed and are carrying on with (1 Right, 2 Wrong). finding: one finding of a review, title starting with the area it is about (1 Agree, 2 Already decided, 3 Disagree, 4 Not sure). question: a fact only the person knows, with no options; the person types the answer in the pane\'s Something else row. Only choice takes options; the others get theirs from the tool and a call that gives options is refused.',
+        'choice: pick between your numbered options. go-ahead: yes or no to an action with side effects (1 Yes, 2 No). assumption: something you assumed and are carrying on with (1 Right, 2 Wrong). finding: one finding of a review, title starting with the area it is about (1 Agree, 2 Already decided, 3 Disagree, 4 Not sure). question: a fact only the person knows, with no options; the person types the answer in the pane\'s answer box. Only choice takes options; the others get theirs from the tool and a call that gives options is refused.',
     },
     section: {
       type: 'string',

@@ -8,20 +8,26 @@ export function readyDecisions(all: Decision[]): Decision[] {
   return all.filter(d => d.state === 'ready')
 }
 
-/** A typed answer is "Something else: <text>"; the old discussion marker and no answer read as before. */
-function chosenText(text: string | undefined): string {
+/**
+ * A typed answer is "Something else: <text>", or for a question, which has no Something else row, the text alone
+ * (decision 305); the old discussion marker and no answer read as before.
+ */
+function chosenText(text: string | undefined, kind?: string): string {
   if (text === undefined) {
     return 'nothing'
   }
+  if (text === SETTLED_TEXT) {
+    return text
+  }
 
-  return text === SETTLED_TEXT ? text : `Something else: ${text}`
+  return kind === 'question' ? text : `Something else: ${text}`
 }
 
 function block(d: Decision): string {
   const chosen = d.options.find(o => o.id === d.answer?.option)
   const lines = [
     `Decision ${d.id} · ${d.title} (${d.group ?? 'Other'})`,
-    `Chosen: ${chosen ? `${chosen.id}. ${chosen.label}` : chosenText(d.answer?.text)}`,
+    `Chosen: ${chosen ? `${chosen.id}. ${chosen.label}` : chosenText(d.answer?.text, d.kind)}`,
     `Condition: ${d.answer?.condition ?? 'none'}`,
   ]
   lines.push(...discussionLines(d))

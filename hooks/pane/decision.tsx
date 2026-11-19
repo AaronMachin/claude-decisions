@@ -319,6 +319,25 @@ export function readView($: any): Promise<PaneView> {
 export const SOMETHING_ELSE = 'Something else'
 export const SOMETHING_ELSE_LINE = "Type your own answer. It's saved without asking Claude and goes with your next send."
 export const BOX_LINE = "enter saves it, Claude isn't asked · empty enter cancels"
+/** A question has no options: its one row is "Your answer" over a box (decision 305). */
+export const QUESTION_HEADING = 'Your answer'
+export const QUESTION_EMPTY = 'enter to type'
+export const QUESTION_NOTE = 'Saved without asking Claude, goes with your next send.'
+
+/** A question opens as an answer box rather than one "Something else" option (decision 305). */
+export function isAnswerBox(d: Decision, o: DrawnOption): boolean {
+  return d.kind === 'question' && o.isSomethingElse === true
+}
+
+/** What the closed box under a question's "Your answer" shows: the answer, or how to start typing. */
+export function questionBoxLines(d: Decision, width: number): string[] {
+  const room = Math.max(8, width - (DETAIL_INDENT - 1) - 4)
+  if (d.answer?.text !== undefined) {
+    return wrapLines(d.answer.text, room)
+  }
+
+  return [d.state === 'sent' ? '' : QUESTION_EMPTY]
+}
 export const ASK_EMPTY = 'Ask why an option exists, what it would cost, or for another option. Claude replies here and can change the decision.'
 export const ASK_PLACEHOLDER = 'Ask Claude about this decision…'
 export const REPLYING = '✻ Claude is replying…'
@@ -782,6 +801,10 @@ function truncateLine(text: string, width: number): string {
 
 /** Rows one option takes as drawn. */
 function optionRows(d: Decision, o: DrawnOption, width: number, withDetail: boolean): number {
+  if (isAnswerBox(d, o)) {
+    const note = d.state === 'sent' ? 0 : wrapLines(QUESTION_NOTE, width - DETAIL_INDENT).length
+    return 1 + 2 + questionBoxLines(d, width).length + note + (chosenNumber(d) === o.id ? receiptLines(d).length : 0)
+  }
   const label = wrapLines(o.label, Math.max(8, width - OPTION_LEAD - `${o.id}: `.length)).length
   const detail = withDetail ? detailParts(d, o.id).reduce((n, part) => n + wrapInline(part.text, width - DETAIL_INDENT).length, 0) : 0
 
@@ -989,7 +1012,7 @@ type Props = {
 /** What a saved typed answer or condition reads as in the notice. */
 function savedText(d: Decision, box: { kind: 'text' | 'condition'; option: number }, text: string): string {
   if (box.kind === 'text') {
-    return `${SOMETHING_ELSE}: ${text}`
+    return d.kind === 'question' ? text : `${SOMETHING_ELSE}: ${text}`
   }
   const o = d.options.find(x => x.id === box.option)
 
@@ -1226,7 +1249,95 @@ export function DecisionView($: any, props: Props): any {
       </Box>
     )
 
+  const answerBoxFor = (o: DrawnOption) =>
+      box !== undefined && box.option === o.id ? (
+        <Box key="answer-box" flexDirection="column" borderStyle="round" borderColor="claude" marginLeft={DETAIL_INDENT - 1} paddingX={1}>
+          {draftLines(view.answerDrafts[d.id] ?? '', width - (DETAIL_INDENT - 1) - 4 - (box.kind === 'text' ? 12 : 8) - INPUT_SUBMIT_COLUMNS).map((line, index) => (
+            <Text key={`answer-draft:${index}`} dimColor>
+              {line}
+            </Text>
+          ))}
+          <Input
+            key={answerKey(d.id)}
+            autoFocus
+            label={box.kind === 'text' ? (d.kind === 'question' ? '' : 'Your answer ') : 'Only if '}
+            value={fieldValue(`${answerKey(d.id)}:${box.kind}:${box.option}`, view.answerDrafts[d.id] ?? '')}
+            onInput={(text: string) => {
+              void setView($, v => ({ ...v, answerDrafts: { ...v.answerDrafts, [d.id]: text } }))
+            }}
+            onSubmit={(text: string) => {
+              void saveBox(text)
+            }}
+          />
+          <Text dimColor>{BOX_LINE}</Text>
+        </Box>
+      ) : null
+
+  // A question's one row: "Your answer", and under it the box, closed until enter opens it (decision 305).
+  const questionRow = (o: DrawnOption) => {
+    const isHighlighted = view.highlight === o.id
+    const isChosen = chosen === o.id
+    const lineColour = isChosen ? 'success' : colour
+    const selected = isHighlighted ? { backgroundColor: SELECTED_BG } : {}
+    const heading = (
+      <Box key={`line:${o.id}`}>
+        {Bar(ui, lineColour)}
+        <Text {...selected}>{`${ringMark(`opt:${o.id}`, view.ring, isFocused)} `}</Text>
+        <Button
+          key={`opt:${o.id}`}
+          plain
+          autoFocus={isHighlighted && box === undefined && !view.isParking ? true : undefined}
+          onPress={() => void pressOption($, d, o.id, choose, layout.pageSize)}
+        >
+          <Text bold {...selected}>
+            {QUESTION_HEADING}
+          </Text>
+          {isChosen ? <Text dimColor {...selected}>{'  ✓ your answer'}</Text> : ''}
+        </Button>
+      </Box>
+    )
+    const isOpen = box !== undefined && box.option === o.id
+    const closed = isOpen ? null : (
+      <Box key="question-box" flexDirection="column" borderStyle="round" borderColor={isHighlighted ? 'claude' : 'subtle'} marginLeft={DETAIL_INDENT - 1} paddingX={1}>
+        {questionBoxLines(d, width).map((line, index) => (
+          <Text key={`question-box:${index}`} dimColor>
+            {line}
+          </Text>
+        ))}
+      </Box>
+    )
+    const note = isSent
+      ? null
+      : barredBlock(
+          'question-note',
+          lineColour,
+          DETAIL_INDENT - 1,
+          wrapLines(QUESTION_NOTE, width - DETAIL_INDENT).map((line, index) => (
+            <Text key={`question-note:${index}`} dimColor>
+              {line}
+            </Text>
+          )),
+        )
+    const receipt = isChosen
+      ? barredBlock(
+          `receipt:${o.id}`,
+          lineColour,
+          DETAIL_INDENT - 1,
+          receiptLines(d).map((line, index) => (
+            <Text key={`receipt:${o.id}:${index}`} dimColor>
+              {line}
+            </Text>
+          )),
+        )
+      : null
+
+    return [heading, closed, answerBoxFor(o), note, receipt]
+  }
+
   const optionRow = (o: DrawnOption) => {
+    if (isAnswerBox(d, o)) {
+      return questionRow(o)
+    }
     const isHighlighted = view.highlight === o.id
     const isChosen = chosen === o.id
     const isRecommended = d.recommendation?.option === o.id && o.isSomethingElse !== true
@@ -1281,29 +1392,7 @@ export function DecisionView($: any, props: Props): any {
         ? detailParts(d, o.id).flatMap(part => InlineLines(ui, part.text, width - DETAIL_INDENT, part.color ? { color: part.color, ...(part.dim ? { dimColor: true } : {}) } : { dimColor: true }, `detail:${o.id}:${part.key}`))
         : [],
     )
-    const answerBox =
-      box !== undefined && box.option === o.id ? (
-        <Box key="answer-box" flexDirection="column" borderStyle="round" borderColor="claude" marginLeft={DETAIL_INDENT - 1} paddingX={1}>
-          {draftLines(view.answerDrafts[d.id] ?? '', width - (DETAIL_INDENT - 1) - 4 - (box.kind === 'text' ? 12 : 8) - INPUT_SUBMIT_COLUMNS).map((line, index) => (
-            <Text key={`answer-draft:${index}`} dimColor>
-              {line}
-            </Text>
-          ))}
-          <Input
-            key={answerKey(d.id)}
-            autoFocus
-            label={box.kind === 'text' ? 'Your answer ' : 'Only if '}
-            value={fieldValue(`${answerKey(d.id)}:${box.kind}:${box.option}`, view.answerDrafts[d.id] ?? '')}
-            onInput={(text: string) => {
-              void setView($, v => ({ ...v, answerDrafts: { ...v.answerDrafts, [d.id]: text } }))
-            }}
-            onSubmit={(text: string) => {
-              void saveBox(text)
-            }}
-          />
-          <Text dimColor>{BOX_LINE}</Text>
-        </Box>
-      ) : null
+    const answerBox = answerBoxFor(o)
     const gap = layout.hasGaps && o !== layout.shown[0] ? (
       <Box key={`gap:${o.id}`}>
         <Text> </Text>
