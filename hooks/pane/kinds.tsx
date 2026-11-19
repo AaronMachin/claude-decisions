@@ -4,6 +4,7 @@ import { chooseAndReopen, focusLater, openDecision, readView, ringMark, setView 
 import { truncate } from './list'
 import { KeyHints, Rule, isCompact } from './look'
 import type { Hint } from './look'
+import { displayWidth, padToWidth } from './width'
 
 export { FIXED_OPTIONS, fixedOptionsFor } from '../kind-options'
 export type { FixedOption } from '../kind-options'
@@ -91,10 +92,10 @@ export async function confirmMarks(
 export function batchRowText(d: Decision, mark: number | undefined, width: number): string {
   const answered = d.answer?.option
   const tag = d.state === 'ready' ? (answered === RIGHT ? '✓ right' : '✓ wrong') : mark === RIGHT ? 'right?' : mark === WRONG ? 'wrong?' : ''
-  const room = Math.max(1, width - 2 - (tag === '' ? 0 : tag.length + 2))
+  const room = Math.max(1, width - 2 - (tag === '' ? 0 : displayWidth(tag) + 2))
   const left = truncate(`${d.id}  ${d.title}`, room)
 
-  return tag === '' ? left : `${left.padEnd(room)}  ${tag}`
+  return tag === '' ? left : `${padToWidth(left, room)}  ${tag}`
 }
 
 type BatchProps = {

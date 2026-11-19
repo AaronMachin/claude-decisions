@@ -4,6 +4,8 @@
  * the tree, not the painted screen, so this stands in for the paint (see tests/sizes/README.md).
  */
 
+import { displayWidth } from '../../hooks/pane/width'
+
 export type Placed = { kind: 'Text' | 'Button'; key?: string; text: string; width: number; room: number; row: number; height: number; isCut: boolean }
 
 export type Layout = {
@@ -15,30 +17,7 @@ export type Layout = {
   rowOf: Map<string, number>
 }
 
-/** The columns a string takes on a terminal: wide East Asian characters and emoji take two, combining marks none. */
-export function displayWidth(text: string): number {
-  let width = 0
-  for (const char of text) {
-    const code = char.codePointAt(0)!
-    if (code === 0x200d || (code >= 0x300 && code <= 0x36f) || (code >= 0xfe00 && code <= 0xfe0f)) {
-      continue
-    }
-    const isWide =
-      (code >= 0x1100 && code <= 0x115f) ||
-      (code >= 0x2e80 && code <= 0xa4cf) ||
-      (code >= 0xac00 && code <= 0xd7a3) ||
-      (code >= 0xf900 && code <= 0xfaff) ||
-      (code >= 0xfe30 && code <= 0xfe4f) ||
-      (code >= 0xff00 && code <= 0xff60) ||
-      (code >= 0xffe0 && code <= 0xffe6) ||
-      (code >= 0x1f300 && code <= 0x1f64f) ||
-      (code >= 0x1f900 && code <= 0x1f9ff) ||
-      (code >= 0x20000 && code <= 0x3fffd)
-    width += isWide ? 2 : 1
-  }
-
-  return width
-}
+export { displayWidth }
 
 /** The text a Text or a Button's children draw, nested Texts joined. */
 function textOf(children: unknown): string {

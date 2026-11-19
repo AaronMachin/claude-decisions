@@ -1,5 +1,6 @@
 import { noteStops } from './arrows'
-import { fieldValue } from './field'
+import { cutToWidth, displayWidth } from './width'
+import { answerKey, askInlineKey, askInputKey, fieldValue, isAskInline, isBlank, parkKey } from './field'
 import { draftLines } from './style'
 import { atom, read, update } from 'claude-code'
 
@@ -568,7 +569,7 @@ const NO_HANDLERS: Handlers = {
 /** The decision screen's key hints. */
 export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
   const { d, view } = c
-  if (view.ring === 'ask-inline') {
+  if (isAskInline(view.ring)) {
     // Any other key types into the box (row 261), so the line names what works there. The other keys stay drawn, dim and
     // without hotkeys (row 285): the engine lands the ring by its place among the focusable elements, and taking them away
     // above the box moved that place past it, so typing went to the main prompt.
@@ -766,11 +767,11 @@ function crumbRows(d: Decision, all: Decision[], width: number, compact: boolean
   const room = width - HEADER_RIGHT_GAP - 2 - 10
   const full = crumbFor(d, all)
 
-  return compact || full.length <= room ? 1 : wrapLines(full, width - 2).length + 1
+  return compact || displayWidth(full) <= room ? 1 : wrapLines(full, width - 2).length + 1
 }
 
 function truncateLine(text: string, width: number): string {
-  return text.length <= width ? text : text.slice(0, Math.max(0, width - 1)) + '…'
+  return cutToWidth(text, width)
 }
 
 /** Rows one option takes as drawn. */
@@ -1002,7 +1003,7 @@ export function DecisionView($: any, props: Props): any {
   const { compact } = layout
   // The arrows' stops on a scrolling decision: the options, then the ask box (row 296).
   noteStops(
-    [...(d.state === 'sent' ? [] : drawnOptions(d).map(o => `opt:${o.id}`)), ...(layout.conversation ? ['ask-inline'] : [])],
+    [...(d.state === 'sent' ? [] : drawnOptions(d).map(o => `opt:${o.id}`)), ...(layout.conversation ? [askInlineKey(d.id)] : [])],
     layout.isScrolling === true,
   )
   const now = Date.now()
@@ -1035,7 +1036,7 @@ export function DecisionView($: any, props: Props): any {
       return
     }
     await setView($, v => ({ ...v, answerBox: { kind, option }, highlight: option }))
-    focusLater($, 'answer')
+    focusLater($, answerKey(d.id))
   }
   const choose = async (option: number) => {
     if (isSent) {
@@ -1091,7 +1092,7 @@ export function DecisionView($: any, props: Props): any {
       answerBox: undefined,
       notice: undefined,
     }))
-    focusLater($, (view.drafts[d.id] ?? '') !== '' ? 'ask-input' : 'ask')
+    focusLater($, (view.drafts[d.id] ?? '') !== '' ? askInputKey(d.id) : 'ask')
   }
   /** Leaving this decision: what was on screen counts as read, and a held `1` is dropped. */
   const leaving = async () => {
@@ -1124,8 +1125,8 @@ export function DecisionView($: any, props: Props): any {
         return
       }
       // Asked again once the box is drawn with the ring in it, in case the first call landed before that draw.
-      if (await focusTo($, 'ask-inline')) {
-        focusLater($, 'ask-inline')
+      if (await focusTo($, askInlineKey(d.id))) {
+        focusLater($, askInlineKey(d.id))
       }
     },
     moreOptions: async () => {
@@ -1163,7 +1164,7 @@ export function DecisionView($: any, props: Props): any {
         onChanged()
       } else {
         await setView($, v => ({ ...v, isParking: true }))
-        focusLater($, 'park')
+        focusLater($, parkKey(d.id))
       }
     },
     send: async () => {
@@ -1283,10 +1284,10 @@ export function DecisionView($: any, props: Props): any {
             </Text>
           ))}
           <Input
-            key="answer"
+            key={answerKey(d.id)}
             autoFocus
             label={box.kind === 'text' ? 'Your answer ' : 'Only if '}
-            value={fieldValue(`answer:${d.id}:${box.kind}:${box.option}`, view.answerDrafts[d.id] ?? '')}
+            value={fieldValue(`${answerKey(d.id)}:${box.kind}:${box.option}`, view.answerDrafts[d.id] ?? '')}
             onInput={(text: string) => {
               void setView($, v => ({ ...v, answerDrafts: { ...v.answerDrafts, [d.id]: text } }))
             }}
@@ -1377,13 +1378,14 @@ export function DecisionView($: any, props: Props): any {
         <Box key="ask-row">
         {draft === '' ? <Text dimColor>{`${ASK_PLACEHOLDER} `}</Text> : null}
         <Input
-          key="ask-inline"
-          value={fieldValue(`ask-inline:${d.id}`, draft)}
+          key={askInlineKey(d.id)}
+          value={fieldValue(askInlineKey(d.id), draft)}
           onInput={(text: string) => {
             void setView($, v => ({ ...v, drafts: { ...v.drafts, [d.id]: text } }))
           }}
           onSubmit={async (text: string) => {
-            if (text.trim() === '') {
+            // Acts on the text Enter gave, never a saved draft; an empty or blank one never sends.
+            if (isBlank(text)) {
               return
             }
             // Out of the box once it is sent, so the hotkeys work again and stop typing into it (row 261). The view takes the
@@ -1417,11 +1419,11 @@ export function DecisionView($: any, props: Props): any {
       {layout.shown.flatMap(optionRow)}
       {view.isParking ? (
         <Input
-          key="park"
+          key={parkKey(d.id)}
           autoFocus
           label="Why park it "
           placeholder="a few words, empty cancels"
-          value={fieldValue(`park:${d.id}`, view.parkDraft)}
+          value={fieldValue(parkKey(d.id), view.parkDraft)}
           onInput={(text: string) => {
             void setView($, v => ({ ...v, parkDraft: text }))
           }}
@@ -1464,9 +1466,9 @@ function DecisionHeader(ui: { Box: any; Text: any }, d: Decision, all: Decision[
   const crumbRoom = Math.max(1, usable - 2 - state.length - 1)
   const full = crumbFor(d, all)
   // Compact cuts the crumb to its one line; tall wraps it whole, the keys state at the right of its last line (row 262).
-  const crumbLines = compact || full.length <= crumbRoom ? [truncateLine(full, crumbRoom)] : wrapLines(full, width - 2)
+  const crumbLines = compact || displayWidth(full) <= crumbRoom ? [truncateLine(full, crumbRoom)] : wrapLines(full, width - 2)
   const crumb = crumbLines.at(-1)!
-  const isStateOwnLine = crumb.length > crumbRoom
+  const isStateOwnLine = displayWidth(crumb) > crumbRoom
 
   return (
     <Box key="header" flexDirection="column">
@@ -1499,7 +1501,7 @@ function DecisionHeader(ui: { Box: any; Text: any }, d: Decision, all: Decision[
           <Box key={`crumb:${index}`}>
             {Bar(ui, colour)}
             <Text dimColor>{` ${line}`}</Text>
-            {index === crumbLines.length - 1 && !isStateOwnLine ? <Text>{' '.repeat(Math.max(1, usable - 2 - line.length - state.length))}</Text> : null}
+            {index === crumbLines.length - 1 && !isStateOwnLine ? <Text>{' '.repeat(Math.max(1, usable - 2 - displayWidth(line) - state.length))}</Text> : null}
             {index === crumbLines.length - 1 && !isStateOwnLine ? isFocused ? <Text bold>{state}</Text> : <Text dimColor>{state}</Text> : null}
           </Box>
         ))}

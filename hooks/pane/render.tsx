@@ -1,4 +1,4 @@
-import { beginFieldPass, endFieldPass, forgetFields } from './field'
+import { answerKey, beginFieldPass, endFieldPass, forgetFields, isAskInline } from './field'
 import { adoptSessions, otherSessions } from '../resume'
 import type { PaneView } from '../../types'
 import { notePaneFocus } from '../band'
@@ -103,11 +103,11 @@ export function leaveToList($: any): void {
  */
 export function ringTarget(view: PaneView, tabs: Tab[], seen: Seen = {}, frozen?: string[], hasSession = false): string | undefined {
   if (view.screen === 'decision') {
-    if (view.answerBox !== undefined) {
-      return 'answer'
+    if (view.answerBox !== undefined && view.decisionId !== undefined) {
+      return answerKey(view.decisionId)
     }
-    if (view.ring === 'ask-inline') {
-      return 'ask-inline'
+    if (isAskInline(view.ring)) {
+      return view.ring
     }
     const d = tabs.flatMap(t => t.decisions).find(x => x.id === view.decisionId)
 

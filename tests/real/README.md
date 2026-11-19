@@ -21,5 +21,3 @@ For each size it makes a scratch git repository in a temporary folder, seeds it 
 Under 110 columns the pane sits above the prompt and is about 9 rows, and `t` opens the whole thread instead; there the run stops after the typing checks, since the thread's box has no way out but enter or esc.
 
 No prompt is ever sent to Claude, so a run costs no model usage. Enter is only pressed while Claude's prompt is empty and no box in the pane has the keys; if text reaches the prompt anyway, the script clears it and stops that size. Afterwards it kills only its own tmux sessions and removes the scratch folder and the decisions it seeded. Claude Code keeps the session's transcript under `~/.claude/projects/`, as for any session.
-
-Known failure: the check that the next decision's ask box starts empty fails today. The text typed in one decision's ask box shows up in the next decision's box when you go there through the list without closing the pane.

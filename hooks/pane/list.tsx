@@ -12,6 +12,7 @@ import type { Hint } from './look'
 import { ago, hasUnread, unreadReplies, when } from './seen'
 import type { Seen } from './seen'
 import { Bar, SELECTED_BG, barColour, colourProps } from './style'
+import { cutToWidth, displayWidth, padToWidth } from './width'
 import { FOLDED, answeredRoom, assumptionsIn, firstKey, foldAll, foldedRows, isWaiting, movePage, pageOf, pageSize, sectionsFor, toggleSection } from './sections'
 
 /** `hasUnread`: a decision in it has a reply from Claude the person hasn't opened (its chip ends ●). */
@@ -97,7 +98,7 @@ export function nextTab(tabs: Tab[], current: string | undefined): string | unde
  * cut off at either end (drawn as `‹` and `›`).
  */
 export function visibleTabs(tabs: Tab[], activeKey: string | undefined, width: number): { shown: Tab[]; hasLeft: boolean; hasRight: boolean } {
-  const cost = (t: Tab) => tabChipText(t).length + 1
+  const cost = (t: Tab) => displayWidth(tabChipText(t)) + 1
   if (tabs.reduce((sum, t) => sum + cost(t), 0) <= width) {
     return { shown: tabs, hasLeft: false, hasRight: false }
   }
@@ -166,7 +167,7 @@ export function waitingElsewhere(tabs: Tab[], current: Tab | undefined): { tab: 
 }
 
 export function truncate(text: string, width: number): string {
-  return text.length <= width ? text : text.slice(0, Math.max(0, width - 1)) + '…'
+  return cutToWidth(text, width)
 }
 
 /** Ticks or unticks one id. */
@@ -331,9 +332,9 @@ export function rowLines(d: Decision, width: number, compact: boolean): number {
 export function rowText(d: Decision, width: number): string {
   const meta = rowMeta(d, width)
   const left = `${d.id}  ${d.title}`
-  const room = width - 2 - (meta === '' ? 0 : meta.length + 2)
+  const room = width - 2 - (meta === '' ? 0 : displayWidth(meta) + 2)
 
-  return meta === '' || left.length > room ? truncate(left, width - 2) : `${left.padEnd(room)}  ${meta}`
+  return meta === '' || displayWidth(left) > room ? truncate(left, width - 2) : `${padToWidth(left, room)}  ${meta}`
 }
 
 type ListProps = {

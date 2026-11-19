@@ -2,6 +2,7 @@
 
 import type { Decision, Kind, ThreadEntry } from '../store'
 import { ago } from './seen'
+import { displayWidth, splitAtColumns } from './width'
 
 const KIND_COLOUR: Record<Kind, string | undefined> = {
   choice: 'suggestion',
@@ -211,25 +212,29 @@ function splitWord(word: Segment[], room: number): [Segment[], Segment[]] {
   let left = room
   for (let k = 0; k < word.length; k++) {
     const s = word[k]!
-    if (s.text.length <= left) {
+    const columns = displayWidth(s.text)
+    if (columns <= left) {
       head.push(s)
-      left -= s.text.length
+      left -= columns
       continue
     }
     if (s.href !== undefined) {
       return head.length === 0 ? [[s], word.slice(k + 1)] : [head, word.slice(k)]
     }
-    if (left > 0) {
-      head.push({ ...s, text: s.text.slice(0, left) })
+    // Split by columns, so a wide character is never cut in half; the first piece of a line always takes one.
+    const [fits, rest] = left > 0 ? splitAtColumns(s.text, left) : ['', s.text]
+    const taken = head.length === 0 && fits !== '' ? fits : displayWidth(fits) <= left ? fits : ''
+    if (taken !== '') {
+      head.push({ ...s, text: taken })
     }
 
-    return [head, [{ ...s, text: s.text.slice(left) }, ...word.slice(k + 1)]]
+    return [head, [{ ...s, text: s.text.slice(taken.length) }, ...word.slice(k + 1)]]
   }
 
   return [head, []]
 }
 
-const widthOf = (runs: Segment[]) => runs.reduce((n, s) => n + s.text.length, 0)
+const widthOf = (runs: Segment[]) => runs.reduce((n, s) => n + displayWidth(s.text), 0)
 
 /** Claude's text broken into lines of at most `width` visible columns, at spaces where it can be, each line its runs. */
 export function wrapInline(text: string, width: number): Segment[][] {
@@ -372,7 +377,7 @@ export function chatPrefix(e: Pick<ThreadEntry, 'who' | 'at' | 'via'>, now: Date
 
 /** Rows a chat entry takes at `width`: its text wrapped under itself after the prefix. */
 export function chatRows(e: Pick<ThreadEntry, 'who' | 'at' | 'text' | 'via'>, width: number, now: Date = new Date()): number {
-  return wrapInline(e.text, Math.max(8, width - chatPrefix(e, now).length)).length
+  return wrapInline(e.text, Math.max(8, width - displayWidth(chatPrefix(e, now)))).length
 }
 
 /**
@@ -385,12 +390,12 @@ export function ChatEntry(ui: { Box: any; Text: any; Link?: any }, e: Pick<Threa
   const prefix = chatPrefix(e, now)
   const speaker = speakerOf(e)
   const isQuickAnswer = e.who === 'quick' && e.via === 'triage'
-  const lines = wrapInline(e.text, Math.max(8, width - prefix.length))
+  const lines = wrapInline(e.text, Math.max(8, width - displayWidth(prefix)))
 
   // The speaker in a column of its own, so the text wraps under itself and each line stays whole.
   return (
     <Box key={key}>
-      <Box flexDirection="column" width={prefix.length}>
+      <Box flexDirection="column" width={displayWidth(prefix)}>
         <Text>
           {isQuickAnswer ? (
             <Text color="claude" dimColor>
@@ -414,7 +419,7 @@ export function ChatEntry(ui: { Box: any; Text: any; Link?: any }, e: Pick<Threa
  */
 export function draftLines(text: string, room: number): string[] {
   const columns = Math.max(8, room)
-  if (text.length < columns && !text.includes('\n')) {
+  if (displayWidth(text) < columns && !text.includes('\n')) {
     return []
   }
 

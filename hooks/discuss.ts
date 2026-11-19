@@ -370,6 +370,9 @@ async function triageThenDispatch($: any, d: Decision, asked: string, question: 
 
 /** The person sent a question from the thread: keep it, clear the draft, hand it to the replier. `session` is the session record's note, for `auto`. */
 export async function askQuestion($: any, mode: Replies, decisionId: string, question: string, session?: SessionSummary): Promise<void> {
+  if (question.trim() === '') {
+    return
+  }
   const recorded = await recordQuestion($, decisionId, question)
   const d = await readOne($, decisionId)
   if (!recorded || !d) {
