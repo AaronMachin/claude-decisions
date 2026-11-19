@@ -1,4 +1,5 @@
 import { focusKeyName } from '../focus-key'
+import { cutToWidth, displayWidth, splitAtColumns } from './width'
 
 /** The pieces of the pane's look (row 170) every screen shares: rules, key hints, the header, the card. */
 
@@ -54,15 +55,15 @@ const GAP = 2
  */
 function hintWidth(hint: Hint, withLabel: boolean): number {
   const label = withLabel ? hint.label : ''
-  const mark = (hint.mark ?? '').length
+  const mark = displayWidth(hint.mark ?? '')
   if (hint.onPress && hint.hotkey) {
-    return mark + hint.keyText.length + 2 + label.length + padOf(hint, label)
+    return mark + displayWidth(hint.keyText) + 2 + displayWidth(label) + padOf(hint, label)
   }
   if (hint.keyText === '') {
-    return mark + (label === '' ? hint.label : label).length + GAP
+    return mark + displayWidth(label === '' ? hint.label : label) + GAP
   }
 
-  return mark + hint.keyText.length + 1 + (label === '' ? 0 : 1 + label.length) + padOf(hint, label)
+  return mark + displayWidth(hint.keyText) + 1 + (label === '' ? 0 : 1 + displayWidth(label)) + padOf(hint, label)
 }
 
 /**
@@ -202,22 +203,18 @@ export function Header(ui: { Box: any; Text: any }, title: string, isFocused: bo
   const state = keysState(isFocused)
   const usable = width - HEADER_RIGHT_GAP
   const room = Math.max(1, usable - state.length - 1)
-  const shown = cut(title, room)
+  const shown = cutToWidth(title, room)
 
   return (
     <Box key="header" flexDirection="column">
       <Box>
         <Text bold>{shown}</Text>
-        <Text>{' '.repeat(Math.max(1, usable - shown.length - state.length))}</Text>
+        <Text>{' '.repeat(Math.max(1, usable - displayWidth(shown) - state.length))}</Text>
         {isFocused ? <Text bold>{state}</Text> : <Text dimColor>{state}</Text>}
       </Box>
-      {crumb ? <Text dimColor>{cut(crumb, width)}</Text> : null}
+      {crumb ? <Text dimColor>{cutToWidth(crumb, width)}</Text> : null}
     </Box>
   )
-}
-
-function cut(text: string, width: number): string {
-  return text.length <= width ? text : text.slice(0, Math.max(0, width - 1)) + '…'
 }
 
 /** Text broken into lines of at most `width` columns, at spaces where it can be. */
@@ -228,17 +225,18 @@ export function wrapLines(text: string, width: number): string[] {
     let line = ''
     for (const word of paragraph.split(/\s+/).filter(w => w !== '')) {
       let rest = word
-      while (rest.length > room) {
+      while (displayWidth(rest) > room) {
         if (line !== '') {
           lines.push(line)
           line = ''
         }
-        lines.push(rest.slice(0, room))
-        rest = rest.slice(room)
+        const [head, tail] = splitAtColumns(rest, room)
+        lines.push(head)
+        rest = tail
       }
       if (line === '') {
         line = rest
-      } else if (line.length + 1 + rest.length <= room) {
+      } else if (displayWidth(line) + 1 + displayWidth(rest) <= room) {
         line += ' ' + rest
       } else {
         lines.push(line)
@@ -260,7 +258,7 @@ export function capLines(text: string, width: number, lines: number): { lines: s
   const kept = all.slice(0, Math.max(1, lines))
   const last = kept.length - 1
   const line = kept[last]!
-  kept[last] = line.length >= width ? line.slice(0, Math.max(0, width - 1)) + '…' : line + '…'
+  kept[last] = displayWidth(line) >= width ? cutToWidth(`${line}…`, width) : line + '…'
 
   return { lines: kept, isCut: true }
 }

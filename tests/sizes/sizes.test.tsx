@@ -152,9 +152,9 @@ async function problemsAtEverySize(ui: any, screen: string, check: Check = {}): 
 }
 
 /**
- * Kinds the seeded session doesn't have, and a decision with a long unbroken word in its title and
- * a label that needs wrapping. Text that takes two columns a character (Chinese, Japanese, emoji)
- * is left out: the pane counts characters, not columns, so it is known to overflow (see README).
+ * Kinds the seeded session doesn't have, a decision with a long unbroken word in its title and a
+ * label that needs wrapping, and one written in Chinese, Japanese and emoji, which take two columns
+ * a character.
  */
 const EXTRA: Record<string, any>[] = [
   { group: 'Release', kind: 'go-ahead', title: 'Push the release branch and tag it', scenario: 'The branch is ready and the checks pass.' },
@@ -171,6 +171,18 @@ const EXTRA: Record<string, any>[] = [
     ],
     recommendation: { option: 1, reason: 'Shorter is safer' },
   },
+  {
+    group: '共有 Wide text 🍲',
+    kind: 'choice',
+    title: 'レシピ共有リンクの有効期限 🔗 how long a shared recipe link lasts, in Chinese 食谱分享链接 and emoji 🍰🥗',
+    problem: '共有されたレシピ 🍲 が一週間後に開けない',
+    scenario: '料理人が友人にレシピを共有し 📱 a friend opens it on a phone a week later. 一週間後に開く。',
+    options: [
+      { label: '一週間 🗓️ a week', changes: '七日後にリンクが切れる, links stop after seven days' },
+      { label: '期限なし ♾️ never expires, 食谱链接永久有效 and a label long enough to wrap 🍜', changes: 'リンクは永久に有効' },
+    ],
+    recommendation: { option: 1, reason: '短い方が安全 🔒' },
+  },
 ]
 
 async function seed(store: StoreCtx): Promise<Decision[]> {
@@ -185,7 +197,7 @@ async function seed(store: StoreCtx): Promise<Decision[]> {
   return (await readAll(store)).decisions
 }
 
-/** One decision of each kind and state worth drawing: the first of each kind, then a parked, sent, live and ready one, the 12-option one and the long text. */
+/** One decision of each kind and state worth drawing: the first of each kind, then a parked, sent, live and ready one, the 12-option one, the long text and the wide text. */
 function decisionsToDraw(all: Decision[]): Decision[] {
   const picked = new Map<string, Decision>()
   for (const d of all) {
@@ -198,9 +210,10 @@ function decisionsToDraw(all: Decision[]): Decision[] {
     }
   }
   const twelve = all.find(d => d.options.length >= 12)
-  const wide = all.find(d => d.group === 'Long text')
+  const long = all.find(d => d.group === 'Long text')
+  const wide = all.find(d => d.group?.startsWith('共有'))
 
-  return [...new Set([...picked.values(), ...(twelve ? [twelve] : []), ...(wide ? [wide] : [])])]
+  return [...new Set([...picked.values(), ...(twelve ? [twelve] : []), ...(long ? [long] : []), ...(wide ? [wide] : [])])]
 }
 
 test('the list fits at every size', { timeoutMs: 60_000 }, async ($, on) => {
@@ -239,7 +252,7 @@ test('the answer box fits at every size', { timeoutMs: 60_000 }, async ($, on) =
   await ui.press({ key: other })
   await ring($, other)
   await ui.press({ key: other })
-  await ui.input({ key: 'answer', text: 'Keep them for a month, then ask the cook whether to keep them longer', kind: 'change' })
+  await ui.input({ key: `answer:${choice.id}`, text: 'Keep them for a month, then ask the cook whether to keep them longer', kind: 'change' })
   expect(await problemsAtEverySize(ui, `${choice.id} answer box`)).toEqual([])
   await ui.unmount()
 })

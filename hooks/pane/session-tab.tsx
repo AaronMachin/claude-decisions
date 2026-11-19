@@ -9,6 +9,7 @@ import { KeyHints, Rule, isCompact, wrapLines } from './look'
 import type { Hint } from './look'
 import { ago } from './seen'
 import { colourProps } from './style'
+import { cutToWidth, displayWidth } from './width'
 
 export const REFRESH_PROMPT = 'Refresh the session record with decisions_session: title, summary, now line and plan, from where the work is now.'
 
@@ -29,7 +30,7 @@ const MARK: Record<PlanStep['status'], { mark: string; colour: string }> = {
 const INDENT = 5
 
 function cutTo(text: string, room: number): string {
-  return text.length <= room ? text : `${text.slice(0, Math.max(0, room - 1))}…`
+  return cutToWidth(text, room)
 }
 
 /** The plan as lines: numbered `1` and `2.1`, `✓ ▶ ·`, a note (or what it waits on) cut at the right; with `foldDone`, done items at each level become one `✓ N done` line. */
@@ -50,7 +51,7 @@ export function planLines(plan: PlanItem[], width: number, foldDone: boolean): P
       const lead = depth * INDENT + `${MARK[item.status].mark} ${number}  `.length
       const text = cutTo(item.text, Math.max(8, width - lead))
       const rawNote = item.note ?? (item.waitsOn && item.waitsOn.length > 0 ? `waits on ${item.waitsOn.join(' · ')}` : undefined)
-      const room = width - lead - text.length - 2
+      const room = width - lead - displayWidth(text) - 2
       const note = rawNote === undefined || room < 2 ? undefined : cutTo(rawNote, room)
       lines.push({ key: `plan:${number}`, depth, ...MARK[item.status], number, text, ...(note !== undefined ? { note } : {}) })
       const steps = depth === 0 ? (item as PlanItem).steps : undefined
@@ -242,7 +243,7 @@ export function SessionView($: any, props: Props): any {
       <Text>{' '.repeat(line.depth * INDENT)}</Text>
       <Text {...colourProps(line.colour)}>{line.mark}</Text>
       <Text>{line.number === '' ? ` ${line.text}` : ` ${line.number}  ${line.text}`}</Text>
-      {line.note !== undefined ? <Text dimColor>{`${' '.repeat(Math.max(2, width - line.depth * INDENT - 1 - (line.number === '' ? 1 : line.number.length + 3) - line.text.length - line.note.length))}${line.note}`}</Text> : null}
+      {line.note !== undefined ? <Text dimColor>{`${' '.repeat(Math.max(2, width - line.depth * INDENT - 1 - (line.number === '' ? 1 : line.number.length + 3) - displayWidth(line.text) - displayWidth(line.note)))}${line.note}`}</Text> : null}
     </Box>
   )
   const linkRow = (link: SessionLink, index: number) => {

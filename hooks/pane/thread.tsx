@@ -1,4 +1,4 @@
-import { fieldValue } from './field'
+import { askInputKey, fieldValue, isBlank } from './field'
 import { draftLines } from './style'
 import type { PaneView, PendingQuestion } from '../../types'
 import { RUN, askQuestion, currentMode, currentReplies, resendToFork } from '../discuss'
@@ -11,6 +11,7 @@ export { when }
 import { truncate } from './list'
 import { Rule } from './look'
 import { ChatEntry, chatRows } from './style'
+import { splitAtColumns } from './width'
 
 const MODE_NAME = { main: 'main session', fork: 'fork', quick: 'quick model' } as const
 const STATE_TEXT: Record<string, string> = {
@@ -94,7 +95,7 @@ export function clipToBudget(e: ThreadEntry, budget: number, width: number): Thr
   }
   const room = Math.max(1, Math.floor(((budget - 1) * Math.max(1, width - 2)) / 1.15) - 1)
 
-  return { ...e, text: `${e.text.slice(0, room)}…` }
+  return { ...e, text: `${splitAtColumns(e.text, room)[0]}…` }
 }
 
 /**
@@ -281,16 +282,18 @@ export function ThreadView($: any, props: Props): any {
         : null}
       {view.isAsking ? (
         <Input
-          key="ask-input"
+          key={askInputKey(d.id)}
           autoFocus
           label="Ask "
           placeholder="enter sends, empty enter cancels"
-          value={fieldValue(`ask-input:${d.id}`, draft)}
+          value={fieldValue(askInputKey(d.id), draft)}
           onInput={(text: string) => {
             void setView($, v => ({ ...v, drafts: { ...v.drafts, [d.id]: text } }))
           }}
           onSubmit={async (text: string) => {
-            if (text.trim() === '') {
+            // Acts on the text Enter gave, never a saved draft; an empty or blank one cancels and never sends. Claude Code's
+            // ctrl+u clears only the row the cursor is on once a long question wraps, so what is left is sent as written.
+            if (isBlank(text)) {
               await setView($, v => {
                 const { [d.id]: _gone, ...drafts } = v.drafts
                 return { ...v, isAsking: false, drafts }
@@ -308,7 +311,7 @@ export function ThreadView($: any, props: Props): any {
           autoFocus
           onPress={async () => {
             await setView($, v => ({ ...v, isAsking: true }))
-            focusLater($, 'ask-input')
+            focusLater($, askInputKey(d.id))
           }}
         >
           Ask a question
