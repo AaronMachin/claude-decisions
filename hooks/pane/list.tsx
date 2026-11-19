@@ -199,6 +199,10 @@ function chosenText(d: Decision): string {
     return `✓ ${o.id} ${o.label}`
   }
 
+  if (d.kind === 'question' && d.answer?.text !== undefined && d.answer.text !== SETTLED_TEXT) {
+    return `✓ ${d.answer.text}`
+  }
+
   return d.answer?.text !== undefined && d.answer.text !== SETTLED_TEXT ? '✓ Something else' : '✓ discussed'
 }
 
@@ -214,7 +218,7 @@ export function rowMeta(d: Decision, width: number): string {
   if (d.state === 'parked') {
     return ''
   }
-  const what = d.kind === 'question' ? 'question' : `${d.options.length} options`
+  const what = d.kind === 'question' ? 'type an answer' : `${d.options.length} options`
 
   return isWide ? [what, d.state, d.blocks ? 'blocking' : ''].filter(Boolean).join(' · ') : ''
 }
@@ -264,7 +268,12 @@ export function answerWords(d: Decision): string {
     return ''
   }
 
-  return d.answer.text === SETTLED_TEXT ? 'discussed' : `${SOMETHING_ELSE_WORDS}: ${d.answer.text}`
+  if (d.answer.text === SETTLED_TEXT) {
+    return 'discussed'
+  }
+
+  // A question has no Something else row: its answer is the person's words alone (decision 305).
+  return d.kind === 'question' ? d.answer.text : `${SOMETHING_ELSE_WORDS}: ${d.answer.text}`
 }
 
 const SOMETHING_ELSE_WORDS = 'Something else'
@@ -289,7 +298,10 @@ export function rowSecondLine(d: Decision, seen: Seen, now: Date = new Date(), i
   }
   const age = ago(d.createdAt, now)
 
-  return { text: [d.problem ?? '', d.isTask ? 'to do' : d.kind, age === '' ? '' : `asked ${age}`, d.state === 'ready' ? answer : ''].filter(Boolean).join(' · ') }
+  // A question waiting says what it needs, as its screen has no options (decision 305).
+  const kind = d.isTask ? 'to do' : d.kind === 'question' && isWaiting(d) ? 'question · type an answer' : d.kind
+
+  return { text: [d.problem ?? '', kind, age === '' ? '' : `asked ${age}`, d.state === 'ready' ? answer : ''].filter(Boolean).join(' · ') }
 }
 
 /** Up to three of the latest sent decisions, newest first, for the all-clear (row 252, extra 6). */

@@ -301,9 +301,9 @@ test('one open assumption has no batch row', async ($, on) => {
   await one.unmount()
 })
 
-test('a wide row says question, and blocking when the decision blocks work', () => {
+test('a wide row says type an answer for a question, and blocking when the decision blocks work', () => {
   counter = 0
-  expect(rowMeta(make({ kind: 'question', options: [] }), 96)).toBe('question · open')
+  expect(rowMeta(make({ kind: 'question', options: [] }), 96)).toBe('type an answer · open')
   expect(rowMeta(make({ blocks: 'the plan' }), 96)).toBe('2 options · open · blocking')
   expect(rowMeta(make({ state: 'parked' }), 49)).toBe('')
 })
@@ -647,7 +647,9 @@ test('the dim line: kind and age, the answer in the person\'s words, the unread 
   const options = [{ id: 1, label: 'Red' }]
   const conditioned = make({ createdAt: asked, options, state: 'ready', answer: { option: 1, condition: 'in stock', answeredAt: 't' } })
   expect(rowSecondLine(conditioned, {}, now).text).toBe('choice · asked 4m ago · 1 Red · only if in stock')
-  expect(rowSecondLine(make({ createdAt: asked, kind: 'question', state: 'ready', answer: { text: 'blue', answeredAt: 't' } }), {}, now).text).toBe('question · asked 4m ago · Something else: blue')
+  expect(rowSecondLine(make({ createdAt: asked, kind: 'question', state: 'ready', answer: { text: 'blue', answeredAt: 't' } }), {}, now).text).toBe('question · asked 4m ago · blue')
+  expect(rowSecondLine(make({ createdAt: asked, kind: 'question', options: [] }), {}, now).text).toBe('question · type an answer · asked 4m ago')
+  expect(rowSecondLine(make({ createdAt: asked, state: 'ready', answer: { text: 'blue', answeredAt: 't' } }), {}, now).text).toContain('Something else: blue')
   expect(rowSecondLine(make({ options, state: 'sent', sentAt: at(12, 4), answer: { option: 1, answeredAt: 't' } }), {}, now).text).toBe('↗ sent 12:04 · 1 Red')
   const replied = make({ createdAt: asked, thread: [{ who: 'claude', text: 'Yes', at: new Date(now.getTime() - 60_000).toISOString() }] })
   expect(rowSecondLine(replied, {}, now)).toEqual({ text: 'claude · 1m ago: Yes', colour: 'claude' })

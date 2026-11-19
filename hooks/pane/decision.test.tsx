@@ -767,14 +767,33 @@ test('12 options on a 9-row pane: every option is drawn, 1 then 3 reaches Someth
   await ui.unmount()
 })
 
-test('a question has only Something else, and no line about typing in the discussion', async ($, on) => {
-  await begin($, on, { group: 'Code review', kind: 'question', title: 'Which staging account', scenario: 'Two accounts exist.' })
+test('a question opens as "Your answer" over a closed box, with no Something else (decision 305)', async ($, on) => {
+  const seen = await begin($, on, { group: 'Code review', kind: 'question', title: 'Which staging account', scenario: 'Two accounts exist.' })
   const ui = await mountHolding($, rowsOf(40))
   await ui.press({ key: 'row:d1' })
   const options = (await ui.findAll({ type: 'Button' })).filter((b: any) => /^opt:/.test(String(b.props.key)))
   expect(options.map((b: any) => b.props.key)).toEqual(['opt:1'])
-  expect(options[0]?.text).toMatch(/Something else/)
+  expect(options[0]?.text).toBe('Your answer')
+  expect(options[0]?.props.hotkey).toBeUndefined()
+  const all = (await texts(ui)).join(' ')
+  expect(all).not.toContain('Something else')
+  expect(all).toContain('enter to type')
+  expect(all).toContain('Saved without asking Claude, goes with your next send.')
+  expect(await ui.find({ key: 'answer:d1' })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /Type your answer in the discussion/ })).toBeUndefined()
+  // enter on it opens the box, with no label of its own; a typed answer saves without a turn.
+  await ring($, 'opt:1')
+  await ui.press({ key: 'opt:1' })
+  expect((await ui.find({ key: 'answer:d1' }))?.props.label).toBe('')
+  expect((await texts(ui)).join(' ')).not.toContain('enter to type')
+  await ui.input({ key: 'answer:d1', text: 'warp', kind: 'change' })
+  await ui.input({ key: 'answer:d1', text: 'warp' })
+  expect(await ui.find({ type: 'Text', text: 'Saved d1 · warp · s sends it' })).toBeDefined()
+  expect(seen.submitted).toEqual([])
+  // Opened again, the answer is in the box.
+  await ui.press({ key: 'row:d1' })
+  expect((await ui.find({ key: 'line:1' }))?.text).toMatch(/✓ your answer/)
+  expect((await texts(ui)).join(' ')).toContain('warp')
   await ui.unmount()
 })
 

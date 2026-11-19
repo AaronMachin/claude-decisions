@@ -69,9 +69,9 @@ Every decision has the same parts in the same order: a plain title that makes se
 | go-ahead | yes or no to an action with side effects (push, write to staging) | `1` yes, `2` no |
 | assumption | right or wrong, on something Claude already assumed and is carrying on with | `1` right, `2` wrong |
 | finding | a review finding | `1` agree, `2` already decided, `3` disagree, `4` not sure |
-| question | a fact only the person knows, typed in Something else | `1` |
+| question | a fact only the person knows, typed in the answer box | none: `enter` opens the box (305) |
 
-Every kind ends with a numbered Something else row, drawn by the pane and never stored as an option (decisions 205, 207). Choosing it opens a box: `enter` saves the typed text as the answer and makes the decision ready, with no turn started. `c` on a highlighted option opens the same box for a condition, saved as the option plus a `Condition:` line (206). A question has only Something else. On the assumptions batch Something else is reached by opening the row, not with `3` (230).
+Every kind ends with a numbered Something else row, drawn by the pane and never stored as an option (decisions 205, 207). Choosing it opens a box: `enter` saves the typed text as the answer and makes the decision ready, with no turn started. `c` on a highlighted option opens the same box for a condition, saved as the option plus a `Condition:` line (206). A question has no numbered row: its one row is `Your answer` over a closed box, and `enter` opens the box (305). On the assumptions batch Something else is reached by opening the row, not with `3` (230).
 
 Choosing is two steps (Aaron, 6 November). Typing a number highlights that option without choosing it; typing more digits moves to the longer number (`1` then `0` highlights option 10), and up/down move the highlight. `enter` then confirms, saves the answer and takes you back to the list. A decision opens with the ring on the chosen option, else the recommended one, else option 1, so `enter` alone answers with the recommendation (219; an accidental answer is only ready, never sent before `s`). With ten or more rows the ring on option 1 holds a `1` for the digit gap, so `1` then `3` still reaches 13 (240). `a` highlights the recommended option. `b` goes back to the list.
 

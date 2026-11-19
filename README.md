@@ -56,7 +56,7 @@ The pane's keys work once the pane has focus. Its header says `keys on` when it 
 | `s` | On the list, or on a decision that isn't answered, opens the review screen of answers ready to send: `enter` ticks or unticks a row, `c` sends the ticked ones to Claude, `b` goes back. On an answered decision, shows exactly what Claude will get for that one and which other answers stay behind; `enter` sends just it, `b` goes back to the decision |
 | `h` | Hides the pane. `/decisions` (with an empty prompt) brings it back |
 
-What the numbers mean depends on the kind of decision. Every kind ends with one more numbered row, Something else, where you type your own answer. It's saved without asking Claude and goes with your next send.
+What the numbers mean depends on the kind of decision. Every kind but a question ends with one more numbered row, Something else, where you type your own answer. It's saved without asking Claude and goes with your next send.
 
 | Kind | Keys |
 | --- | --- |
@@ -65,7 +65,7 @@ What the numbers mean depends on the kind of decision. Every kind ends with one 
 | Task (something Claude needs you to do) | `1` done, `2` can't do it, `3` Something else |
 | Assumption | `1` right, `2` wrong, `3` Something else. "Check N assumptions together" opens them as a batch, where `1` and `2` mark each row and `r` marks the rest right; Something else is reached by opening the row with `enter` |
 | Finding (from a review) | `1` agree, `2` already decided, `3` disagree, `4` not sure, `5` Something else |
-| Question | `1` Something else: type the answer |
+| Question | no numbers: it opens with a "Your answer" box, and `enter` starts typing in it. In the list its row says `type an answer` |
 
 <!-- GIF: the assumptions batch (shot 3) -->
 
