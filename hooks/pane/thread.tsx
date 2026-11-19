@@ -291,7 +291,8 @@ export function ThreadView($: any, props: Props): any {
             void setView($, v => ({ ...v, drafts: { ...v.drafts, [d.id]: text } }))
           }}
           onSubmit={async (text: string) => {
-            // Acts on the text Enter gave, never a saved draft; an empty or blank one cancels and never sends.
+            // Acts on the text Enter gave, never a saved draft; an empty or blank one cancels and never sends. Claude Code's
+            // ctrl+u clears only the row the cursor is on once a long question wraps, so what is left is sent as written.
             if (isBlank(text)) {
               await setView($, v => {
                 const { [d.id]: _gone, ...drafts } = v.drafts

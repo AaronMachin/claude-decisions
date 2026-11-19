@@ -10,7 +10,7 @@
  * Draws overlap: the render hook waits on file reads, so a second draw can start before the first ends. A field
  * is forgotten only when no draw is still running and none since the last quiet moment drew it. Forgetting it on
  * the end of one draw while another had drawn it reopened the field with the draft as saved then, which lags
- * the typing, and Claude Code put that older text back into the box: a cleared box then sent half a question.
+ * the typing, and Claude Code would put that older text back into the box.
  */
 const opened = new Map<string, string>()
 
