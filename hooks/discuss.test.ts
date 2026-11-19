@@ -101,8 +101,11 @@ test('marking answered works on open, live and parked decisions only, and the an
   expect(done.answer?.option).toBeUndefined()
   const prompt = buildAnswerPrompt([done])
   expect(prompt).toContain('Chosen: settled in the discussion, see below')
+  // Recorded straight into the store, the question never went to the main session, so it is written out; the main
+  // session's reply is not repeated, and the ↻ line written by hand here has no mark, so it counts as unseen.
+  expect(prompt).toContain('Discussion: you discussed this with the person earlier (1 message), not repeated here.')
   expect(prompt).toContain('  person: Does CI find it?')
-  expect(prompt).toContain('  claude: Yes.')
+  expect(prompt).not.toContain('  claude: Yes.')
   expect(prompt).toContain('  claude: ↻ Added option 3')
 
   expect(await markAnswered(store, d.id)).toBe(false)
@@ -439,4 +442,51 @@ test('the fork and the quick model are given each option with its pros, cons and
       'Recommended: 1, because other tools read from the root',
     ].join('\n'),
   )
+})
+
+test('what the main session saw is marked: a question handed to it and its reply; a fork reply and its question are not', async () => {
+  const w = world({ fork: async () => ({ isAnswered: true, text: 'from the fork' }) })
+  const d = await make(w.$)
+  await askQuestion(w.$, 'main', d.id, 'Does CI find it?')
+  await onTurnStart(w.$, { text: `The decisions plugin sent "${w.submitted[0]}"`, turnId: 'a1' }, next)
+  await onTurnComplete(w.$, { turnId: 'a1', answer: 'Yes, it does.' }, next)
+  await askQuestion(w.$, 'fork', d.id, 'Which file?')
+  const thread = (await readOne(w.$, d.id))!.thread
+  expect(thread.map(e => [e.who, e.seenByMain === true])).toEqual([
+    ['person', true],
+    ['claude', true],
+    ['person', false],
+    ['fork', false],
+  ])
+})
+
+test('a question the small model answered is unseen, and one it handed over is seen', async () => {
+  const replies = ['ANSWER\nIt checks each parent folder.', 'HAND OVER\nneeds the code']
+  const w = world({ complete: async () => ({ isAnswered: true, text: replies.shift() }) })
+  const d = await make(w.$)
+  await askQuestion(w.$, 'auto', d.id, 'what does walking up mean?')
+  await askQuestion(w.$, 'auto', d.id, 'is the loader slow?')
+  const thread = (await readOne(w.$, d.id))!.thread
+  expect(thread.map(e => [e.who, e.seenByMain === true])).toEqual([
+    ['person', false],
+    ['quick', false],
+    ['person', true],
+  ])
+})
+
+test('a question whose submit failed is not marked as seen', async () => {
+  const w = world({}, async () => { throw new Error('no session') })
+  const d = await make(w.$)
+  await askQuestion(w.$, 'main', d.id, 'will this send?')
+  for (let i = 0; i < 100; i++) {
+    await Promise.resolve()
+  }
+  expect((await readOne(w.$, d.id))!.thread[0]!.seenByMain).toBeUndefined()
+})
+
+test('a receipt is written as seen by the main session, since it wrote it', async () => {
+  const store = fakeStore()
+  const d = await make(store)
+  await recordReceipt(store, [d.id], 'Moved the loader to the root.')
+  expect((await readOne(store, d.id))!.thread.at(-1)).toMatchObject({ who: 'receipt', seenByMain: true })
 })

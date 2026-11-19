@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { buildAnswerPrompt, previewLines, readyDecisions, sendTicked } from './send'
+import { buildAnswerPrompt, discussionLines, previewLines, readyDecisions, sendTicked } from './send'
 import type { SendCtx } from './send'
 import { create, readAll, write } from './store'
 import type { Decision } from './store'
@@ -188,4 +188,70 @@ test('previewLines is the decision block buildAnswerPrompt sends, line for line'
   const d = { id: 'd1', title: 'T', group: 'G', options: [{ id: 1, label: 'A' }], answer: { option: 1, condition: 'later', answeredAt: 't' }, thread: [] } as any
   expect(previewLines(d)).toEqual(['Decision d1 · T (G)', 'Chosen: 1. A', 'Condition: later', 'Discussion: none'])
   expect(buildAnswerPrompt([d])).toContain(previewLines(d).join('\n'))
+})
+
+const THREAD_BASE: Pick<Decision, 'thread'> = { thread: [] }
+
+test('a discussion the main session saw all of is one line, not repeated', () => {
+  const lines = discussionLines({
+    ...THREAD_BASE,
+    thread: [
+      { who: 'person', text: 'does Vitest need a new CI image?', at: '1', seenByMain: true },
+      { who: 'claude', text: 'no, the current one has the Node version it needs.', at: '2', seenByMain: true },
+      { who: 'claude', text: '↻ Added option 3, Both', at: '3', revision: 0, seenByMain: true },
+      { who: 'person', text: 'and on Windows?', at: '4', seenByMain: true },
+    ],
+  })
+  expect(lines).toEqual(['Discussion: you discussed this with the person earlier (4 messages), not repeated here.'])
+})
+
+test('a discussion the main session saw none of is written out in full', () => {
+  const lines = discussionLines({
+    ...THREAD_BASE,
+    thread: [
+      { who: 'person', text: 'what does walking up mean?', at: '1' },
+      { who: 'quick', text: 'It checks each parent folder.', at: '2', via: 'triage' },
+    ],
+  })
+  expect(lines).toEqual(['Discussion:', '  person: what does walking up mean?', '  quick: It checks each parent folder.'])
+})
+
+test('a mixed discussion says how much was seen, then gives what was not, in order', () => {
+  const lines = discussionLines({
+    ...THREAD_BASE,
+    thread: [
+      { who: 'person', text: 'what does walking up mean?', at: '1' },
+      { who: 'quick', text: 'It checks each parent folder.', at: '2', via: 'triage' },
+      { who: 'person', text: 'is the root slower?', at: '3', seenByMain: true },
+      { who: 'claude', text: 'only from deep folders.', at: '4', seenByMain: true },
+      { who: 'person', text: 'can the fork check CI?', at: '5' },
+      { who: 'fork', text: 'CI reads the root file.', at: '6' },
+    ],
+  })
+  expect(lines).toEqual([
+    'Discussion: you discussed this with the person earlier (2 messages), not repeated here.',
+    'Not seen by you:',
+    '  person: what does walking up mean?',
+    '  quick: It checks each parent folder.',
+    '  person: can the fork check CI?',
+    '  fork: CI reads the root file.',
+  ])
+})
+
+test('entries stored before the mark existed count as unseen, so nothing is lost', () => {
+  const lines = discussionLines({
+    ...THREAD_BASE,
+    thread: [
+      { who: 'person', text: 'does Vitest need a new CI image?', at: '1' },
+      { who: 'claude', text: 'no.', at: '2' },
+      { who: 'claude', text: 'one more thing.', at: '3', seenByMain: true },
+    ],
+  })
+  expect(lines).toEqual([
+    'Discussion: you discussed this with the person earlier (1 message), not repeated here.',
+    'Not seen by you:',
+    '  person: does Vitest need a new CI image?',
+    '  claude: no.',
+  ])
+  expect(discussionLines({ thread: [] })).toEqual(['Discussion: none'])
 })

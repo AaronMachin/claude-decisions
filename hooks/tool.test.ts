@@ -483,3 +483,12 @@ test("no tool's description or schema Claude sees names a decision row", async (
     expect(text).not.toMatch(/\(\d{3}\)/)
   }
 })
+
+test('the ↻ line of an update and a chat answer are marked as seen by the main session, which made them', async () => {
+  const $ = fake()
+  await addDecision($, GOOD)
+  await updateDecision($, { id: 'd1', summary: 'Recommendation moved to 2', recommendation: { option: 2, reason: 'simpler' } })
+  expect((await readAll($)).decisions[0]!.thread.at(-1)).toMatchObject({ text: '↻ Recommendation moved to 2', seenByMain: true })
+  await answerDecision($, { id: 'd1', option: 1, quote: 'root is fine' })
+  expect((await readAll($)).decisions[0]!.thread.at(-1)).toMatchObject({ who: 'person', seenByMain: true })
+})

@@ -42,7 +42,8 @@ export async function recordReply(
   if (!d) {
     return false
   }
-  const entry: ThreadEntry = { who, text, at: new Date().toISOString(), ...(via ? { via } : {}) }
+  // Only the main session's own reply is one it saw; a fork's or the small model's never reached it.
+  const entry: ThreadEntry = { who, text, at: new Date().toISOString(), ...(via ? { via } : {}), ...(who === 'claude' ? { seenByMain: true as const } : {}) }
   const at = d.thread.findIndex(e => e.who === 'person' && e.at === asked)
   let end = at + 1
   while (at !== -1 && end < d.thread.length && d.thread[end]!.who !== 'person') {
@@ -52,6 +53,23 @@ export async function recordReply(
   await write(store, { ...d, thread })
 
   return true
+}
+
+/** Marks the person's question asked at `asked` as handed to the main session (`seen`), or takes the mark off when that failed. */
+export async function markQuestionSeenByMain(store: StoreCtx, id: string, asked: string, seen: boolean): Promise<void> {
+  const d = await readOne(store, id)
+  if (!d || !d.thread.some(e => e.who === 'person' && e.at === asked)) {
+    return
+  }
+  const thread = d.thread.map(e => {
+    if (e.who !== 'person' || e.at !== asked) {
+      return e
+    }
+    const { seenByMain: _was, ...rest } = e
+
+    return seen ? { ...rest, seenByMain: true as const } : rest
+  })
+  await write(store, { ...d, thread })
 }
 
 export const SETTLED_TEXT = 'settled in the discussion, see below'
@@ -252,7 +270,7 @@ export async function recordReceipt(store: StoreCtx, ids: string[], answer: stri
   for (const id of ids) {
     const d = await readOne(store, id)
     if (d) {
-      await write(store, { ...d, thread: [...d.thread, { who: 'receipt', text: line, at }] })
+      await write(store, { ...d, thread: [...d.thread, { who: 'receipt', text: line, at, seenByMain: true }] })
     }
   }
 }
@@ -332,9 +350,11 @@ async function dispatch($: any, mode: Mode, d: Decision, asked: string, question
   if (mode === 'main') {
     dropWaiter(asked, d.id)
     addWaiter({ decisionId: d.id, asked, sent: sentText(d, question) })
+    await markQuestionSeenByMain($, d.id, asked, true)
     $.prompt.submit({ text: sentText(d, question) }).catch(async (error: unknown) => {
       dropWaiter(asked, d.id)
       await fail(error instanceof Error ? error.message : String(error))
+      await markQuestionSeenByMain($, d.id, asked, false)
     })
 
     return
