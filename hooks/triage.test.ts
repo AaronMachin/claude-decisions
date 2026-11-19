@@ -82,7 +82,10 @@ test('the small model gets the whole decision, its thread, the session and the q
   const withThread: Decision = {
     ...d,
     problem: 'Where the settings file is read from',
-    options: [{ ...d.options[0]!, why: 'one place to look', whyNot: 'no per-package settings' } as any, d.options[1]!],
+    options: [
+      { ...d.options[0]!, why: 'one place to look', whyNot: 'no per-package settings' },
+      { ...d.options[1]!, pros: ['settings can differ'], cons: ['a copy per package', 'easy to drift'], notChosen: 'nothing needs different settings' },
+    ],
     thread: [
       { who: 'person', text: 'Is root the repo root?', at: '1' },
       { who: 'claude', text: 'Yes, where .git is.', at: '2' },
@@ -97,8 +100,12 @@ test('the small model gets the whole decision, its thread, the session and the q
     'Problem: Where the settings file is read from',
     'You run the tool from packages/api.',
     '1. Project root: one file, found by walking up',
-    'why: one place to look',
-    'why not: no per-package settings',
+    '+ one place to look',
+    '- no per-package settings',
+    '+ settings can differ',
+    '- a copy per package',
+    '- easy to drift',
+    'not picked: nothing needs different settings',
     'Recommended: 1, because every other tool reads from the root',
     'Loader (src/config/load.ts)',
     '<thread>',
@@ -250,4 +257,15 @@ test('a triage answer on a sent decision is kept and the decision stays sent', a
   await write(w.$, { ...d, state: 'sent' })
   await askQuestion(w.$, 'auto', d.id, 'Is it root?')
   expect((await readOne(w.$, d.id))!.state).toBe('sent')
+})
+
+test('the small model is not told why the recommended option was not picked, even when an update moved the recommendation there', async () => {
+  const store = fakeStore()
+  const d = await make(store)
+  const moved: Decision = {
+    ...d,
+    options: [d.options[0]!, { ...d.options[1]!, notChosen: 'nothing needs different settings' }],
+    recommendation: { option: 2, reason: 'settings differ after all' },
+  }
+  expect(triagePrompt(moved, 'Why 2?')).not.toContain('not picked')
 })

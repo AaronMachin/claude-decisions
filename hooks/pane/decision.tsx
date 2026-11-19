@@ -1,5 +1,6 @@
 import { noteStops } from './arrows'
 import { cutToWidth, displayWidth } from './width'
+import { consOf, notChosenOf, prosOf } from '../option-cases'
 import { answerKey, askInlineKey, askInputKey, fieldValue, isAskInline, isBlank, parkKey } from './field'
 import { draftLines } from './style'
 import { atom, read, update } from 'claude-code'
@@ -643,18 +644,23 @@ export function decisionHints(c: HintCtx, on: Handlers = NO_HANDLERS): Hint[] {
   return hints
 }
 
-/** One paragraph under an option: its changes dim, why and why not, the recommendation's reason in `success`. Drawn through the inline renderer. */
+/** One paragraph under an option: its changes dim, its pros and cons, why it wasn't picked, the recommendation's reason in `success`. Drawn through the inline renderer. */
 export type DetailPart = { text: string; color?: string; dim?: boolean; key: string }
 
-/** Everything under an option, in full (decisions 217, 262): its changes and, on the recommended one, why. */
+/**
+ * Everything under an option, in full (decisions 217, 262, 303): its changes, a `+` line per pro, a `−` line per con,
+ * a dim "Not picked" line on an option that isn't recommended now, and on the recommended one, why.
+ */
 export function detailParts(d: Decision, option: number): DetailPart[] {
   const o = drawnOptions(d).find(x => x.id === option)
   const why = d.recommendation?.option === option && !o?.isSomethingElse ? `Why: ${d.recommendation.reason}` : undefined
+  const notChosen = o ? notChosenOf(d, o) : undefined
 
   return [
     ...(o?.changes ? [{ text: o.changes, key: 'changes' }] : []),
-    ...(o?.why ? [{ text: `+ ${o.why}`, color: 'success', dim: true, key: 'for' }] : []),
-    ...(o?.whyNot ? [{ text: `− ${o.whyNot}`, color: 'warning', dim: true, key: 'against' }] : []),
+    ...(o ? prosOf(o) : []).map((pro, index) => ({ text: `+ ${pro}`, color: 'success', dim: true, key: `for:${index}` })),
+    ...(o ? consOf(o) : []).map((con, index) => ({ text: `− ${con}`, color: 'warning', dim: true, key: `against:${index}` })),
+    ...(notChosen ? [{ text: `Not picked: ${notChosen}`, key: 'not-chosen' }] : []),
     ...(why ? [{ text: why, color: 'success', key: 'why' }] : []),
   ]
 }
