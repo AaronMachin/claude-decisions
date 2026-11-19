@@ -1,4 +1,4 @@
-import { noteStops } from './arrows'
+import { keysAboveChanged, noteStops } from './arrows'
 import { cutToWidth, displayWidth } from './width'
 import { consOf, notChosenOf, prosOf } from '../option-cases'
 import { answerKey, askInlineKey, askInputKey, fieldValue, isAskInline, isBlank, parkKey } from './field'
@@ -304,6 +304,21 @@ export async function focusTo($: any, key: string): Promise<boolean> {
 export function focusLater($: any, key: string): void {
   $.clock.after(80, () => {
     void focusTo($, key)
+  })
+}
+
+/**
+ * Puts the ring back on the stop the view has it on, once the next draw is in. Read when it fires, not when asked: a key
+ * pressed in between (`a` moving the ring to the recommendation) has the last word.
+ */
+export function ringBackLater($: any, stops: string[]): void {
+  $.clock.after(80, () => {
+    void (async () => {
+      const ring = (await readView($)).ring
+      if (ring !== undefined && stops.includes(ring)) {
+        await focusTo($, ring)
+      }
+    })().catch(() => undefined)
   })
 }
 
@@ -1031,10 +1046,8 @@ export function DecisionView($: any, props: Props): any {
   const layout = decisionLayout(d, view, width, props.rows ?? 30, isFocused, readyCount, all, props.seenAt, props.scrollOffset ?? 0)
   const { compact } = layout
   // The arrows' stops on a scrolling decision: the options, then the ask box (row 296).
-  noteStops(
-    [...(d.state === 'sent' ? [] : drawnOptions(d).map(o => `opt:${o.id}`)), ...(layout.conversation ? [askInlineKey(d.id)] : [])],
-    layout.isScrolling === true,
-  )
+  const stops = [...(d.state === 'sent' ? [] : drawnOptions(d).map(o => `opt:${o.id}`)), ...(layout.conversation ? [askInlineKey(d.id)] : [])]
+  noteStops(stops, layout.isScrolling === true)
   const now = Date.now()
   const colour = barColour(d)
   const box = isSent ? undefined : view.answerBox
@@ -1231,6 +1244,10 @@ export function DecisionView($: any, props: Props): any {
     },
     handlers,
   )
+  // A key above the options came or went since the last draw: the engine moved the ring along with it, so put it back (row 306).
+  if (keysAboveChanged(d.id, hints.filter(hint => hint.onPress !== undefined).map(hint => hint.id)) && isFocused) {
+    ringBackLater($, stops)
+  }
   const note = answerNote(d)
   const barred = (key: string, lineColour: string | undefined, children: any) => (
     <Box key={key}>

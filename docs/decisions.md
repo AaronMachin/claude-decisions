@@ -506,3 +506,9 @@ Aaron accepted Claude's recommendations on pane decisions d84 and d85: "I agree 
 | # | Decision | Why |
 | --- | --- | --- |
 | 305 | A question (kind `question`) has no numbered row: its one row is a bold `Your answer` over a closed box showing `enter to type` (or the answer once given), with `Saved without asking Claude, goes with your next send.` under it. `enter` on the row opens the same answer box as Something else, with no label of its own; the pane's keys keep working until then (71 stands). The saved notice is the answer alone, and a list row says `type an answer` where a choice says how many options. Replaces 205's Something else row for questions only **(Aaron, 20 November)** | "1: Something else" read as a choice with one option; a question needs typing, and its shape should say so before you open it. |
+
+## 20 November 2026: the ring after the key line changes
+
+| # | Decision | Why |
+| --- | --- | --- |
+| 306 | When a key on the decision screen's key line comes or goes between two draws of the same decision (`r` arriving with a quick answer and going once Claude replies, `c` going and coming back as the ring moves onto or off Something else), the pane puts the ring back on the option or ask box the view has it on, 80 ms later, reading where that is when it fires so a key pressed in between keeps its move. `tests/real/run.sh` checks it: down onto Something else leaves the ask box without the keys, `a` brings the ring back to the recommendation, and on the next decision up out of the box, `a` and enter answer it. Builds on 285 **(Claude's call, the fix asked for by Aaron)** | Claude Code puts the ring back by its place among the focusable elements, and the key line sits above the options. So when Claude's reply took `r` away, the ring slid one element on while `›` stayed where it was: enter pressed the option below, or typed into the ask box, and `a` seemed to do nothing until the decision was left and opened again. |

@@ -108,13 +108,16 @@ open_ask_box() {
   fi
 }
 
-# Out of the box without sending (enter in a box sends to Claude): up, the way the key line says, then
-# tab. Only on a tall pane: on a short one the thread's box has no way out but enter or esc, so the
-# run there stops after the typing checks.
+# Out of the box without sending (enter in a box sends to Claude): up, the way the key line says. Only on a
+# tall pane: on a short one the thread's box has no way out but enter or esc, so the run there stops after the
+# typing checks.
 leave_ask_box() {
+  # In a field holding text the first up stays in the field and the next one leaves it. One up (then a tab) passed
+  # before only because the ring had already slid into the box from Something else, with the t typed into it
+  # (row 306). Now the ring lands on Something else, and a tab from there would go back into the box.
   keys Up
+  screen | grep -q 'enter: send to Claude' && keys Up
   [ "${1:-}" = check ] && check "up leaves the ask box (the key line stops saying send to Claude)" not_on_screen 'enter: send to Claude'
-  keys Tab
 }
 
 drive() {
@@ -126,6 +129,12 @@ drive() {
   check "enter opens that decision" on_screen 'What a printed recipe|d79 ·'
   keys Down
   check "down moves the ring from the recommended option to the next" on_screen '› +3[: ]'
+  # Down landed on Something else, so c left the key line above the options. Claude Code puts the ring back by its place
+  # among the focusable elements, so it slid one along into the ask box until the pane put it back (row 306).
+  sleep 0.5
+  check "... and stays there when c leaves the key line (the ask box doesn't take the keys)" not_on_screen '⏎ submit'
+  keys a
+  check "a puts the ring back on the recommended option" on_screen '› +2[: ]'
 
   open_ask_box || return
   type_text 'hello from the script'
@@ -152,8 +161,15 @@ drive() {
   check "the next decision opens" on_screen 'Whether to print in colour|d80 ·'
   open_ask_box || return
   check "its ask box starts empty, not with the last decision's draft" not_on_screen 'hello from the script'
-  leave_ask_box
-  keys b
+  # Up out of the box lands on Something else, and c leaves the key line again; then a and enter answer the decision
+  # without leaving it, which only works if the ring Claude Code holds is on the option the pane marks (row 306).
+  keys Up
+  sleep 0.5
+  check "up out of the ask box stays on Something else when c leaves the key line" not_on_screen '⏎ submit'
+  keys a
+  sleep 0.5
+  safe_enter || return
+  check "a then enter answer the decision with the recommended option" on_screen '◆ Recipe printing'
   keys h
   check "h hides the pane" not_on_screen 'Recipe printing'
   check "Claude's prompt is still empty" prompt_empty

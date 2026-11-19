@@ -13,9 +13,10 @@ It needs tmux, node (for `npx tsx`) and a signed-in `claude` on your PATH. It is
 For each size it makes a scratch git repository in a temporary folder, seeds it with the testers' session (`tests/replay/seed-ux.ts`) under a fresh session id, and starts `claude --plugin-dir <this repo> --session-id <id>` in its own tmux session (named `decisions-real-<pid>-<size>`). It then opens the pane with `/decisions` and checks:
 
 - the pane opens on the seeded session, with the ring on the first waiting row, and enter opens that decision
-- down moves the ring from the recommended option to the next
+- down moves the ring from the recommended option to the next, it stays there when `c` leaves the key line, and `a` puts it back on the recommended option
 - `t` and typing put the text in the pane's ask box and none of it in Claude's prompt, and a long burst typed in one go keeps every letter
 - up leaves the ask box, `b` goes back to the list and the next decision opens with its ask box empty
+- on that decision, up out of the ask box stays on Something else, and `a` then enter answer it without leaving it
 - `h` hides the pane and Claude's prompt is still empty
 
 Under 110 columns the pane sits above the prompt and is about 9 rows, and `t` opens the whole thread instead; there the run stops after the typing checks, since the thread's box has no way out but enter or esc.
